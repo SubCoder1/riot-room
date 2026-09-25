@@ -1,0 +1,65 @@
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  background: #090d15;
+  font-family: Inter, 'Segoe UI', sans-serif;
+}
+
+#app {
+  position: relative;
+}
+
+.game-shell {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+.crosshair::before {
+  left: 50%;
+  top: 2px;
+  width: 2px;
+  height: 14px;
+  transform: translateX(-50%);
+}
+
+.crosshair::after {
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
