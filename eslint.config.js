@@ -1,14 +1,9 @@
-import js from '@eslint/js'
-import tseslint from 'typescript-eslint'
+import js from "@eslint/js";
+import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: [
-      'node_modules/**',
-      'dist/**',
-      'build/**',
-      'coverage/**',
-    ],
+    ignores: ["node_modules/**", "dist/**", "build/**", "coverage/**"],
   },
 
   js.configs.recommended,
@@ -16,10 +11,10 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
 
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ["**/*.ts", "**/*.tsx"],
 
     rules: {
-      'no-console': 'off',
+      "no-console": "off",
     },
   },
-)
+);
