@@ -9,7 +9,7 @@ body,
 body {
   overflow: hidden;
   background: #090d15;
-  font-family: Inter, 'Segoe UI', sans-serif;
+  font-family: Inter, "Segoe UI", sans-serif;
 }
 
 #app {
@@ -32,34 +32,12 @@ canvas {
   position: fixed;
   left: 50%;
   top: 50%;
-  width: 18px;
-  height: 18px;
+  width: 8px;
+  height: 8px;
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 10;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
 }
-
-.crosshair::before,
-.crosshair::after {
-  content: '';
-  position: absolute;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
-}
-
-.crosshair::before {
-  left: 50%;
-  top: 2px;
-  width: 2px;
-  height: 14px;
-  transform: translateX(-50%);
-}
-
-.crosshair::after {
-  top: 50%;
-  left: 2px;
-  width: 14px;
-  height: 2px;
-  transform: translateY(-50%);
-}
-
