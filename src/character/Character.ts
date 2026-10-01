@@ -1,16 +1,9 @@
 import * as THREE from "three";
-import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 import { CharacterModel } from "./CharacterModel";
 import { CharacterAnimator } from "./CharacterAnimator";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
-
-interface BoneBinding {
-  target: THREE.Bone;
-  source: THREE.Bone;
-  sourceBindQuaternion: THREE.Quaternion;
-  targetBindQuaternion: THREE.Quaternion;
-}
 
 export class Character {
   public readonly group: THREE.Group;
@@ -18,32 +11,67 @@ export class Character {
 
   private readonly model: CharacterModel;
 
-  private animationMixer: THREE.AnimationMixer | null = null;
+  /**
+   * Separate native Polyfork idle animation.
+   *
+   * This GLB contains:
+   *
+   *     Idle
+   *
+   * It does NOT contain CombatIdle.
+   */
+  private readonly idleAnimationPath = "/assets/animations/idle.glb";
+
+  private idleMixer: THREE.AnimationMixer | null = null;
 
   private idleAction: THREE.AnimationAction | null = null;
 
-  private readonly idleAnimationPath = "/assets/animations/idle.fbx";
+  private modelHeight = 0;
+
+  private modelGroundOffset = 0;
 
   constructor() {
     this.model = new CharacterModel();
+
     this.animator = new CharacterAnimator();
+
     this.group = this.model.group;
+
+    this.group.name = "PlayerCharacter";
   }
 
+  /**
+   * ========================================================
+   * LOAD
+   * ========================================================
+   */
   public async load(
     assetPath: string = CHARACTER_ASSET_PATH,
   ): Promise<boolean> {
+    /**
+     * Load the actual Polyfork character.
+     */
     const loaded = await this.model.load(assetPath);
 
     if (!loaded) {
-      console.error("Character: failed to load character model.");
+      console.error("Character: failed to load player model.");
 
       return false;
     }
 
-    this.animator.setModel(this.model.group, this.model.animations);
-
+    /**
+     * The complete character stays visible.
+     */
     this.model.group.visible = true;
+
+    /**
+     * Keep CharacterAnimator connected to the
+     * embedded animations, if any.
+     *
+     * player.glb currently has no embedded animation,
+     * which is fine.
+     */
+    this.animator.setModel(this.model.group, this.model.animations);
 
     console.log("Character: Polyfork model loaded.");
 
@@ -52,20 +80,79 @@ export class Character {
       this.model.animations.map((clip) => clip.name),
     );
 
+    /**
+     * Make sure the character feet sit exactly
+     * on the character root.
+     */
+    this.normalizeGroundPosition();
+
+    /**
+     * Load the clean native idle animation.
+     */
     await this.loadIdleAnimation();
+
+    /**
+     * Print final model information.
+     */
+    this.debugModelBounds();
 
     return true;
   }
 
+  /**
+   * ========================================================
+   * LOADED STATE
+   * ========================================================
+   */
   public get isLoaded(): boolean {
     return this.model.isLoaded;
   }
 
+  /**
+   * ========================================================
+   * MODEL HEIGHT
+   * ========================================================
+   */
+  public get height(): number {
+    return this.modelHeight;
+  }
+
+  /**
+   * ========================================================
+   * GROUND OFFSET
+   * ========================================================
+   */
+  public get groundOffset(): number {
+    return this.modelGroundOffset;
+  }
+
+  /**
+   * ========================================================
+   * TRANSFORM
+   * ========================================================
+   */
   public setTransform(position: THREE.Vector3, yaw: number): void {
+    /**
+     * Root is the character's feet.
+     */
     this.group.position.copy(position);
+
+    /**
+     * VERY IMPORTANT:
+     *
+     * No X rotation.
+     * No Z rotation.
+     *
+     * The character must remain upright.
+     */
     this.group.rotation.set(0, yaw, 0);
   }
 
+  /**
+   * ========================================================
+   * SCENE
+   * ========================================================
+   */
   public addToScene(scene: THREE.Scene): void {
     scene.add(this.group);
   }
@@ -74,64 +161,152 @@ export class Character {
     scene.remove(this.group);
   }
 
-  public update(dt: number): void {
+  /**
+   * ========================================================
+   * UPDATE
+   * ========================================================
+   */
+  public update(dt: number, _isMoving: boolean = false): void {
+    /**
+     * Embedded animation system.
+     *
+     * Currently player.glb has no embedded animation,
+     * but keeping this here makes the class compatible
+     * with the existing CharacterAnimator.
+     */
     this.animator.update(dt);
 
-    if (this.animationMixer) {
-      this.animationMixer.update(dt);
+    /**
+     * Native Polyfork idle animation.
+     */
+    if (this.idleMixer) {
+      this.idleMixer.update(dt);
     }
   }
 
+  /**
+   * ========================================================
+   * DISPOSE
+   * ========================================================
+   */
   public dispose(): void {
-    if (this.animationMixer) {
-      this.animationMixer.stopAllAction();
-      this.animationMixer = null;
+    if (this.idleMixer) {
+      this.idleMixer.stopAllAction();
+
+      this.idleMixer = null;
     }
 
     this.idleAction = null;
 
     this.animator.dispose();
+
     this.model.dispose();
   }
 
+  /**
+   * ========================================================
+   * GROUND NORMALIZATION
+   * ========================================================
+   *
+   * Ensures:
+   *
+   *     character feet = root
+   *
+   * so the player does not float.
+   */
+  private normalizeGroundPosition(): void {
+    this.model.group.updateMatrixWorld(true);
+
+    const bounds = new THREE.Box3().setFromObject(this.model.group);
+
+    if (!Number.isFinite(bounds.min.y)) {
+      console.warn("Character: unable to calculate model ground position.");
+
+      return;
+    }
+
+    /**
+     * Move model so its lowest point is at Y = 0.
+     */
+    this.modelGroundOffset = -bounds.min.y;
+
+    this.model.group.position.y += this.modelGroundOffset;
+
+    /**
+     * Recalculate bounds.
+     */
+    this.model.group.updateMatrixWorld(true);
+
+    const correctedBounds = new THREE.Box3().setFromObject(this.model.group);
+
+    this.modelHeight = correctedBounds.max.y - correctedBounds.min.y;
+
+    console.log("Character: ground normalization:", {
+      originalMinY: bounds.min.y,
+
+      appliedOffset: this.modelGroundOffset,
+
+      correctedMinY: correctedBounds.min.y,
+
+      height: this.modelHeight,
+    });
+  }
+
+  /**
+   * ========================================================
+   * LOAD IDLE ANIMATION
+   * ========================================================
+   */
   private async loadIdleAnimation(): Promise<void> {
-    const loader = new FBXLoader();
+    const loader = new GLTFLoader();
 
     try {
-      console.log("Character: loading Mixamo idle:", this.idleAnimationPath);
+      console.log("Character: loading native idle:", this.idleAnimationPath);
 
-      const fbx = await loader.loadAsync(this.idleAnimationPath);
+      const gltf = await loader.loadAsync(this.idleAnimationPath);
 
-      if (fbx.animations.length === 0) {
-        console.error("Character: no Mixamo animation found.");
+      console.log(
+        "Character: idle animations:",
+        gltf.animations.map((clip) => ({
+          name: clip.name,
+
+          duration: clip.duration,
+
+          tracks: clip.tracks.length,
+        })),
+      );
+
+      if (gltf.animations.length === 0) {
+        console.error("Character: idle.glb contains no animations.");
 
         return;
       }
 
-      const sourceClip = fbx.animations[0];
-
-      console.log("Character: Mixamo clip:", sourceClip.name);
-
-      console.log("Character: Mixamo duration:", sourceClip.duration);
-
-      console.log("Character: Mixamo tracks:", sourceClip.tracks.length);
-
-      /*
-       * ------------------------------------------
-       * FIND MIXAMO BONES
-       * ------------------------------------------
+      /**
+       * Find the Idle clip.
        */
+      const idleClip = gltf.animations.find((clip) => clip.name === "Idle");
 
-      const sourceBones = this.findBones(fbx);
+      if (!idleClip) {
+        console.error(
+          "Character: Idle animation not found.",
+          gltf.animations.map((clip) => clip.name),
+        );
 
-      console.log("Character: Mixamo bones:", sourceBones.length);
+        return;
+      }
 
-      /*
-       * ------------------------------------------
-       * FIND POLYFORK MESH
-       * ------------------------------------------
+      console.log("Character: Idle clip found.", {
+        duration: idleClip.duration,
+
+        tracks: idleClip.tracks.length,
+      });
+
+      /**
+       * ====================================================
+       * FIND POLYFORK SKELETAL MESH
+       * ====================================================
        */
-
       let targetMesh: THREE.SkinnedMesh | undefined;
 
       this.model.group.traverse((object) => {
@@ -148,240 +323,80 @@ export class Character {
 
       const polyforkMesh = targetMesh;
 
-      /*
-       * ------------------------------------------
-       * BONE MAP
-       * ------------------------------------------
-       */
+      console.log("Character: Polyfork target mesh:", polyforkMesh.name);
 
-      const boneMap: Record<string, string> = {
-        Hips: "mixamorigHips",
+      console.log(
+        "Character: Polyfork skeleton bones:",
+        polyforkMesh.skeleton.bones.map((bone) => bone.name),
+      );
 
-        Spine: "mixamorigSpine",
-
-        Spine1: "mixamorigSpine1",
-
-        Spine2: "mixamorigSpine2",
-
-        Neck: "mixamorigNeck",
-
-        Head: "mixamorigHead",
-
-        LeftShoulder: "mixamorigLeftShoulder",
-
-        LeftArm: "mixamorigLeftArm",
-
-        LeftForeArm: "mixamorigLeftForeArm",
-
-        LeftHand: "mixamorigLeftHand",
-
-        RightShoulder: "mixamorigRightShoulder",
-
-        RightArm: "mixamorigRightArm",
-
-        RightForeArm: "mixamorigRightForeArm",
-
-        RightHand: "mixamorigRightHand",
-
-        LeftUpLeg: "mixamorigLeftUpLeg",
-
-        LeftLeg: "mixamorigLeftLeg",
-
-        LeftFoot: "mixamorigLeftFoot",
-
-        LeftToeBase: "mixamorigLeftToeBase",
-
-        RightUpLeg: "mixamorigRightUpLeg",
-
-        RightLeg: "mixamorigRightLeg",
-
-        RightFoot: "mixamorigRightFoot",
-
-        RightToeBase: "mixamorigRightToeBase",
-      };
-
-      /*
-       * ------------------------------------------
-       * CREATE BINDINGS
-       * ------------------------------------------
-       */
-
-      const bindings: BoneBinding[] = [];
-
-      for (const targetName of Object.keys(boneMap)) {
-        const sourceName = boneMap[targetName];
-
-        const targetBone = polyforkMesh.skeleton.bones.find(
-          (bone) => bone.name === targetName,
-        );
-
-        const sourceBone = sourceBones.find((bone) => bone.name === sourceName);
-
-        if (!targetBone || !sourceBone) {
-          continue;
-        }
-
-        bindings.push({
-          target: targetBone,
-          source: sourceBone,
-
-          sourceBindQuaternion: sourceBone.quaternion.clone(),
-
-          targetBindQuaternion: targetBone.quaternion.clone(),
-        });
-      }
-
-      console.log("Character: rotation bindings:", bindings.length);
-
-      /*
-       * ------------------------------------------
-       * CREATE ROTATION-ONLY RETARGET
-       * ------------------------------------------
+      /**
+       * ====================================================
+       * CREATE MIXER
+       * ====================================================
        *
        * IMPORTANT:
        *
-       * We deliberately DO NOT copy position
-       * animation from Mixamo.
-       *
-       * Polyfork keeps its own bone positions.
-       *
-       * This prevents Mixamo's large FBX scale
-       * from moving the Polyfork character.
-       *
-       * Formula:
-       *
-       * target animation =
-       * target bind rotation
-       * ×
-       * inverse(source bind rotation)
-       * ×
-       * source animation rotation
-       *
-       * ------------------------------------------
+       * The mixer is attached directly to the
+       * SkinnedMesh because the animation tracks
+       * target the skeleton's bones.
        */
+      this.idleMixer = new THREE.AnimationMixer(polyforkMesh);
 
-      const tracks: THREE.KeyframeTrack[] = [];
-
-      for (const binding of bindings) {
-        const sourceName = binding.source.name;
-
-        const sourceTrack = sourceClip.tracks.find(
-          (track) => track.name === `${sourceName}.quaternion`,
-        );
-
-        if (!sourceTrack) {
-          continue;
-        }
-
-        const values = sourceTrack.values;
-
-        const outputValues = new Float32Array(values.length);
-
-        const inverseSourceBind = binding.sourceBindQuaternion.clone().invert();
-
-        const sourceAnimation = new THREE.Quaternion();
-
-        const animationDelta = new THREE.Quaternion();
-
-        const targetAnimation = new THREE.Quaternion();
-
-        for (let i = 0; i < values.length; i += 4) {
-          sourceAnimation.set(
-            values[i],
-            values[i + 1],
-            values[i + 2],
-            values[i + 3],
-          );
-
-          /*
-           * Calculate Mixamo movement
-           * relative to Mixamo's bind pose.
-           */
-          animationDelta.copy(inverseSourceBind).multiply(sourceAnimation);
-
-          /*
-           * Apply that movement to
-           * Polyfork's bind pose.
-           */
-          targetAnimation
-            .copy(binding.targetBindQuaternion)
-            .multiply(animationDelta)
-            .normalize();
-
-          outputValues[i] = targetAnimation.x;
-
-          outputValues[i + 1] = targetAnimation.y;
-
-          outputValues[i + 2] = targetAnimation.z;
-
-          outputValues[i + 3] = targetAnimation.w;
-        }
-
-        tracks.push(
-          new THREE.QuaternionKeyframeTrack(
-            `${binding.target.name}.quaternion`,
-            sourceTrack.times,
-            outputValues,
-          ),
-        );
-      }
-
-      console.log("Character: rotation tracks created:", tracks.length);
-
-      /*
-       * ------------------------------------------
-       * CREATE CLIP
-       * ------------------------------------------
+      /**
+       * Create Idle action.
        */
+      this.idleAction = this.idleMixer.clipAction(idleClip);
 
-      const retargetedClip = new THREE.AnimationClip(
-        "Idle",
-        sourceClip.duration,
-        tracks,
-      );
-
-      /*
-       * ------------------------------------------
-       * RESET POLYFORK
-       * ------------------------------------------
+      /**
+       * Loop forever.
        */
+      this.idleAction.setLoop(THREE.LoopRepeat, Infinity);
 
-      polyforkMesh.skeleton.pose();
+      this.idleAction.clampWhenFinished = false;
 
-      this.model.group.visible = true;
-
-      /*
-       * ------------------------------------------
-       * MIXER
-       * ------------------------------------------
+      /**
+       * Start from beginning.
        */
-
-      this.animationMixer = new THREE.AnimationMixer(polyforkMesh);
-
-      this.idleAction = this.animationMixer.clipAction(retargetedClip);
-
-      this.idleAction.setLoop(THREE.LoopOnce, 1);
-
-      this.idleAction.clampWhenFinished = true;
-
       this.idleAction.reset();
+
+      /**
+       * Play.
+       */
       this.idleAction.play();
 
-      console.log("Character: rotation-only idle started.");
+      console.log("Character: Idle animation PLAYING.");
     } catch (error) {
-      console.error("Character: idle animation failed:", error);
+      console.error("Character: failed to load idle.glb:", error);
     }
   }
 
-  private findBones(root: THREE.Object3D): THREE.Bone[] {
-    const bones: THREE.Bone[] = [];
+  /**
+   * ========================================================
+   * DEBUG MODEL BOUNDS
+   * ========================================================
+   */
+  private debugModelBounds(): void {
+    this.group.updateMatrixWorld(true);
 
-    root.traverse((object) => {
-      if (object instanceof THREE.Bone) {
-        bones.push(object);
-      }
-    });
+    const bounds = new THREE.Box3().setFromObject(this.group);
 
-    return bones;
+    const size = new THREE.Vector3();
+
+    bounds.getSize(size);
+
+    console.log("========== CHARACTER BOUNDS ==========");
+
+    console.log("SIZE:", size.toArray());
+
+    console.log("MIN:", bounds.min.toArray());
+
+    console.log("MAX:", bounds.max.toArray());
+
+    console.log("HEIGHT:", this.modelHeight);
+
+    console.log("GROUND OFFSET:", this.modelGroundOffset);
+
+    console.log("======================================");
   }
 }

@@ -41,11 +41,52 @@ export class FirstPersonArms {
 
   private armMesh: THREE.SkinnedMesh | null = null;
 
+  private readonly guardPose: Record<string, THREE.Quaternion> = {
+    LeftShoulder: new THREE.Quaternion(
+      -0.0008246337,
+      0.0510837375,
+      -0.0527774484,
+      0.9972985073,
+    ),
+    LeftArm: new THREE.Quaternion(0.125, -0.27, -0.245, 0.92).normalize(),
+    LeftForeArm: new THREE.Quaternion(
+      -0.0757570788,
+      -0.6287024617,
+      0.2795023024,
+      0.7217149734,
+    ).normalize(),
+    LeftHand: new THREE.Quaternion(
+      -0.0436933935,
+      -0.4157148898,
+      0.3780051768,
+      0.8260654211,
+    ).normalize(),
+    RightShoulder: new THREE.Quaternion(
+      0.0096879505,
+      0.0290022876,
+      -0.0242006557,
+      0.9992393803,
+    ),
+    RightArm: new THREE.Quaternion(0.016, 0.27, 0.29, 0.92).normalize(),
+    RightForeArm: new THREE.Quaternion(
+      -0.0528877601,
+      0.6395993829,
+      -0.2210823298,
+      0.7343283892,
+    ).normalize(),
+    RightHand: new THREE.Quaternion(
+      -0.0471633449,
+      0.4487292469,
+      -0.3162814975,
+      0.8344960809,
+    ).normalize(),
+  };
+
   /*
    * Position of the original Polyfork model
    * relative to the first-person camera.
    */
-  private readonly viewModelPosition = new THREE.Vector3(0, -1.5, 0.45);
+  private readonly viewModelPosition = new THREE.Vector3(0, -0.55, -0.72);
 
   /*
    * Polyfork model faces the opposite local direction,
@@ -241,10 +282,20 @@ export class FirstPersonArms {
       }
 
       targetBone.position.copy(sourceBone.position);
-
-      targetBone.quaternion.copy(sourceBone.quaternion);
-
       targetBone.scale.copy(sourceBone.scale);
+
+      const guardQuaternion = this.guardPose[sourceBone.name];
+
+      if (guardQuaternion) {
+        /*
+         * FPP arms are deliberately independent from the
+         * character's walk arm tracks. This guarantees the
+         * fists stay in the requested FPS guard pose.
+         */
+        targetBone.quaternion.copy(guardQuaternion);
+      } else {
+        targetBone.quaternion.copy(sourceBone.quaternion);
+      }
     }
 
     /*
