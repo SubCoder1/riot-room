@@ -17,7 +17,8 @@ export type CharacterMovementState =
   | "crouchWalkBackwards"
   | "crouchStrafeLeft"
   | "crouchStrafeRight"
-  | "run";
+  | "run"
+  | "runBackwards";
 
 export class Character {
   public readonly group: THREE.Group;
@@ -37,6 +38,7 @@ export class Character {
   private crouchStrafeLeftAction: THREE.AnimationAction | null = null;
   private crouchStrafeRightAction: THREE.AnimationAction | null = null;
   private runAction: THREE.AnimationAction | null = null;
+  private runBackwardsAction: THREE.AnimationAction | null = null;
 
   private currentAction: THREE.AnimationAction | null = null;
   private jumpAnimationStarted = false;
@@ -71,6 +73,8 @@ export class Character {
   private readonly crouchStrafeRightAnimationPath =
     "/assets/animations/crouch-strafe-right.glb";
   private readonly runAnimationPath = "/assets/animations/run.glb";
+  private readonly runBackwardsAnimationPath =
+    "/assets/animations/run-backwards.glb";
 
   /**
    * Small cross-fade keeps transitions crisp
@@ -226,6 +230,10 @@ export class Character {
         this.playRun();
         break;
 
+      case "runBackwards":
+        this.playRunBackwards();
+        break;
+
       case "idle":
       default:
         this.playIdle();
@@ -252,6 +260,7 @@ export class Character {
     this.crouchStrafeLeftAction = null;
     this.crouchStrafeRightAction = null;
     this.runAction = null;
+    this.runBackwardsAction = null;
 
     this.currentAction = null;
 
@@ -436,6 +445,14 @@ export class Character {
     await this.loadDirectAnimation(this.runAnimationPath, "Run", (action) => {
       this.runAction = action;
     });
+
+    await this.loadDirectAnimation(
+      this.runBackwardsAnimationPath,
+      "RunBackwards",
+      (action) => {
+        this.runBackwardsAction = action;
+      },
+    );
 
     /**
      * Start Idle.
@@ -838,7 +855,24 @@ export class Character {
     this.runAction.clampWhenFinished = false;
 
     this.switchAnimation(this.runAction);
-  } /**
+  }
+
+  private playRunBackwards(): void {
+    if (!this.runBackwardsAction) {
+      return;
+    }
+
+    if (this.currentAction === this.runBackwardsAction) {
+      return;
+    }
+
+    this.runBackwardsAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.runBackwardsAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.runBackwardsAction);
+  }
+  /**
    * ============================================================
    * ANIMATION SWITCH
    * ============================================================

@@ -414,11 +414,11 @@ export class Game {
 
     /**
      * --------------------------------------------------------
-     * WALK / RUN / WALK BACKWARDS
+     * WALK / RUN / BACKWARDS
      * --------------------------------------------------------
      *
      * W = forward walk (Shift + W = run)
-     * S = backward walk
+     * S = backward walk (Shift + S = backward run)
      *
      * Matches Player movement: W and S together cancel out.
      */
@@ -432,7 +432,7 @@ export class Game {
     }
 
     if (forwardInput < 0) {
-      return "walkBackwards";
+      return this.player.isSprinting ? "runBackwards" : "walkBackwards";
     }
 
     /**
