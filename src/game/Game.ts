@@ -414,10 +414,10 @@ export class Game {
 
     /**
      * --------------------------------------------------------
-     * WALK / WALK BACKWARDS
+     * WALK / RUN / WALK BACKWARDS
      * --------------------------------------------------------
      *
-     * W = forward walk
+     * W = forward walk (Shift + W = run)
      * S = backward walk
      *
      * Matches Player movement: W and S together cancel out.
@@ -427,7 +427,8 @@ export class Game {
       (this.input.isPressed("KeyS") ? 1 : 0);
 
     if (forwardInput > 0) {
-      return "walk";
+      // Holding Shift (sprint) turns the forward walk into a run.
+      return this.player.isSprinting ? "run" : "walk";
     }
 
     if (forwardInput < 0) {

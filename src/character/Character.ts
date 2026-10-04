@@ -16,7 +16,8 @@ export type CharacterMovementState =
   | "crouchWalk"
   | "crouchWalkBackwards"
   | "crouchStrafeLeft"
-  | "crouchStrafeRight";
+  | "crouchStrafeRight"
+  | "run";
 
 export class Character {
   public readonly group: THREE.Group;
@@ -35,6 +36,7 @@ export class Character {
   private crouchWalkBackwardsAction: THREE.AnimationAction | null = null;
   private crouchStrafeLeftAction: THREE.AnimationAction | null = null;
   private crouchStrafeRightAction: THREE.AnimationAction | null = null;
+  private runAction: THREE.AnimationAction | null = null;
 
   private currentAction: THREE.AnimationAction | null = null;
   private jumpAnimationStarted = false;
@@ -68,6 +70,7 @@ export class Character {
     "/assets/animations/crouch-strafe-left.glb";
   private readonly crouchStrafeRightAnimationPath =
     "/assets/animations/crouch-strafe-right.glb";
+  private readonly runAnimationPath = "/assets/animations/run.glb";
 
   /**
    * Small cross-fade keeps transitions crisp
@@ -219,6 +222,10 @@ export class Character {
         this.playCrouchStrafeRight();
         break;
 
+      case "run":
+        this.playRun();
+        break;
+
       case "idle":
       default:
         this.playIdle();
@@ -244,6 +251,7 @@ export class Character {
     this.crouchWalkBackwardsAction = null;
     this.crouchStrafeLeftAction = null;
     this.crouchStrafeRightAction = null;
+    this.runAction = null;
 
     this.currentAction = null;
 
@@ -424,6 +432,10 @@ export class Character {
         this.crouchStrafeRightAction = action;
       },
     );
+
+    await this.loadDirectAnimation(this.runAnimationPath, "Run", (action) => {
+      this.runAction = action;
+    });
 
     /**
      * Start Idle.
@@ -811,7 +823,22 @@ export class Character {
 
     this.switchAnimation(this.crouchStrafeRightAction);
   }
-  /**
+
+  private playRun(): void {
+    if (!this.runAction) {
+      return;
+    }
+
+    if (this.currentAction === this.runAction) {
+      return;
+    }
+
+    this.runAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.runAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.runAction);
+  } /**
    * ============================================================
    * ANIMATION SWITCH
    * ============================================================
