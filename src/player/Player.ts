@@ -4,11 +4,15 @@ import { InputManager } from "../input/InputManager";
 
 export class Player {
   /**
-   * The player's eye/camera height above the ground.
+   * ========================================================
+   * PLAYER / CAMERA HEIGHT
+   * ========================================================
    *
-   * Game.ts uses this same value when converting
-   * the player's eye position into the character's
-   * feet/root position.
+   * The player's position represents the camera/eye position.
+   *
+   * Character feet/root position is calculated as:
+   *
+   *     player.position.y - eyeHeight
    */
   public readonly eyeHeight = 1.7;
 
@@ -17,41 +21,98 @@ export class Player {
    */
   public position = new THREE.Vector3(0, 1.7, 10);
 
+  /**
+   * Vertical/horizontal velocity.
+   */
   public velocity = new THREE.Vector3();
 
+  /**
+   * Camera rotation.
+   */
   public yaw = 0;
 
   public pitch = -0.1;
 
+  /**
+   * Sprint state.
+   */
   public isSprinting = false;
+
+  /**
+   * ========================================================
+   * MOVEMENT SETTINGS
+   * ========================================================
+   */
 
   private readonly moveSpeed = 5.5;
 
   private readonly sprintSpeed = 8.5;
 
+  /**
+   * Jump strength.
+   */
   private readonly jumpForce = 7.2;
 
+  /**
+   * Gravity strength.
+   */
   private readonly gravity = 18;
 
+  /**
+   * Arena boundary.
+   */
   private readonly arenaHalfSize = 8.4;
 
+  /**
+   * ========================================================
+   * GROUND STATE
+   * ========================================================
+   *
+   * This is the IMPORTANT part for the animation system.
+   *
+   * Game.ts should NOT try to calculate whether the player
+   * is airborne by checking Y positions.
+   *
+   * Player physics already knows the real state.
+   */
   private grounded = true;
 
+  /**
+   * Public read-only access to the ground state.
+   *
+   * Game.ts uses:
+   *
+   *     this.player.isGrounded
+   *
+   * to decide whether the character should play the
+   * jump animation.
+   */
+  public get isGrounded(): boolean {
+    return this.grounded;
+  }
+
+  /**
+   * ========================================================
+   * UPDATE
+   * ========================================================
+   */
   public update(dt: number, input: InputManager): void {
     /**
-     * ========================================================
+     * ======================================================
      * CAMERA LOOK
-     * ========================================================
+     * ======================================================
      */
+
     this.yaw = input.yaw;
 
     this.pitch = input.pitch;
 
     /**
-     * ========================================================
+     * ======================================================
      * MOVEMENT INPUT
-     * ========================================================
+     * ======================================================
      */
+
     const moveX =
       (input.isPressed("KeyD") ? 1 : 0) - (input.isPressed("KeyA") ? 1 : 0);
 
@@ -59,23 +120,26 @@ export class Player {
       (input.isPressed("KeyW") ? 1 : 0) - (input.isPressed("KeyS") ? 1 : 0);
 
     /**
-     * ========================================================
+     * ======================================================
      * SPRINT
-     * ========================================================
+     * ======================================================
      */
+
     this.isSprinting =
       input.isPressed("ShiftLeft") || input.isPressed("ShiftRight");
 
     /**
-     * ========================================================
+     * ======================================================
      * HORIZONTAL MOVEMENT
-     * ========================================================
+     * ======================================================
      */
+
     if (moveX !== 0 || moveZ !== 0) {
       /**
        * Player forward direction.
        *
        * Camera convention:
+       *
        * -Z = forward
        */
       const forward = new THREE.Vector3(
@@ -93,6 +157,9 @@ export class Player {
         -Math.sin(this.yaw),
       );
 
+      /**
+       * Final movement direction.
+       */
       const direction = new THREE.Vector3();
 
       direction.addScaledVector(forward, moveZ);
@@ -113,9 +180,18 @@ export class Player {
     }
 
     /**
-     * ========================================================
+     * ======================================================
      * JUMP
-     * ========================================================
+     * ======================================================
+     *
+     * Jump is triggered ONLY when:
+     *
+     *     Space is newly pressed
+     *     AND
+     *     player is grounded
+     *
+     * consumeJump() guarantees that holding Space
+     * does not repeatedly create jump requests.
      */
     if (input.consumeJump() && this.grounded) {
       this.velocity.y = this.jumpForce;
@@ -124,26 +200,29 @@ export class Player {
     }
 
     /**
-     * ========================================================
+     * ======================================================
      * GRAVITY
-     * ========================================================
+     * ======================================================
      */
+
     this.velocity.y -= this.gravity * dt;
 
     this.position.y += this.velocity.y * dt;
 
     /**
-     * ========================================================
+     * ======================================================
      * GROUND COLLISION
-     * ========================================================
+     * ======================================================
      *
-     * The player position represents the eyes.
+     * Player position is the eye position.
      *
      * Therefore:
      *
      *     eye position = ground + eyeHeight
      *
-     * We keep this exact relationship.
+     * When the player reaches the ground:
+     *
+     *     y = eyeHeight
      */
     if (this.position.y <= this.eyeHeight) {
       this.position.y = this.eyeHeight;
@@ -154,10 +233,11 @@ export class Player {
     }
 
     /**
-     * ========================================================
+     * ======================================================
      * ARENA BOUNDS
-     * ========================================================
+     * ======================================================
      */
+
     this.position.x = clamp(
       this.position.x,
       -this.arenaHalfSize,
@@ -172,6 +252,11 @@ export class Player {
   }
 }
 
+/**
+ * ========================================================
+ * CLAMP
+ * ========================================================
+ */
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }

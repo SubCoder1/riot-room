@@ -8,12 +8,24 @@ export class CharacterAnimator {
   private currentAction: THREE.AnimationAction | null = null;
 
   public setModel(root: THREE.Object3D, clips: THREE.AnimationClip[]): void {
+    this.mixer?.stopAllAction();
+    if (this.mixer) {
+      this.mixer.uncacheRoot(this.mixer.getRoot());
+    }
     this.mixer = new THREE.AnimationMixer(root);
     this.clips.clear();
     this.currentAction = null;
     for (const clip of clips) {
       this.clips.set(clip.name, clip);
     }
+  }
+
+  public createAction(clip: THREE.AnimationClip): THREE.AnimationAction | null {
+    if (!this.mixer) {
+      return null;
+    }
+    this.clips.set(clip.name, clip);
+    return this.mixer.clipAction(clip);
   }
 
   public hasClip(name: string): boolean {

@@ -5,9 +5,14 @@ import { InputManager } from "../input/InputManager";
 import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
 import { Character } from "../character/Character";
+import type { CharacterMovementState } from "../character/Character";
 import { CHARACTER_ASSET_PATH } from "../character/CharacterConfig";
 
 export class Game {
+  // ============================================================
+  // CORE SYSTEMS
+  // ============================================================
+
   private readonly renderer: Renderer;
   private readonly arena: Arena;
   private readonly input: InputManager;
@@ -16,6 +21,10 @@ export class Game {
 
   private lastFrameTime: number;
 
+  // ============================================================
+  // CAMERA MODE
+  // ============================================================
+
   /**
    * false = first person
    * true  = third person
@@ -23,47 +32,42 @@ export class Game {
   private isThirdPerson = false;
 
   /**
-   * Used to detect one F3 press rather than
-   * toggling every frame while F3 is held.
+   * Used so F3 toggles only once per key press.
    */
   private previousF3 = false;
 
+  // ============================================================
+  // FIRST PERSON CAMERA
+  // ============================================================
+
   /**
-   * ========================================================
-   * FIRST PERSON CAMERA
-   * ========================================================
-   *
-   * The camera is positioned from the actual Polyfork
-   * Head bone rather than the character root.
-   *
-   * This is important because the Polyfork skeleton has
-   * a small horizontal offset relative to its root.
+   * Move camera slightly down from the center
+   * of the Polyfork Head bone.
    */
   private readonly firstPersonHeadDownOffset = 0.08;
 
   /**
-   * Move the camera slightly forward from the head.
+   * Move camera slightly forward from the head.
    *
-   * This prevents the camera from being inside the skull.
+   * This prevents the camera from being inside
+   * the character's head.
    */
   private readonly firstPersonForwardOffset = 0.18;
 
-  /**
-   * ========================================================
-   * THIRD PERSON CAMERA
-   * ========================================================
-   */
+  // ============================================================
+  // THIRD PERSON CAMERA
+  // ============================================================
+
   private readonly thirdPersonDistance = 3.2;
 
   private readonly thirdPersonHeight = 1.25;
 
   private readonly thirdPersonLookHeight = 1.0;
 
-  /**
-   * Reusable vectors.
-   *
-   * These avoid creating new Vector3 objects every frame.
-   */
+  // ============================================================
+  // REUSABLE VECTORS
+  // ============================================================
+
   private readonly headWorldPosition = new THREE.Vector3();
 
   private readonly playerForward = new THREE.Vector3();
@@ -76,66 +80,94 @@ export class Game {
 
   private readonly thirdPersonLookTarget = new THREE.Vector3();
 
+  private headBone: THREE.Bone | null = null;
+
+  private headBoneSearched = false;
+
+  // ============================================================
+  // CONSTRUCTOR
+  // ============================================================
+
   constructor(container: HTMLElement) {
-    /**
-     * Renderer.
-     */
+    // ----------------------------------------------------------
+    // Renderer
+    // ----------------------------------------------------------
+
     this.renderer = new Renderer(container);
 
-    /**
-     * Arena.
-     */
+    // ----------------------------------------------------------
+    // Arena
+    // ----------------------------------------------------------
+
     this.arena = new Arena();
 
-    /**
-     * Input.
-     */
+    // ----------------------------------------------------------
+    // Input
+    // ----------------------------------------------------------
+
     this.input = new InputManager(this.renderer.renderer.domElement);
 
-    /**
-     * Player controller.
-     */
+    // ----------------------------------------------------------
+    // Player controller
+    // ----------------------------------------------------------
+
     this.player = new Player();
 
-    /**
-     * Complete Polyfork character.
-     */
+    // ----------------------------------------------------------
+    // Complete Polyfork character
+    // ----------------------------------------------------------
+
     this.character = new Character();
+
+    // ----------------------------------------------------------
+    // Frame timing
+    // ----------------------------------------------------------
 
     this.lastFrameTime = performance.now();
 
-    /**
-     * Add arena.
-     */
+    // ----------------------------------------------------------
+    // Add arena to scene
+    // ----------------------------------------------------------
+
     this.renderer.scene.add(this.arena.group);
 
-    /**
-     * Add COMPLETE character.
-     *
-     * No FirstPersonArms.
-     * No extracted viewmodel.
-     * No hidden body.
-     */
+    // ----------------------------------------------------------
+    // Add complete character
+    // ----------------------------------------------------------
+    //
+    // IMPORTANT:
+    //
+    // We are NOT using:
+    //
+    // FirstPersonArms
+    // ViewModel
+    // Separate fists
+    // Hidden character body
+    //
+    // The complete Polyfork character stays active.
+    //
+
     this.renderer.scene.add(this.character.group);
 
-    /**
-     * Load character.
-     */
+    // ----------------------------------------------------------
+    // Load character
+    // ----------------------------------------------------------
+
     void this.loadCharacter();
 
-    /**
-     * Start game loop.
-     */
+    // ----------------------------------------------------------
+    // Start game loop
+    // ----------------------------------------------------------
+
     this.animate = this.animate.bind(this);
 
     requestAnimationFrame(this.animate);
   }
 
-  /**
-   * ========================================================
-   * LOAD CHARACTER
-   * ========================================================
-   */
+  // ============================================================
+  // LOAD CHARACTER
+  // ============================================================
+
   private async loadCharacter(): Promise<void> {
     const loaded = await this.character.load(CHARACTER_ASSET_PATH);
 
@@ -147,31 +179,38 @@ export class Game {
 
     console.log("Game: player character loaded successfully.");
 
+    this.findHeadBone();
+
     console.log(
       "Game: embedded animations:",
       this.character.animator.getClipNames(),
     );
 
-    /**
-     * Complete character is always visible.
-     */
+    // ----------------------------------------------------------
+    // Character visibility
+    // ----------------------------------------------------------
+
     this.character.group.visible = true;
 
-    /**
-     * Initial transforms.
-     */
+    // ----------------------------------------------------------
+    // Initial character position
+    // ----------------------------------------------------------
+
     this.updateCharacterTransform();
+
+    // ----------------------------------------------------------
+    // Initial camera position
+    // ----------------------------------------------------------
 
     this.updateCamera();
 
     console.log("Game: full Polyfork character active.");
   }
 
-  /**
-   * ========================================================
-   * MAIN LOOP
-   * ========================================================
-   */
+  // ============================================================
+  // MAIN GAME LOOP
+  // ============================================================
+
   private animate(): void {
     const currentTime = performance.now();
 
@@ -180,60 +219,166 @@ export class Game {
     this.lastFrameTime = currentTime;
 
     /**
-     * Prevent a huge delta after tab inactivity.
+     * Prevent a huge physics step if
+     * the browser tab was inactive.
      */
     const dt = Math.min(elapsedSeconds, 0.05);
 
-    /**
-     * F3 camera toggle.
-     */
+    // ----------------------------------------------------------
+    // Camera toggle
+    // ----------------------------------------------------------
+
     this.updateCameraToggle();
 
-    /**
-     * Player movement and look.
-     */
+    // ----------------------------------------------------------
+    // PLAYER PHYSICS
+    // ----------------------------------------------------------
+    //
+    // Player handles:
+    //
+    // W/A/S/D
+    // Sprint
+    // Jump
+    // Gravity
+    // Ground collision
+    // Arena bounds
+    //
+
     this.player.update(dt, this.input);
 
-    /**
-     * Movement state.
-     */
-    const isMoving =
-      this.input.isPressed("KeyW") ||
-      this.input.isPressed("KeyA") ||
-      this.input.isPressed("KeyS") ||
-      this.input.isPressed("KeyD");
+    // ----------------------------------------------------------
+    // CHARACTER ANIMATION
+    // ----------------------------------------------------------
+    //
+    // IMPORTANT:
+    //
+    // We DO NOT calculate airborne state from
+    // player.position.y.
+    //
+    // Player already knows whether it is grounded.
+    //
 
-    /**
-     * Character animation.
-     */
-    this.character.update(dt, isMoving);
+    const movementState = this.getCharacterMovementState();
 
-    /**
-     * Character world transform.
-     */
+    this.character.update(dt, movementState);
+
+    // ----------------------------------------------------------
+    // Character world transform
+    // ----------------------------------------------------------
+
     this.updateCharacterTransform();
 
-    /**
-     * Camera.
-     */
+    // ----------------------------------------------------------
+    // Camera
+    // ----------------------------------------------------------
+
     this.updateCamera();
 
-    /**
-     * Render.
-     */
+    // ----------------------------------------------------------
+    // Render
+    // ----------------------------------------------------------
+
     this.renderer.render();
+
+    // ----------------------------------------------------------
+    // Next frame
+    // ----------------------------------------------------------
 
     requestAnimationFrame(this.animate);
   }
 
-  /**
-   * ========================================================
-   * F3 TOGGLE
-   * ========================================================
-   */
+  // ============================================================
+  // CHARACTER MOVEMENT STATE
+  // ============================================================
+  //
+  // Priority:
+  //
+  // 1. Jump
+  // 2. Strafe left
+  // 3. Strafe right
+  // 4. Walk
+  // 5. Idle
+  //
+  // ============================================================
+
+  private getCharacterMovementState(): CharacterMovementState {
+    /**
+     * --------------------------------------------------------
+     * JUMP
+     * --------------------------------------------------------
+     *
+     * Jump has highest priority.
+     *
+     * We use the REAL physics state from Player.
+     *
+     * No Y-position guessing.
+     */
+    if (!this.player.isGrounded) {
+      return "jump";
+    }
+
+    /**
+     * --------------------------------------------------------
+     * STRAFE LEFT
+     * --------------------------------------------------------
+     */
+
+    if (this.input.isPressed("KeyA")) {
+      return "strafeLeft";
+    }
+
+    /**
+     * --------------------------------------------------------
+     * STRAFE RIGHT
+     * --------------------------------------------------------
+     */
+
+    if (this.input.isPressed("KeyD")) {
+      return "strafeRight";
+    }
+
+    /**
+     * --------------------------------------------------------
+     * WALK / WALK BACKWARDS
+     * --------------------------------------------------------
+     *
+     * W = forward walk
+     * S = backward walk
+     *
+     * Matches Player movement: W and S together cancel out.
+     */
+    const forwardInput =
+      (this.input.isPressed("KeyW") ? 1 : 0) -
+      (this.input.isPressed("KeyS") ? 1 : 0);
+
+    if (forwardInput > 0) {
+      return "walk";
+    }
+
+    if (forwardInput < 0) {
+      return "walkBackwards";
+    }
+
+    /**
+     * --------------------------------------------------------
+     * IDLE
+     * --------------------------------------------------------
+     */
+
+    return "idle";
+  }
+
+  // ============================================================
+  // CAMERA TOGGLE
+  // ============================================================
+
   private updateCameraToggle(): void {
     const f3Pressed = this.input.isPressed("F3");
 
+    /**
+     * Toggle only when F3 changes
+     * from released -> pressed.
+     */
     if (f3Pressed && !this.previousF3) {
       this.isThirdPerson = !this.isThirdPerson;
 
@@ -246,46 +391,51 @@ export class Game {
     this.previousF3 = f3Pressed;
   }
 
-  /**
-   * ========================================================
-   * CHARACTER PRESENTATION
-   * ========================================================
-   *
-   * The complete character is ALWAYS visible.
-   */
+  // ============================================================
+  // CHARACTER PRESENTATION
+  // ============================================================
+
   private updatePresentation(): void {
+    /**
+     * The complete character is always visible.
+     */
     this.character.group.visible = true;
   }
 
-  /**
-   * ========================================================
-   * CHARACTER TRANSFORM
-   * ========================================================
-   *
-   * Player position = eye/reference position.
-   *
-   * Character root = feet.
-   */
+  // ============================================================
+  // CHARACTER TRANSFORM
+  // ============================================================
+
   private updateCharacterTransform(): void {
+    /**
+     * Player position represents the eyes.
+     *
+     * Character position represents the feet.
+     *
+     * Therefore:
+     *
+     *     feetY = eyeY - eyeHeight
+     */
     this.characterFeet.set(
       this.player.position.x,
+
       this.player.position.y - this.player.eyeHeight,
+
       this.player.position.z,
     );
 
     /**
-     * Keep the character perfectly upright.
+     * Keep the character upright.
      *
-     * Only Y rotates.
+     * Only rotate around Y.
      */
     this.character.setTransform(this.characterFeet, this.player.yaw + Math.PI);
   }
 
-  /**
-   * ========================================================
-   * CAMERA
-   * ========================================================
-   */
+  // ============================================================
+  // CAMERA
+  // ============================================================
+
   private updateCamera(): void {
     this.updatePresentation();
 
@@ -298,109 +448,81 @@ export class Game {
     this.updateFirstPersonCamera();
   }
 
-  /**
-   * ========================================================
-   * FIRST PERSON CAMERA
-   * ========================================================
-   *
-   * IMPORTANT:
-   *
-   * We no longer calculate the camera position from
-   * player.position.y.
-   *
-   * Instead:
-   *
-   *     actual Polyfork Head bone
-   *                ↓
-   *        move slightly downward
-   *                ↓
-   *        move slightly forward
-   *                ↓
-   *             CAMERA
-   *
-   * This keeps the camera centered on the actual head.
-   */
+  // ============================================================
+  // FIRST PERSON CAMERA
+  // ============================================================
+
   private updateFirstPersonCamera(): void {
     /**
-     * Find the actual Head bone.
+     * Find actual Polyfork Head bone.
      */
     const head = this.findHeadBone();
 
     if (head) {
       /**
-       * Make sure the skeleton's world transforms
-       * are completely current.
+       * Make sure all skeleton transforms
+       * are current before reading the head.
        */
       this.character.group.updateMatrixWorld(true);
 
       /**
-       * Get the actual head position in world space.
+       * Get actual world position
+       * of the Head bone.
        */
       head.getWorldPosition(this.headWorldPosition);
 
       /**
-       * Start directly from the center of the head.
+       * Start camera from head.
        */
       this.firstPersonCameraPosition.copy(this.headWorldPosition);
 
       /**
-       * Move slightly downward from the center
-       * of the head toward the eye line.
+       * Move slightly down toward eye line.
        */
       this.firstPersonCameraPosition.y -= this.firstPersonHeadDownOffset;
     } else {
       /**
-       * Fallback if the Head bone cannot be found.
+       * Fallback.
        *
-       * This should normally never happen with the
-       * Polyfork model.
+       * Normally this should not happen because
+       * Polyfork contains a Head bone.
        */
       this.firstPersonCameraPosition.copy(this.player.position);
-
-      console.warn(
-        "Game: Head bone not found; using player position for FPP camera.",
-      );
     }
 
-    /**
-     * Player/camera forward direction.
-     *
-     * This is based on the player's actual yaw,
-     * not the character root's local axes.
-     */
+    // ----------------------------------------------------------
+    // Player forward direction
+    // ----------------------------------------------------------
+
     this.playerForward.set(
       -Math.sin(this.player.yaw),
+
       0,
+
       -Math.cos(this.player.yaw),
     );
 
-    /**
-     * Normalize for safety.
-     */
     this.playerForward.normalize();
 
-    /**
-     * Move slightly forward from the face/head.
-     *
-     * This prevents the camera from sitting inside
-     * the head geometry.
-     */
+    // ----------------------------------------------------------
+    // Move camera slightly forward
+    // ----------------------------------------------------------
+
     this.firstPersonCameraPosition.addScaledVector(
       this.playerForward,
       this.firstPersonForwardOffset,
     );
 
-    /**
-     * Apply final camera position.
-     */
+    // ----------------------------------------------------------
+    // Apply camera position
+    // ----------------------------------------------------------
+
     this.renderer.camera.position.copy(this.firstPersonCameraPosition);
 
-    /**
-     * Apply FPS look.
-     *
-     * Camera stays centered on the player's
-     * yaw/pitch axis.
-     */
+    // ----------------------------------------------------------
+    // Apply FPS look
+    // ----------------------------------------------------------
+
     this.renderer.camera.rotation.set(
       this.player.pitch,
       this.player.yaw,
@@ -409,79 +531,101 @@ export class Game {
     );
   }
 
-  /**
-   * ========================================================
-   * FIND HEAD BONE
-   * ========================================================
-   */
+  // ============================================================
+  // FIND HEAD BONE
+  // ============================================================
+
   private findHeadBone(): THREE.Bone | null {
-    let headBone: THREE.Bone | null = null;
+    if (!this.character.isLoaded || this.headBoneSearched) {
+      return this.headBone;
+    }
+
+    this.headBoneSearched = true;
 
     this.character.group.traverse((object) => {
-      if (headBone) {
+      if (this.headBone) {
         return;
       }
 
-      if (object instanceof THREE.Bone && object.name === "Head") {
-        headBone = object;
+      if (
+        object.name.toLowerCase() === "head" &&
+        (object instanceof THREE.Bone || object.type === "Bone")
+      ) {
+        this.headBone = object as THREE.Bone;
       }
     });
 
-    return headBone;
+    if (!this.headBone) {
+      console.warn(
+        "Game: Head bone not found; using player position for FPP camera.",
+      );
+    }
+
+    return this.headBone;
   }
 
-  /**
-   * ========================================================
-   * THIRD PERSON CAMERA
-   * ========================================================
-   */
+  // ============================================================
+  // THIRD PERSON CAMERA
+  // ============================================================
+
   private updateThirdPersonCamera(): void {
-    /**
-     * Character feet.
-     */
+    // ----------------------------------------------------------
+    // Character feet
+    // ----------------------------------------------------------
+
     this.characterFeet.set(
       this.player.position.x,
+
       this.player.position.y - this.player.eyeHeight,
+
       this.player.position.z,
     );
 
-    /**
-     * Player forward.
-     */
+    // ----------------------------------------------------------
+    // Player forward
+    // ----------------------------------------------------------
+
     this.playerForward.set(
       -Math.sin(this.player.yaw),
+
       0,
+
       -Math.cos(this.player.yaw),
     );
 
     this.playerForward.normalize();
 
-    /**
-     * Start at character feet.
-     */
+    // ----------------------------------------------------------
+    // Start at character feet
+    // ----------------------------------------------------------
+
     this.thirdPersonCameraPosition.copy(this.characterFeet);
 
-    /**
-     * Raise camera.
-     */
+    // ----------------------------------------------------------
+    // Raise camera
+    // ----------------------------------------------------------
+
     this.thirdPersonCameraPosition.y += this.thirdPersonHeight;
 
-    /**
-     * Put camera in front of character.
-     */
+    // ----------------------------------------------------------
+    // Put camera in front of character
+    // ----------------------------------------------------------
+
     this.thirdPersonCameraPosition.addScaledVector(
       this.playerForward,
       this.thirdPersonDistance,
     );
 
-    /**
-     * Apply camera position.
-     */
+    // ----------------------------------------------------------
+    // Apply camera position
+    // ----------------------------------------------------------
+
     this.renderer.camera.position.copy(this.thirdPersonCameraPosition);
 
-    /**
-     * Look at upper body.
-     */
+    // ----------------------------------------------------------
+    // Look at upper body
+    // ----------------------------------------------------------
+
     this.thirdPersonLookTarget.copy(this.characterFeet);
 
     this.thirdPersonLookTarget.y += this.thirdPersonLookHeight;
@@ -489,11 +633,10 @@ export class Game {
     this.renderer.camera.lookAt(this.thirdPersonLookTarget);
   }
 
-  /**
-   * ========================================================
-   * DISPOSE
-   * ========================================================
-   */
+  // ============================================================
+  // DISPOSE
+  // ============================================================
+
   public dispose(): void {
     this.input.dispose();
 
