@@ -39,6 +39,11 @@ export class Player {
   public isSprinting = false;
 
   /**
+   * Crouch state. Set by Game.ts; slows movement and overrides sprint.
+   */
+  public isCrouching = false;
+
+  /**
    * ========================================================
    * MOVEMENT SETTINGS
    * ========================================================
@@ -47,6 +52,8 @@ export class Player {
   private readonly moveSpeed = 5.5;
 
   private readonly sprintSpeed = 8.5;
+
+  private readonly crouchSpeed = 2.2;
 
   /**
    * Jump strength.
@@ -172,7 +179,11 @@ export class Player {
        */
       direction.normalize();
 
-      const speed = this.isSprinting ? this.sprintSpeed : this.moveSpeed;
+      let speed = this.isSprinting ? this.sprintSpeed : this.moveSpeed;
+
+      if (this.isCrouching) {
+        speed = this.crouchSpeed;
+      }
 
       this.position.x += direction.x * speed * dt;
 

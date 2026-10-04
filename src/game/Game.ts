@@ -17,6 +17,7 @@ export class Game {
   private readonly arena: Arena;
   private readonly input: InputManager;
   private readonly player: Player;
+  private crouchCancelled = false;
   private readonly character: Character;
 
   private lastFrameTime: number;
@@ -244,6 +245,8 @@ export class Game {
     // Arena bounds
     //
 
+    this.updateCrouchState();
+
     this.player.update(dt, this.input);
 
     // ----------------------------------------------------------
@@ -288,16 +291,50 @@ export class Game {
   }
 
   // ============================================================
+  // CROUCH
+  // ============================================================
+  //
+  // Holding C crouches. Pressing Space while crouched stands the
+  // player up instead of jumping, and stays standing until C is
+  // released.
+  //
+  // ============================================================
+
+  private isCrouching(): boolean {
+    return (
+      this.player.isGrounded &&
+      !this.crouchCancelled &&
+      this.input.isPressed("KeyC")
+    );
+  }
+
+  private updateCrouchState(): void {
+    if (!this.input.isPressed("KeyC")) {
+      this.crouchCancelled = false;
+      this.player.isCrouching = false;
+      return;
+    }
+
+    // Consuming the jump here keeps Player from jumping on the same press.
+    if (this.isCrouching() && this.input.consumeJump()) {
+      this.crouchCancelled = true;
+    }
+
+    this.player.isCrouching = this.isCrouching();
+  }
+
+  // ============================================================
   // CHARACTER MOVEMENT STATE
   // ============================================================
   //
   // Priority:
   //
   // 1. Jump
-  // 2. Strafe left
-  // 3. Strafe right
-  // 4. Walk
-  // 5. Idle
+  // 2. Crouch (hold C), crouch walk forward / backwards
+  // 3. Strafe left
+  // 4. Strafe right
+  // 5. Walk / walk backwards
+  // 6. Idle
   //
   // ============================================================
 
@@ -315,6 +352,44 @@ export class Game {
      */
     if (!this.player.isGrounded) {
       return "jump";
+    }
+
+    /**
+     * --------------------------------------------------------
+     * CROUCH
+     * --------------------------------------------------------
+     *
+     * Plays for as long as C is held, unless Space was pressed
+     * to stand up (see updateCrouchState). Moves slower while crouched.
+     */
+
+    if (this.isCrouching()) {
+      // W/S net input picks the crouch walk; otherwise A/D pick the crouch strafe.
+      const crouchForward =
+        (this.input.isPressed("KeyW") ? 1 : 0) -
+        (this.input.isPressed("KeyS") ? 1 : 0);
+
+      if (crouchForward > 0) {
+        return "crouchWalk";
+      }
+
+      if (crouchForward < 0) {
+        return "crouchWalkBackwards";
+      }
+
+      const crouchSide =
+        (this.input.isPressed("KeyA") ? 1 : 0) -
+        (this.input.isPressed("KeyD") ? 1 : 0);
+
+      if (crouchSide > 0) {
+        return "crouchStrafeLeft";
+      }
+
+      if (crouchSide < 0) {
+        return "crouchStrafeRight";
+      }
+
+      return "crouch";
     }
 
     /**

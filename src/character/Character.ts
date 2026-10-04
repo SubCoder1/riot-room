@@ -6,7 +6,17 @@ import { CharacterAnimator } from "./CharacterAnimator";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
 
 export type CharacterMovementState =
-  "idle" | "walk" | "walkBackwards" | "strafeLeft" | "strafeRight" | "jump";
+  | "idle"
+  | "walk"
+  | "walkBackwards"
+  | "strafeLeft"
+  | "strafeRight"
+  | "jump"
+  | "crouch"
+  | "crouchWalk"
+  | "crouchWalkBackwards"
+  | "crouchStrafeLeft"
+  | "crouchStrafeRight";
 
 export class Character {
   public readonly group: THREE.Group;
@@ -20,6 +30,11 @@ export class Character {
   private strafeLeftAction: THREE.AnimationAction | null = null;
   private strafeRightAction: THREE.AnimationAction | null = null;
   private jumpAction: THREE.AnimationAction | null = null;
+  private crouchAction: THREE.AnimationAction | null = null;
+  private crouchWalkAction: THREE.AnimationAction | null = null;
+  private crouchWalkBackwardsAction: THREE.AnimationAction | null = null;
+  private crouchStrafeLeftAction: THREE.AnimationAction | null = null;
+  private crouchStrafeRightAction: THREE.AnimationAction | null = null;
 
   private currentAction: THREE.AnimationAction | null = null;
   private jumpAnimationStarted = false;
@@ -42,6 +57,18 @@ export class Character {
 
   private readonly jumpAnimationPath = "/assets/animations/jump.glb";
 
+  private readonly crouchAnimationPath = "/assets/animations/crouch.glb";
+
+  private readonly crouchWalkAnimationPath =
+    "/assets/animations/crouch-walk.glb";
+
+  private readonly crouchWalkBackwardsAnimationPath =
+    "/assets/animations/crouch-walk-backwards.glb";
+  private readonly crouchStrafeLeftAnimationPath =
+    "/assets/animations/crouch-strafe-left.glb";
+  private readonly crouchStrafeRightAnimationPath =
+    "/assets/animations/crouch-strafe-right.glb";
+
   /**
    * Small cross-fade keeps transitions crisp
    * without making movement feel sluggish.
@@ -53,6 +80,12 @@ export class Character {
    * eases back into idle/walk instead of snapping.
    */
   private readonly landingTransitionDuration = 0.25;
+
+  /**
+   * Crouch drops/stands up a little slower than a normal switch
+   * so the knee bend reads as a motion, not a pop.
+   */
+  private readonly crouchTransitionDuration = 0.18;
 
   constructor() {
     this.model = new CharacterModel();
@@ -166,6 +199,26 @@ export class Character {
         this.playJump();
         break;
 
+      case "crouch":
+        this.playCrouch();
+        break;
+
+      case "crouchWalk":
+        this.playCrouchWalk();
+        break;
+
+      case "crouchWalkBackwards":
+        this.playCrouchWalkBackwards();
+        break;
+
+      case "crouchStrafeLeft":
+        this.playCrouchStrafeLeft();
+        break;
+
+      case "crouchStrafeRight":
+        this.playCrouchStrafeRight();
+        break;
+
       case "idle":
       default:
         this.playIdle();
@@ -186,6 +239,11 @@ export class Character {
     this.strafeLeftAction = null;
     this.strafeRightAction = null;
     this.jumpAction = null;
+    this.crouchAction = null;
+    this.crouchWalkAction = null;
+    this.crouchWalkBackwardsAction = null;
+    this.crouchStrafeLeftAction = null;
+    this.crouchStrafeRightAction = null;
 
     this.currentAction = null;
 
@@ -310,6 +368,64 @@ export class Character {
     });
 
     /**
+     * --------------------------------------------------------
+     * CROUCH
+     * --------------------------------------------------------
+     */
+
+    await this.loadDirectAnimation(
+      this.crouchAnimationPath,
+      "Crouch",
+      (action) => {
+        this.crouchAction = action;
+      },
+    );
+
+    /**
+     * --------------------------------------------------------
+     * CROUCH WALK
+     * --------------------------------------------------------
+     */
+
+    await this.loadDirectAnimation(
+      this.crouchWalkAnimationPath,
+      "CrouchWalk",
+      (action) => {
+        this.crouchWalkAction = action;
+      },
+    );
+
+    /**
+     * --------------------------------------------------------
+     * CROUCH WALK BACKWARDS
+     * --------------------------------------------------------
+     */
+
+    await this.loadDirectAnimation(
+      this.crouchWalkBackwardsAnimationPath,
+      "CrouchWalkBackwards",
+      (action) => {
+        this.crouchWalkBackwardsAction = action;
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.crouchStrafeLeftAnimationPath,
+      "CrouchStrafeLeft",
+      (action) => {
+        this.crouchStrafeLeftAction = action;
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.crouchStrafeRightAnimationPath,
+      "CrouchStrafeRight",
+      (action) => {
+        this.crouchStrafeRightAction = action;
+      },
+    );
+
+    /**
      * Start Idle.
      */
     if (this.idleAction) {
@@ -348,6 +464,18 @@ export class Character {
     );
 
     console.log("Character: jump loaded:", Boolean(this.jumpAction));
+
+    console.log("Character: crouch loaded:", Boolean(this.crouchAction));
+
+    console.log(
+      "Character: crouch-walk loaded:",
+      Boolean(this.crouchWalkAction),
+    );
+
+    console.log(
+      "Character: crouch-walk-backwards loaded:",
+      Boolean(this.crouchWalkBackwardsAction),
+    );
   }
 
   /**
@@ -588,9 +716,125 @@ export class Character {
 
   /**
    * ============================================================
+   * CROUCH
+   * ============================================================
+   */
+
+  private playCrouch(): void {
+    if (!this.crouchAction) {
+      return;
+    }
+
+    if (this.currentAction === this.crouchAction) {
+      return;
+    }
+
+    this.crouchAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.crouchAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.crouchAction);
+  }
+
+  /**
+   * ============================================================
+   * CROUCH WALK
+   * ============================================================
+   */
+
+  private playCrouchWalk(): void {
+    if (!this.crouchWalkAction) {
+      return;
+    }
+
+    if (this.currentAction === this.crouchWalkAction) {
+      return;
+    }
+
+    this.crouchWalkAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.crouchWalkAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.crouchWalkAction);
+  }
+
+  /**
+   * ============================================================
+   * CROUCH WALK BACKWARDS
+   * ============================================================
+   */
+
+  private playCrouchWalkBackwards(): void {
+    if (!this.crouchWalkBackwardsAction) {
+      return;
+    }
+
+    if (this.currentAction === this.crouchWalkBackwardsAction) {
+      return;
+    }
+
+    this.crouchWalkBackwardsAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.crouchWalkBackwardsAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.crouchWalkBackwardsAction);
+  }
+
+  private playCrouchStrafeLeft(): void {
+    if (!this.crouchStrafeLeftAction) {
+      return;
+    }
+
+    if (this.currentAction === this.crouchStrafeLeftAction) {
+      return;
+    }
+
+    this.crouchStrafeLeftAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.crouchStrafeLeftAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.crouchStrafeLeftAction);
+  }
+
+  private playCrouchStrafeRight(): void {
+    if (!this.crouchStrafeRightAction) {
+      return;
+    }
+
+    if (this.currentAction === this.crouchStrafeRightAction) {
+      return;
+    }
+
+    this.crouchStrafeRightAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    this.crouchStrafeRightAction.clampWhenFinished = false;
+
+    this.switchAnimation(this.crouchStrafeRightAction);
+  }
+  /**
+   * ============================================================
    * ANIMATION SWITCH
    * ============================================================
    */
+
+  private getTransitionDuration(nextAction: THREE.AnimationAction): number {
+    if (this.currentAction === this.jumpAction) {
+      return this.landingTransitionDuration;
+    }
+
+    const isCrouchAction = (action: THREE.AnimationAction | null): boolean =>
+      action === this.crouchAction ||
+      action === this.crouchWalkAction ||
+      action === this.crouchWalkBackwardsAction ||
+      action === this.crouchStrafeLeftAction ||
+      action === this.crouchStrafeRightAction;
+
+    if (isCrouchAction(this.currentAction) || isCrouchAction(nextAction)) {
+      return this.crouchTransitionDuration;
+    }
+
+    return this.transitionDuration;
+  }
 
   private switchAnimation(nextAction: THREE.AnimationAction): void {
     if (this.currentAction === nextAction) {
@@ -608,9 +852,7 @@ export class Character {
     if (this.currentAction) {
       this.currentAction.crossFadeTo(
         nextAction,
-        this.currentAction === this.jumpAction
-          ? this.landingTransitionDuration
-          : this.transitionDuration,
+        this.getTransitionDuration(nextAction),
         false,
       );
     }
