@@ -1,48 +1,83 @@
-import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
-import { CharacterModel } from "./CharacterModel";
-import { CharacterAnimator } from "./CharacterAnimator";
-import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
+import { CharacterModel } from './CharacterModel'
+import { CharacterAnimator } from './CharacterAnimator'
+import { CHARACTER_ASSET_PATH } from './CharacterConfig'
 
 export class Character {
-  public readonly group: THREE.Group;
-  public readonly animator: CharacterAnimator;
+  public readonly group: THREE.Group
+  public readonly animator: CharacterAnimator
 
-  private readonly model: CharacterModel;
+  private readonly model: CharacterModel
 
   /**
-   * Separate native Polyfork idle animation.
+   * ========================================================
+   * ANIMATION FILES
+   * ========================================================
    *
-   * This GLB contains:
+   * idle.glb:
+   *   Clean normal idle pose + breathing.
    *
-   *     Idle
-   *
-   * It does NOT contain CombatIdle.
+   * walk.glb:
+   *   Clean Polyfork walking cycle.
    */
-  private readonly idleAnimationPath = "/assets/animations/idle.glb";
+  private readonly idleAnimationPath =
+    '/assets/animations/idle.glb'
 
-  private idleMixer: THREE.AnimationMixer | null = null;
+  private readonly walkAnimationPath =
+    '/assets/animations/walk.glb'
 
-  private idleAction: THREE.AnimationAction | null = null;
+  /**
+   * One mixer controls both animations.
+   *
+   * Both animations were authored for the same
+   * Polyfork skeleton, so no retargeting is required.
+   */
+  private animationMixer:
+    THREE.AnimationMixer | null = null
 
-  private modelHeight = 0;
+  private idleAction:
+    THREE.AnimationAction | null = null
 
-  private modelGroundOffset = 0;
+  private walkAction:
+    THREE.AnimationAction | null = null
+
+  /**
+   * Currently active action.
+   */
+  private currentAction:
+    THREE.AnimationAction | null = null
+
+  /**
+   * Short transition between idle and walking.
+   */
+  private readonly transitionDuration = 0.15
+
+  /**
+   * Model information.
+   */
+  private modelHeight = 0
+
+  private modelGroundOffset = 0
 
   constructor() {
-    this.model = new CharacterModel();
+    this.model =
+      new CharacterModel()
 
-    this.animator = new CharacterAnimator();
+    this.animator =
+      new CharacterAnimator()
 
-    this.group = this.model.group;
+    this.group =
+      this.model.group
 
-    this.group.name = "PlayerCharacter";
+    this.group.name =
+      'PlayerCharacter'
   }
 
   /**
    * ========================================================
-   * LOAD
+   * LOAD CHARACTER
    * ========================================================
    */
   public async load(
@@ -51,61 +86,73 @@ export class Character {
     /**
      * Load the actual Polyfork character.
      */
-    const loaded = await this.model.load(assetPath);
+    const loaded =
+      await this.model.load(
+        assetPath,
+      )
 
     if (!loaded) {
-      console.error("Character: failed to load player model.");
+      console.error(
+        'Character: failed to load player model.',
+      )
 
-      return false;
+      return false
     }
 
     /**
-     * The complete character stays visible.
+     * Complete character remains visible.
      */
-    this.model.group.visible = true;
+    this.model.group.visible =
+      true
 
     /**
-     * Keep CharacterAnimator connected to the
-     * embedded animations, if any.
+     * Existing embedded-animation system.
      *
-     * player.glb currently has no embedded animation,
-     * which is fine.
+     * player.glb currently has no embedded
+     * animation, but keeping this is compatible
+     * with the existing architecture.
      */
-    this.animator.setModel(this.model.group, this.model.animations);
-
-    console.log("Character: Polyfork model loaded.");
+    this.animator.setModel(
+      this.model.group,
+      this.model.animations,
+    )
 
     console.log(
-      "Character: embedded animations:",
-      this.model.animations.map((clip) => clip.name),
-    );
+      'Character: Polyfork model loaded.',
+    )
+
+    console.log(
+      'Character: embedded animations:',
+      this.model.animations.map(
+        (clip) => clip.name,
+      ),
+    )
 
     /**
-     * Make sure the character feet sit exactly
-     * on the character root.
+     * Keep feet exactly on the character root.
      */
-    this.normalizeGroundPosition();
+    this.normalizeGroundPosition()
 
     /**
-     * Load the clean native idle animation.
+     * Load idle + walk.
      */
-    await this.loadIdleAnimation();
+    await this.loadAnimations()
 
     /**
      * Print final model information.
      */
-    this.debugModelBounds();
+    this.debugModelBounds()
 
-    return true;
+    return true
   }
 
   /**
    * ========================================================
-   * LOADED STATE
+   * LOADED
    * ========================================================
    */
   public get isLoaded(): boolean {
-    return this.model.isLoaded;
+    return this.model.isLoaded
   }
 
   /**
@@ -114,7 +161,7 @@ export class Character {
    * ========================================================
    */
   public get height(): number {
-    return this.modelHeight;
+    return this.modelHeight
   }
 
   /**
@@ -123,7 +170,7 @@ export class Character {
    * ========================================================
    */
   public get groundOffset(): number {
-    return this.modelGroundOffset;
+    return this.modelGroundOffset
   }
 
   /**
@@ -131,21 +178,27 @@ export class Character {
    * TRANSFORM
    * ========================================================
    */
-  public setTransform(position: THREE.Vector3, yaw: number): void {
+  public setTransform(
+    position: THREE.Vector3,
+    yaw: number,
+  ): void {
     /**
-     * Root is the character's feet.
+     * Root represents the character's feet.
      */
-    this.group.position.copy(position);
+    this.group.position.copy(
+      position,
+    )
 
     /**
-     * VERY IMPORTANT:
+     * Keep the character completely upright.
      *
-     * No X rotation.
-     * No Z rotation.
-     *
-     * The character must remain upright.
+     * Only Y rotation is allowed.
      */
-    this.group.rotation.set(0, yaw, 0);
+    this.group.rotation.set(
+      0,
+      yaw,
+      0,
+    )
   }
 
   /**
@@ -153,12 +206,20 @@ export class Character {
    * SCENE
    * ========================================================
    */
-  public addToScene(scene: THREE.Scene): void {
-    scene.add(this.group);
+  public addToScene(
+    scene: THREE.Scene,
+  ): void {
+    scene.add(
+      this.group,
+    )
   }
 
-  public removeFromScene(scene: THREE.Scene): void {
-    scene.remove(this.group);
+  public removeFromScene(
+    scene: THREE.Scene,
+  ): void {
+    scene.remove(
+      this.group,
+    )
   }
 
   /**
@@ -166,209 +227,489 @@ export class Character {
    * UPDATE
    * ========================================================
    */
-  public update(dt: number, _isMoving: boolean = false): void {
+  public update(
+    dt: number,
+    isMoving: boolean = false,
+  ): void {
     /**
-     * Embedded animation system.
-     *
-     * Currently player.glb has no embedded animation,
-     * but keeping this here makes the class compatible
-     * with the existing CharacterAnimator.
+     * Existing embedded animation system.
      */
-    this.animator.update(dt);
+    this.animator.update(
+      dt,
+    )
 
     /**
-     * Native Polyfork idle animation.
+     * Native Polyfork animations.
      */
-    if (this.idleMixer) {
-      this.idleMixer.update(dt);
+    if (
+      this.animationMixer
+    ) {
+      this.animationMixer.update(
+        dt,
+      )
+    }
+
+    /**
+     * Choose animation based on movement.
+     */
+    if (isMoving) {
+      this.playWalk()
+    } else {
+      this.playIdle()
     }
   }
 
   /**
    * ========================================================
-   * DISPOSE
+   * IDLE
    * ========================================================
    */
-  public dispose(): void {
-    if (this.idleMixer) {
-      this.idleMixer.stopAllAction();
-
-      this.idleMixer = null;
+  private playIdle(): void {
+    if (
+      !this.idleAction
+    ) {
+      return
     }
 
-    this.idleAction = null;
+    /**
+     * Already playing idle.
+     */
+    if (
+      this.currentAction ===
+      this.idleAction
+    ) {
+      return
+    }
 
-    this.animator.dispose();
+    this.switchAction(
+      this.idleAction,
+    )
+  }
 
-    this.model.dispose();
+  /**
+   * ========================================================
+   * WALK
+   * ========================================================
+   */
+  private playWalk(): void {
+    if (
+      !this.walkAction
+    ) {
+      return
+    }
+
+    /**
+     * Already walking.
+     */
+    if (
+      this.currentAction ===
+      this.walkAction
+    ) {
+      return
+    }
+
+    this.switchAction(
+      this.walkAction,
+    )
+  }
+
+  /**
+   * ========================================================
+   * SWITCH ACTION
+   * ========================================================
+   *
+   * Handles smooth Idle <-> Walk transitions.
+   */
+  private switchAction(
+    nextAction: THREE.AnimationAction,
+  ): void {
+    if (
+      !this.animationMixer
+    ) {
+      return
+    }
+
+    /**
+     * Make sure the new action is configured
+     * correctly.
+     */
+    nextAction.enabled =
+      true
+
+    nextAction.setLoop(
+      THREE.LoopRepeat,
+      Infinity,
+    )
+
+    nextAction.clampWhenFinished =
+      false
+
+    /**
+     * First animation:
+     *
+     * Just start it.
+     */
+    if (
+      !this.currentAction
+    ) {
+      nextAction.reset()
+
+      nextAction.play()
+
+      this.currentAction =
+        nextAction
+
+      return
+    }
+
+    /**
+     * Smoothly transition from the old
+     * animation to the new animation.
+     */
+    nextAction.reset()
+
+    nextAction.play()
+
+    nextAction.crossFadeFrom(
+      this.currentAction,
+      this.transitionDuration,
+      true,
+    )
+
+    this.currentAction =
+      nextAction
+  }
+
+  /**
+   * ========================================================
+   * LOAD ANIMATIONS
+   * ========================================================
+   */
+  private async loadAnimations(): Promise<void> {
+    /**
+     * Find the actual Polyfork skeleton.
+     */
+    const targetMesh =
+      this.findTargetMesh()
+
+    if (!targetMesh) {
+      console.error(
+        'Character: Polyfork SkinnedMesh not found.',
+      )
+
+      return
+    }
+
+    console.log(
+      'Character: Polyfork target mesh:',
+      targetMesh.name,
+    )
+
+    console.log(
+      'Character: Polyfork target bones:',
+      targetMesh.skeleton.bones.length,
+    )
+
+    /**
+     * ====================================================
+     * ANIMATION MIXER
+     * ====================================================
+     *
+     * We use the complete character group as the mixer
+     * root.
+     *
+     * The GLB animations were authored directly for this
+     * Polyfork skeleton.
+     */
+    this.animationMixer =
+      new THREE.AnimationMixer(
+        this.model.group,
+      )
+
+    console.log(
+      'Character: AnimationMixer created on Polyfork group.',
+    )
+
+    /**
+     * Load clean idle.
+     */
+    await this.loadDirectAnimation(
+      this.idleAnimationPath,
+      'Idle',
+      (action) => {
+        this.idleAction =
+          action
+      },
+    )
+
+    /**
+     * Load clean walk.
+     */
+    await this.loadDirectAnimation(
+      this.walkAnimationPath,
+      'Walk',
+      (action) => {
+        this.walkAction =
+          action
+      },
+    )
+
+    /**
+     * Start in idle.
+     */
+    if (
+      this.idleAction
+    ) {
+      this.idleAction.reset()
+
+      this.idleAction.setLoop(
+        THREE.LoopRepeat,
+        Infinity,
+      )
+
+      this.idleAction.play()
+
+      this.currentAction =
+        this.idleAction
+
+      console.log(
+        'Character: Idle started.',
+      )
+    }
+
+    console.log(
+      'Character: animation setup complete.',
+    )
+
+    console.log(
+      'Character: idle loaded:',
+      Boolean(
+        this.idleAction,
+      ),
+    )
+
+    console.log(
+      'Character: walk loaded:',
+      Boolean(
+        this.walkAction,
+      ),
+    )
+  }
+
+  /**
+   * ========================================================
+   * DIRECT GLB ANIMATION LOADER
+   * ========================================================
+   */
+  private async loadDirectAnimation(
+    path: string,
+    expectedName: string,
+    assignAction: (
+      action: THREE.AnimationAction,
+    ) => void,
+  ): Promise<void> {
+    if (
+      !this.animationMixer
+    ) {
+      console.error(
+        `Character: cannot load ${expectedName}; animation mixer missing.`,
+      )
+
+      return
+    }
+
+    const loader =
+      new GLTFLoader()
+
+    console.log(
+      `Character: loading ${expectedName} animation:`,
+      path,
+    )
+
+    try {
+      const gltf =
+        await loader.loadAsync(
+          path,
+        )
+
+      console.log(
+        `Character: ${expectedName} GLB loaded.`,
+      )
+
+      console.log(
+        `Character: ${expectedName} GLB animations:`,
+        gltf.animations.map(
+          (clip) => ({
+            name:
+              clip.name,
+
+            duration:
+              clip.duration,
+
+            tracks:
+              clip.tracks.length,
+          }),
+        ),
+      )
+
+      /**
+       * Find the requested animation.
+       */
+      const clip =
+        gltf.animations.find(
+          (animation) =>
+            animation.name ===
+            expectedName,
+        )
+
+      if (!clip) {
+        console.error(
+          `Character: ${expectedName} animation not found in ${path}.`,
+          gltf.animations.map(
+            (animation) =>
+              animation.name,
+          ),
+        )
+
+        return
+      }
+
+      /**
+       * Create action using the same mixer
+       * and the actual Polyfork character.
+       */
+      const action =
+        this.animationMixer.clipAction(
+          clip,
+        )
+
+      action.setLoop(
+        THREE.LoopRepeat,
+        Infinity,
+      )
+
+      action.clampWhenFinished =
+        false
+
+      /**
+       * Assign to idle/walk property.
+       */
+      assignAction(
+        action,
+      )
+
+      console.log(
+        `Character: ${expectedName} action created successfully.`,
+      )
+    } catch (error) {
+      console.error(
+        `Character: failed to load ${expectedName} animation:`,
+        path,
+        error,
+      )
+    }
+  }
+
+  /**
+   * ========================================================
+   * FIND TARGET MESH
+   * ========================================================
+   */
+  private findTargetMesh():
+    THREE.SkinnedMesh | null {
+    let targetMesh:
+      THREE.SkinnedMesh | null =
+        null
+
+    this.model.group.traverse(
+      (object) => {
+        if (
+          targetMesh
+        ) {
+          return
+        }
+
+        if (
+          object instanceof
+          THREE.SkinnedMesh
+        ) {
+          targetMesh =
+            object
+        }
+      },
+    )
+
+    return targetMesh
   }
 
   /**
    * ========================================================
    * GROUND NORMALIZATION
    * ========================================================
-   *
-   * Ensures:
-   *
-   *     character feet = root
-   *
-   * so the player does not float.
    */
   private normalizeGroundPosition(): void {
-    this.model.group.updateMatrixWorld(true);
+    this.model.group.updateMatrixWorld(
+      true,
+    )
 
-    const bounds = new THREE.Box3().setFromObject(this.model.group);
+    const bounds =
+      new THREE.Box3().setFromObject(
+        this.model.group,
+      )
 
-    if (!Number.isFinite(bounds.min.y)) {
-      console.warn("Character: unable to calculate model ground position.");
+    if (
+      !Number.isFinite(
+        bounds.min.y,
+      )
+    ) {
+      console.warn(
+        'Character: unable to calculate model ground position.',
+      )
 
-      return;
+      return
     }
 
     /**
-     * Move model so its lowest point is at Y = 0.
+     * Move model so lowest point is Y = 0.
      */
-    this.modelGroundOffset = -bounds.min.y;
+    this.modelGroundOffset =
+      -bounds.min.y
 
-    this.model.group.position.y += this.modelGroundOffset;
+    this.model.group.position.y +=
+      this.modelGroundOffset
 
     /**
      * Recalculate bounds.
      */
-    this.model.group.updateMatrixWorld(true);
+    this.model.group.updateMatrixWorld(
+      true,
+    )
 
-    const correctedBounds = new THREE.Box3().setFromObject(this.model.group);
+    const correctedBounds =
+      new THREE.Box3().setFromObject(
+        this.model.group,
+      )
 
-    this.modelHeight = correctedBounds.max.y - correctedBounds.min.y;
+    this.modelHeight =
+      correctedBounds.max.y -
+      correctedBounds.min.y
 
-    console.log("Character: ground normalization:", {
-      originalMinY: bounds.min.y,
+    console.log(
+      'Character: ground normalization:',
+      {
+        originalMinY:
+          bounds.min.y,
 
-      appliedOffset: this.modelGroundOffset,
+        appliedOffset:
+          this.modelGroundOffset,
 
-      correctedMinY: correctedBounds.min.y,
+        correctedMinY:
+          correctedBounds.min.y,
 
-      height: this.modelHeight,
-    });
-  }
-
-  /**
-   * ========================================================
-   * LOAD IDLE ANIMATION
-   * ========================================================
-   */
-  private async loadIdleAnimation(): Promise<void> {
-    const loader = new GLTFLoader();
-
-    try {
-      console.log("Character: loading native idle:", this.idleAnimationPath);
-
-      const gltf = await loader.loadAsync(this.idleAnimationPath);
-
-      console.log(
-        "Character: idle animations:",
-        gltf.animations.map((clip) => ({
-          name: clip.name,
-
-          duration: clip.duration,
-
-          tracks: clip.tracks.length,
-        })),
-      );
-
-      if (gltf.animations.length === 0) {
-        console.error("Character: idle.glb contains no animations.");
-
-        return;
-      }
-
-      /**
-       * Find the Idle clip.
-       */
-      const idleClip = gltf.animations.find((clip) => clip.name === "Idle");
-
-      if (!idleClip) {
-        console.error(
-          "Character: Idle animation not found.",
-          gltf.animations.map((clip) => clip.name),
-        );
-
-        return;
-      }
-
-      console.log("Character: Idle clip found.", {
-        duration: idleClip.duration,
-
-        tracks: idleClip.tracks.length,
-      });
-
-      /**
-       * ====================================================
-       * FIND POLYFORK SKELETAL MESH
-       * ====================================================
-       */
-      let targetMesh: THREE.SkinnedMesh | undefined;
-
-      this.model.group.traverse((object) => {
-        if (object instanceof THREE.SkinnedMesh && !targetMesh) {
-          targetMesh = object;
-        }
-      });
-
-      if (!targetMesh) {
-        console.error("Character: Polyfork SkinnedMesh not found.");
-
-        return;
-      }
-
-      const polyforkMesh = targetMesh;
-
-      console.log("Character: Polyfork target mesh:", polyforkMesh.name);
-
-      console.log(
-        "Character: Polyfork skeleton bones:",
-        polyforkMesh.skeleton.bones.map((bone) => bone.name),
-      );
-
-      /**
-       * ====================================================
-       * CREATE MIXER
-       * ====================================================
-       *
-       * IMPORTANT:
-       *
-       * The mixer is attached directly to the
-       * SkinnedMesh because the animation tracks
-       * target the skeleton's bones.
-       */
-      this.idleMixer = new THREE.AnimationMixer(polyforkMesh);
-
-      /**
-       * Create Idle action.
-       */
-      this.idleAction = this.idleMixer.clipAction(idleClip);
-
-      /**
-       * Loop forever.
-       */
-      this.idleAction.setLoop(THREE.LoopRepeat, Infinity);
-
-      this.idleAction.clampWhenFinished = false;
-
-      /**
-       * Start from beginning.
-       */
-      this.idleAction.reset();
-
-      /**
-       * Play.
-       */
-      this.idleAction.play();
-
-      console.log("Character: Idle animation PLAYING.");
-    } catch (error) {
-      console.error("Character: failed to load idle.glb:", error);
-    }
+        height:
+          this.modelHeight,
+      },
+    )
   }
 
   /**
@@ -377,26 +718,82 @@ export class Character {
    * ========================================================
    */
   private debugModelBounds(): void {
-    this.group.updateMatrixWorld(true);
+    this.group.updateMatrixWorld(
+      true,
+    )
 
-    const bounds = new THREE.Box3().setFromObject(this.group);
+    const bounds =
+      new THREE.Box3().setFromObject(
+        this.group,
+      )
 
-    const size = new THREE.Vector3();
+    const size =
+      new THREE.Vector3()
 
-    bounds.getSize(size);
+    bounds.getSize(
+      size,
+    )
 
-    console.log("========== CHARACTER BOUNDS ==========");
+    console.log(
+      '========== CHARACTER BOUNDS ==========',
+    )
 
-    console.log("SIZE:", size.toArray());
+    console.log(
+      'SIZE:',
+      size.toArray(),
+    )
 
-    console.log("MIN:", bounds.min.toArray());
+    console.log(
+      'MIN:',
+      bounds.min.toArray(),
+    )
 
-    console.log("MAX:", bounds.max.toArray());
+    console.log(
+      'MAX:',
+      bounds.max.toArray(),
+    )
 
-    console.log("HEIGHT:", this.modelHeight);
+    console.log(
+      'HEIGHT:',
+      this.modelHeight,
+    )
 
-    console.log("GROUND OFFSET:", this.modelGroundOffset);
+    console.log(
+      'GROUND OFFSET:',
+      this.modelGroundOffset,
+    )
 
-    console.log("======================================");
+    console.log(
+      '======================================',
+    )
+  }
+
+  /**
+   * ========================================================
+   * DISPOSE
+   * ========================================================
+   */
+  public dispose(): void {
+    if (
+      this.animationMixer
+    ) {
+      this.animationMixer.stopAllAction()
+
+      this.animationMixer =
+        null
+    }
+
+    this.idleAction =
+      null
+
+    this.walkAction =
+      null
+
+    this.currentAction =
+      null
+
+    this.animator.dispose()
+
+    this.model.dispose()
   }
 }
