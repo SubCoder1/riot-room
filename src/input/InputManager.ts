@@ -85,7 +85,8 @@ export class InputManager {
   };
 
   private readonly handleMouseDown = (event: MouseEvent): void => {
-    if (event.button === 0) {
+    // The first click only captures the pointer; it shouldn't also punch.
+    if (event.button === 0 && this.pointerLocked) {
       this.attackQueued = true;
     }
   };

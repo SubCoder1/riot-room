@@ -44,6 +44,11 @@ export class Player {
   public isCrouching = false;
 
   /**
+   * Punch state. Set by Game.ts; slows movement while a punch plays.
+   */
+  public isPunching = false;
+
+  /**
    * ========================================================
    * MOVEMENT SETTINGS
    * ========================================================
@@ -54,6 +59,8 @@ export class Player {
   private readonly sprintSpeed = 8.5;
 
   private readonly crouchSpeed = 2.2;
+
+  private readonly punchSpeedFactor = 0.3;
 
   /**
    * Jump strength.
@@ -183,6 +190,10 @@ export class Player {
 
       if (this.isCrouching) {
         speed = this.crouchSpeed;
+      }
+
+      if (this.isPunching) {
+        speed *= this.punchSpeedFactor;
       }
 
       this.position.x += direction.x * speed * dt;

@@ -18,6 +18,7 @@ export class Game {
   private readonly input: InputManager;
   private readonly player: Player;
   private crouchCancelled = false;
+  private punchTimeLeft = 0;
   private readonly character: Character;
 
   private lastFrameTime: number;
@@ -247,6 +248,8 @@ export class Game {
 
     this.updateCrouchState();
 
+    this.updatePunchState(dt);
+
     this.player.update(dt, this.input);
 
     // ----------------------------------------------------------
@@ -324,6 +327,33 @@ export class Game {
   }
 
   // ============================================================
+  // PUNCH
+  // ============================================================
+  //
+  // Left click throws a punch while standing on the ground. Clicking again
+  // near the end of a punch chains the next one. Movement is slowed while
+  // the punch plays; jumping or crouching cancels it.
+  //
+  // ============================================================
+
+  private updatePunchState(dt: number): void {
+    const attack = this.input.consumeAttack();
+    const canPunch = this.player.isGrounded && !this.player.isCrouching;
+    const duration = this.character.punchDuration;
+
+    if (!canPunch) {
+      this.punchTimeLeft = 0;
+    } else if (attack && this.punchTimeLeft <= duration * 0.35) {
+      this.character.startPunch();
+      this.punchTimeLeft = duration;
+    } else {
+      this.punchTimeLeft = Math.max(0, this.punchTimeLeft - dt);
+    }
+
+    this.player.isPunching = this.punchTimeLeft > 0;
+  }
+
+  // ============================================================
   // CHARACTER MOVEMENT STATE
   // ============================================================
   //
@@ -331,10 +361,11 @@ export class Game {
   //
   // 1. Jump
   // 2. Crouch (hold C), crouch walk forward / backwards
-  // 3. Strafe left
-  // 4. Strafe right
-  // 5. Walk / walk backwards
-  // 6. Idle
+  // 3. Punch
+  // 4. Strafe left
+  // 5. Strafe right
+  // 6. Walk / run / backwards
+  // 7. Idle
   //
   // ============================================================
 
@@ -390,6 +421,16 @@ export class Game {
       }
 
       return "crouch";
+    }
+
+    /**
+     * --------------------------------------------------------
+     * PUNCH
+     * --------------------------------------------------------
+     */
+
+    if (this.punchTimeLeft > 0) {
+      return "punch";
     }
 
     /**

@@ -18,7 +18,8 @@ export type CharacterMovementState =
   | "crouchStrafeLeft"
   | "crouchStrafeRight"
   | "run"
-  | "runBackwards";
+  | "runBackwards"
+  | "punch";
 
 export class Character {
   public readonly group: THREE.Group;
@@ -39,6 +40,8 @@ export class Character {
   private crouchStrafeRightAction: THREE.AnimationAction | null = null;
   private runAction: THREE.AnimationAction | null = null;
   private runBackwardsAction: THREE.AnimationAction | null = null;
+  private punchAction: THREE.AnimationAction | null = null;
+  private punchRequested = false;
 
   private currentAction: THREE.AnimationAction | null = null;
   private jumpAnimationStarted = false;
@@ -75,6 +78,7 @@ export class Character {
   private readonly runAnimationPath = "/assets/animations/run.glb";
   private readonly runBackwardsAnimationPath =
     "/assets/animations/run-backwards.glb";
+  private readonly punchAnimationPath = "/assets/animations/punch.glb";
 
   /**
    * Small cross-fade keeps transitions crisp
@@ -234,6 +238,10 @@ export class Character {
         this.playRunBackwards();
         break;
 
+      case "punch":
+        this.playPunch();
+        break;
+
       case "idle":
       default:
         this.playIdle();
@@ -261,6 +269,7 @@ export class Character {
     this.crouchStrafeRightAction = null;
     this.runAction = null;
     this.runBackwardsAction = null;
+    this.punchAction = null;
 
     this.currentAction = null;
 
@@ -451,6 +460,19 @@ export class Character {
       "RunBackwards",
       (action) => {
         this.runBackwardsAction = action;
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.punchAnimationPath,
+      "Punch",
+      (action) => {
+        this.punchAction = action;
+
+        // One-shot; holds the final (idle-like) pose until the next state takes over.
+        action.setLoop(THREE.LoopOnce, 1);
+
+        action.clampWhenFinished = true;
       },
     );
 
@@ -872,6 +894,39 @@ export class Character {
 
     this.switchAnimation(this.runBackwardsAction);
   }
+
+  public get punchDuration(): number {
+    return this.punchAction?.getClip().duration ?? 0;
+  }
+
+  /**
+   * Queues a punch. The next update in the "punch" state restarts the clip,
+   * so back-to-back punches replay it from the start.
+   */
+  public startPunch(): void {
+    this.punchRequested = true;
+  }
+
+  private playPunch(): void {
+    if (!this.punchAction) {
+      return;
+    }
+
+    if (this.currentAction !== this.punchAction) {
+      this.punchRequested = false;
+
+      this.switchAnimation(this.punchAction);
+
+      return;
+    }
+
+    if (this.punchRequested) {
+      this.punchRequested = false;
+
+      this.punchAction.reset().play();
+    }
+  }
+
   /**
    * ============================================================
    * ANIMATION SWITCH
