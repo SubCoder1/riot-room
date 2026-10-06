@@ -239,6 +239,39 @@ export class ArenaCollision {
     };
   }
 
+  /**
+   * True if the straight line between two points passes through solid scenery
+   * (cover, pillars, platforms, ramps, steps). A line over the top of a low
+   * wall is clear; one through a block is not.
+   */
+  public segmentBlocked(
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+  ): boolean {
+    const length = Math.hypot(bx - ax, by - ay, bz - az);
+    const samples = Math.max(1, Math.ceil(length / 0.1));
+
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const x = ax + (bx - ax) * t;
+      const y = ay + (by - ay) * t;
+      const z = az + (bz - az) * t;
+
+      for (const solid of this.solids) {
+        // A little tolerance so grazing a top edge is not a block.
+        if (this.solidHeight(solid, x, z, 0) > y + 0.02) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   /** Distance from (x, z) to the nearest solid footprint (0 if inside one). */
   public clearanceAt(x: number, z: number): number {
     let nearest = Number.POSITIVE_INFINITY;

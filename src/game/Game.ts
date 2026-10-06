@@ -217,6 +217,11 @@ export class Game {
       this.collision.moveHorizontal(fromX, fromZ, toX - fromX, toZ - fromZ, 0, 0.4);
 
     this.combat.register(this.dummy);
+
+    // Cover, pillars and platforms stop punches.
+    this.combat.lineOfSight = (from, to) =>
+      !this.collision.segmentBlocked(from.x, from.y, from.z, to.x, to.y, to.z);
+
     this.startRound();
     this.combat.events.subscribe(logCombatEvent);
 

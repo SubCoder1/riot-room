@@ -16,6 +16,9 @@ import {
 } from "./CombatConfig";
 import { capsuleContactScore, createCapsule } from "./Shapes";
 
+/** Roughly where a punch starts: chest height above the attacker's feet. */
+const CHEST_HEIGHT = 1.3;
+
 export type AttackPhase = "startup" | "active" | "recovery";
 
 export interface AttackInstance {
@@ -38,6 +41,14 @@ export interface AttackInstance {
 export class CombatSystem {
   public readonly events = new CombatEventBus();
 
+  /**
+   * Optional world check: returns true when nothing solid is between the two
+   * points. A hit only lands if there is a clear line from the attacker's body
+   * to the body part that was struck, so cover stops punches.
+   */
+  public lineOfSight:
+    ((from: THREE.Vector3, to: THREE.Vector3) => boolean) | null = null;
+
   private readonly combatants: Combatant[] = [];
   private readonly attacks: AttackInstance[] = [];
 
@@ -47,6 +58,8 @@ export class CombatSystem {
   private readonly defenderFacing = new THREE.Vector3();
   private readonly defenderPosition = new THREE.Vector3();
   private readonly attackerPosition = new THREE.Vector3();
+  private readonly sightFrom = new THREE.Vector3();
+  private readonly sightTo = new THREE.Vector3();
 
   public register(combatant: Combatant): void {
     this.combatants.push(combatant);
@@ -256,11 +269,32 @@ export class CombatSystem {
         }
       }
 
+      if (struck && !this.hasClearLine(attacker, struck)) {
+        // Cover is in the way: no hit, and the punch can still connect later
+        // in its active window if the line opens up.
+        struck = null;
+      }
+
       if (struck) {
         attack.hitTargets.add(target.id);
         this.resolveHit(attack, target, struck.id, struck.damageMultiplier);
       }
     }
+  }
+
+  /** Clear line from the attacker's chest to the middle of the struck body part. */
+  private hasClearLine(attacker: Combatant, hurtbox: Hurtbox): boolean {
+    if (!this.lineOfSight || !hurtbox.getShape(this.hurtShape)) {
+      return true;
+    }
+
+    attacker.getPosition(this.sightFrom);
+    this.sightFrom.y += CHEST_HEIGHT;
+    this.sightTo
+      .addVectors(this.hurtShape.start, this.hurtShape.end)
+      .multiplyScalar(0.5);
+
+    return this.lineOfSight(this.sightFrom, this.sightTo);
   }
 
   private resolveHit(
