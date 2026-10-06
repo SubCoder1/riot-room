@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { Renderer } from "../rendering/Renderer";
+import { OVERLAY_LAYER, Renderer } from "../rendering/Renderer";
 import { InputManager } from "../input/InputManager";
 import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
@@ -296,6 +296,10 @@ export class Game {
 
     this.character.group.visible = true;
 
+    // In first person the character is drawn again on top of the scene, so the
+    // arms never vanish into a wall or cover you are pressed against.
+    this.character.group.traverse((object) => object.layers.enable(OVERLAY_LAYER));
+
     // ----------------------------------------------------------
     // Initial character position
     // ----------------------------------------------------------
@@ -455,6 +459,7 @@ export class Game {
     // Render
     // ----------------------------------------------------------
 
+    this.renderer.drawOverlayOnTop = !this.isThirdPerson;
     this.renderer.render();
 
     // ----------------------------------------------------------

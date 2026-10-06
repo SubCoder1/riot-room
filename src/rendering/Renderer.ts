@@ -1,6 +1,16 @@
 import * as THREE from "three";
 
+/**
+ * Objects on this layer can be drawn a second time on top of the scene (see
+ * `drawOverlayOnTop`). The first-person character uses it so the arms never
+ * disappear into a wall you are pressed against.
+ */
+export const OVERLAY_LAYER = 1;
+
 export class Renderer {
+  /** When true, the overlay layer is redrawn over everything after the scene. */
+  public drawOverlayOnTop = false;
+
   public readonly scene: THREE.Scene;
   public readonly camera: THREE.PerspectiveCamera;
   public readonly renderer: THREE.WebGLRenderer;
@@ -104,6 +114,22 @@ export class Renderer {
     this.camera.updateMatrixWorld(true);
 
     this.renderer.render(this.scene, this.camera);
+
+    if (this.drawOverlayOnTop) {
+      // Second pass: keep the picture, forget the depth, and draw only the
+      // overlay layer. Whatever is on it then always appears in front of
+      // walls and cover (with its own parts still sorted correctly).
+      const previousMask = this.camera.layers.mask;
+      const previousAutoClear = this.renderer.autoClear;
+
+      this.renderer.autoClear = false;
+      this.renderer.clearDepth();
+      this.camera.layers.set(OVERLAY_LAYER);
+      this.renderer.render(this.scene, this.camera);
+
+      this.camera.layers.mask = previousMask;
+      this.renderer.autoClear = previousAutoClear;
+    }
   }
 
   public dispose(): void {
