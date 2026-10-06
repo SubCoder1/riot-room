@@ -493,8 +493,7 @@ export class Game {
       }
     }
 
-    this.player.isPunching =
-      this.punchTimeLeft > 0 || this.flyLandTimeLeft > 0;
+    this.player.isPunching = this.punchTimeLeft > 0 || this.flyLandTimeLeft > 0;
     this.player.punchSpeedFactor =
       this.flyLandTimeLeft > 0
         ? this.flyPunchLight
@@ -782,7 +781,9 @@ export class Game {
             .copy(this.playerForward)
             .multiplyScalar(this.firstPersonForwardOffset)
             .addScaledVector(this.cameraUp, -this.firstPersonHeadDownOffset)
-            .applyQuaternion(this.cameraHipsQuat.copy(this.cameraHeadQuat).invert())
+            .applyQuaternion(
+              this.cameraHipsQuat.copy(this.cameraHeadQuat).invert(),
+            )
             .clone();
         }
       }

@@ -633,7 +633,6 @@ export class Character {
       (action) => {
         this.flyingPunchAction = action;
 
-
         // One-shot; the extended-arm pose is held until landing.
         action.setLoop(THREE.LoopOnce, 1);
 
@@ -1177,7 +1176,8 @@ export class Character {
     clip: THREE.AnimationClip,
     name: string,
   ): THREE.AnimationAction | null {
-    const upper = /^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm|LeftHand|RightHand)\./;
+    const upper =
+      /^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm|LeftHand|RightHand)\./;
     const tracks = clip.tracks.filter((track) => upper.test(track.name));
     const action = this.animator.createAction(
       new THREE.AnimationClip(name, clip.duration, tracks),
@@ -1306,12 +1306,11 @@ export class Character {
     }
 
     const down = this.aimAirborne ? -25 : -50;
-    const pitch =
-      THREE.MathUtils.clamp(
-        this.aimPitch,
-        THREE.MathUtils.degToRad(down),
-        THREE.MathUtils.degToRad(70),
-      );
+    const pitch = THREE.MathUtils.clamp(
+      this.aimPitch,
+      THREE.MathUtils.degToRad(down),
+      THREE.MathUtils.degToRad(70),
+    );
 
     this.group.updateMatrixWorld(true);
 
@@ -1462,7 +1461,10 @@ export class Character {
 
     if (active && this.flyingPunchRequested) {
       // Make sure the other variant isn't left playing.
-      for (const other of [this.flyingPunchAction, this.flyingPunchLightAction]) {
+      for (const other of [
+        this.flyingPunchAction,
+        this.flyingPunchLightAction,
+      ]) {
         if (other && other !== action) {
           other.stop();
         }
@@ -1498,9 +1500,14 @@ export class Character {
    * Mirrors a clip across the character's sagittal plane: swaps Left/Right
    * bone tracks and flips the rotation axes that mirror.
    */
-  private mirrorClip(clip: THREE.AnimationClip, name: string): THREE.AnimationClip {
+  private mirrorClip(
+    clip: THREE.AnimationClip,
+    name: string,
+  ): THREE.AnimationClip {
     const swapSide = (bone: string): string =>
-      bone.replace(/Left|Right/, (side) => (side === "Left" ? "Right" : "Left"));
+      bone.replace(/Left|Right/, (side) =>
+        side === "Left" ? "Right" : "Left",
+      );
 
     const tracks = clip.tracks.map((track) => {
       const dot = track.name.lastIndexOf(".");
@@ -1520,11 +1527,13 @@ export class Character {
       // Positions are copied as-is: negating X would shift the hips off
       // their rest offset (X is already pinned constant in the source clip).
 
-      return new (track.constructor as new (
-        name: string,
-        times: ArrayLike<number>,
-        values: ArrayLike<number>,
-      ) => THREE.KeyframeTrack)(
+      return new (
+        track.constructor as new (
+          name: string,
+          times: ArrayLike<number>,
+          values: ArrayLike<number>,
+        ) => THREE.KeyframeTrack
+      )(
         (isLeg ? bone : swapSide(bone)) + property,
         Array.from(track.times),
         values,
