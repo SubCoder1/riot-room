@@ -322,6 +322,21 @@ export class Player {
      * ======================================================
      */
 
+    // A jump can carry the feet over a ledge's edge while rising, then drop them
+    // below the point where the ledge could be stood on. Never stay inside it:
+    // slide back out to its side.
+    if (this.world) {
+      const free = this.world.pushOut(
+        this.position.x,
+        this.position.z,
+        this.position.y - this.eyeHeight,
+        PLAYER_RADIUS,
+      );
+
+      this.position.x = free.x;
+      this.position.z = free.z;
+    }
+
     if (!this.world) {
       this.position.x = clamp(
         this.position.x,
