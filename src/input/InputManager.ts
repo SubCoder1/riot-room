@@ -4,6 +4,7 @@ export class InputManager {
   private readonly keys: Set<string>;
   private jumpQueued: boolean;
   private attackQueued: boolean;
+  private readonly mouseButtons = new Set<number>();
   public pointerLocked: boolean;
   private readonly canvas: HTMLCanvasElement;
 
@@ -24,6 +25,8 @@ export class InputManager {
     );
     document.addEventListener("mousemove", this.handleMouseMove);
     this.canvas.addEventListener("mousedown", this.handleMouseDown);
+    window.addEventListener("mouseup", this.handleMouseUp);
+    this.canvas.addEventListener("contextmenu", this.handleContextMenu);
 
     this.canvas.addEventListener("click", () => {
       if (!this.pointerLocked) {
@@ -34,6 +37,11 @@ export class InputManager {
 
   public isPressed(code: string): boolean {
     return this.keys.has(code);
+  }
+
+  /** True while the given mouse button (0 = left, 2 = right) is held. */
+  public isMouseDown(button: number): boolean {
+    return this.mouseButtons.has(button);
   }
 
   public consumeJump(): boolean {
@@ -56,6 +64,8 @@ export class InputManager {
       this.handlePointerLockChange,
     );
     document.removeEventListener("mousemove", this.handleMouseMove);
+    window.removeEventListener("mouseup", this.handleMouseUp);
+    this.canvas.removeEventListener("contextmenu", this.handleContextMenu);
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -73,6 +83,10 @@ export class InputManager {
 
   private readonly handlePointerLockChange = (): void => {
     this.pointerLocked = document.pointerLockElement === this.canvas;
+
+    if (!this.pointerLocked) {
+      this.mouseButtons.clear();
+    }
   };
 
   private readonly handleMouseMove = (event: MouseEvent): void => {
@@ -89,6 +103,19 @@ export class InputManager {
     if (event.button === 0 && this.pointerLocked) {
       this.attackQueued = true;
     }
+
+    if (this.pointerLocked) {
+      this.mouseButtons.add(event.button);
+    }
+  };
+
+  private readonly handleMouseUp = (event: MouseEvent): void => {
+    this.mouseButtons.delete(event.button);
+  };
+
+  // Right click is the block button; don't open the browser context menu.
+  private readonly handleContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
   };
 }
 

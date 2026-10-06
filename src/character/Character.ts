@@ -21,7 +21,8 @@ export type CharacterMovementState =
   | "runBackwards"
   | "punch"
   | "runPunch"
-  | "flyLand";
+  | "flyLand"
+  | "block";
 
 export class Character {
   public readonly group: THREE.Group;
@@ -58,6 +59,12 @@ export class Character {
   /** Upper-body flying punch layered over the jump animation. */
   private flyingPunchAction: THREE.AnimationAction | null = null;
   private flyLandAction: THREE.AnimationAction | null = null;
+  private blockAction: THREE.AnimationAction | null = null;
+  /** Upper-body block layered over walking/strafing (legs keep their cycle). */
+  private blockUpperAction: THREE.AnimationAction | null = null;
+  private blockUpperMix = 0;
+  private hipsRestInGroup: THREE.Quaternion | null = null;
+  private crouchRestBlend = 0;
   private flyingPunchRequested = false;
   private flyingPunchLight = false;
   private flyingPunchLightAction: THREE.AnimationAction | null = null;
@@ -66,6 +73,13 @@ export class Character {
   private aimPitch = 0;
   private aimActive = false;
   private aimAirborne = false;
+  /** Punching on the ground: bend the knees when aiming low (crouched targets). */
+  private lowPunch = false;
+  private lowPunchMix = 0;
+  private lastMovementState: CharacterMovementState = "idle";
+  private crouchPose: Map<string, THREE.Quaternion> | null = null;
+  private crouchHipsPosition: THREE.Vector3 | null = null;
+  private readonly aimSavedPositions = new Map<THREE.Object3D, THREE.Vector3>();
   private aimMix = 0;
   private aimAxisLocal: THREE.Vector3 | null = null;
   private headRestInGroup: THREE.Quaternion | null = null;
@@ -113,6 +127,7 @@ export class Character {
   private readonly punchAnimationPath = "/assets/animations/punch.glb";
   private readonly flyingPunchAnimationPath =
     "/assets/animations/flying-punch.glb";
+  private readonly blockAnimationPath = "/assets/animations/block-idle.glb";
   private readonly flyLandAnimationPath =
     "/assets/animations/flying-punch-land.glb";
   private readonly runPunchAnimationPath = "/assets/animations/run-punch.glb";
@@ -215,6 +230,7 @@ export class Character {
     movementState: CharacterMovementState = "idle",
     upperBodyPunch = false,
     flyingPunch = false,
+    blockOverlay = false,
   ): void {
     /**
      * Undo last frame's aim first. The mixer only rewrites a bone when its
@@ -227,6 +243,12 @@ export class Character {
      * Existing CharacterAnimator.
      */
     this.animator.update(dt);
+
+    this.lastMovementState = movementState;
+
+    this.stabilizeBlockPose(dt);
+
+    this.applyLowPunchCrouch(dt);
 
     this.applyPunchAim(dt);
 
@@ -298,6 +320,10 @@ export class Character {
         this.playFlyLand();
         break;
 
+      case "block":
+        this.playBlock();
+        break;
+
       case "idle":
       default:
         this.playIdle();
@@ -307,6 +333,8 @@ export class Character {
     this.updatePunchOverlay(dt, upperBodyPunch);
 
     this.updateFlyingPunchOverlay(dt, flyingPunch);
+
+    this.updateBlockOverlay(dt, blockOverlay);
   }
 
   /**
@@ -334,6 +362,9 @@ export class Character {
     this.flyingPunchAction = null;
     this.flyingPunchLightAction = null;
     this.flyLandAction = null;
+    this.blockAction = null;
+    this.blockUpperAction = null;
+    this.blockUpperMix = 0;
     this.flyingPunchRequested = false;
     this.flyingPunchMix = 0;
     this.punchUpperRightAction = null;
@@ -665,6 +696,31 @@ export class Character {
         action.setLoop(THREE.LoopOnce, 1);
 
         action.clampWhenFinished = true;
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.blockAnimationPath,
+      "BlockIdle",
+      (action) => {
+        this.blockAction = action;
+
+        // Upper-body copy (no hips or legs) for blocking while moving.
+        const upper = /^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm|LeftHand|RightHand)\./;
+        const clip = action.getClip();
+        this.blockUpperAction = this.animator.createAction(
+          new THREE.AnimationClip(
+            "BlockUpper",
+            clip.duration,
+            clip.tracks.filter((track) => upper.test(track.name)),
+          ),
+        );
+        this.blockUpperAction?.setLoop(THREE.LoopRepeat, Infinity);
+
+        // Held for as long as the block button is down.
+        action.setLoop(THREE.LoopRepeat, Infinity);
+
+        action.clampWhenFinished = false;
       },
     );
 
@@ -1245,16 +1301,217 @@ export class Character {
    * Tells the character where the crosshair points (camera pitch, radians,
    * positive = up) and whether a punch is in progress.
    */
-  public setAim(pitch: number, active: boolean, airborne: boolean): void {
+  public setAim(
+    pitch: number,
+    active: boolean,
+    airborne: boolean,
+    lowPunch = false,
+  ): void {
+    this.lowPunch = lowPunch;
     this.aimPitch = pitch;
     this.aimActive = active;
     this.aimAirborne = airborne;
+  }
+
+  /** Hips orientation (group frame) of the crouch clip's first frame. */
+  private getCrouchHipsRest(hips: THREE.Object3D): THREE.Quaternion | null {
+    const track = this.crouchAction
+      ?.getClip()
+      .tracks.find((candidate) => candidate.name === "Hips.quaternion");
+
+    if (!track || !hips.parent) {
+      return null;
+    }
+
+    this.group.updateMatrixWorld(true);
+
+    return this.group
+      .getWorldQuaternion(new THREE.Quaternion())
+      .invert()
+      .multiply(hips.parent.getWorldQuaternion(new THREE.Quaternion()))
+      .multiply(new THREE.Quaternion().fromArray(track.values, 0));
+  }
+
+  private saveForRestore(bone: THREE.Object3D): void {
+    if (!this.aimSaved.has(bone)) {
+      this.aimSaved.set(bone, bone.quaternion.clone());
+    }
+  }
+
+  /**
+   * While blocking on the move, the walk cycle's hip sway/lean/bob would swing
+   * the guard (and the fists in view). Counter-rotate the spine by however far
+   * the hips have turned from their idle orientation, so the upper body keeps
+   * the steady idle-block posture.
+   */
+  private stabilizeBlockPose(dt: number): void {
+    const hips = this.group.getObjectByName("Hips");
+    const spine = this.group.getObjectByName("Spine");
+
+    if (!hips || !spine) {
+      return;
+    }
+
+    // "Idle" hips orientation is sampled from the real idle pose, not the bind
+    // pose (the idle stance already turns the hips a few degrees, and a
+    // bind-pose reference would shift the guard sideways while moving). It is
+    // only refreshed while not guarding, so a transition can't pollute it.
+    if (this.currentAction === this.idleAction && this.blockUpperMix <= 0) {
+      this.group.updateMatrixWorld(true);
+
+      this.hipsRestInGroup = this.group
+        .getWorldQuaternion(new THREE.Quaternion())
+        .invert()
+        .multiply(hips.getWorldQuaternion(new THREE.Quaternion()));
+    }
+
+    // Crouch <-> stand: ease the reference between the two stances over the
+    // same time as the animation crossfade, so the guard doesn't jump when the
+    // hips drop or rise.
+    const crouchTarget = this.lastMovementState.startsWith("crouch") ? 1 : 0;
+    const step = dt / 0.25;
+    this.crouchRestBlend +=
+      Math.sign(crouchTarget - this.crouchRestBlend) *
+      Math.min(step, Math.abs(crouchTarget - this.crouchRestBlend));
+
+    const crouchRest = this.getCrouchHipsRest(hips);
+
+    if (!this.hipsRestInGroup || this.blockUpperMix <= 0) {
+      return;
+    }
+
+    const rest =
+      crouchRest && this.crouchRestBlend > 0
+        ? this.hipsRestInGroup
+            .clone()
+            .slerp(crouchRest, this.crouchRestBlend * this.crouchRestBlend * (3 - 2 * this.crouchRestBlend))
+        : this.hipsRestInGroup;
+
+    this.group.updateMatrixWorld(true);
+
+    const groupQuat = this.group.getWorldQuaternion(new THREE.Quaternion());
+    const groupInverse = groupQuat.clone().invert();
+    const hipsRel = groupInverse
+      .clone()
+      .multiply(hips.getWorldQuaternion(new THREE.Quaternion()));
+
+    // How far the hips have turned from the reference, in the character's frame.
+    const deviation = hipsRel.multiply(rest.clone().invert());
+
+    const counter = new THREE.Quaternion().slerp(
+      deviation.invert(),
+      this.blockUpperMix,
+    );
+
+    this.saveForRestore(spine);
+
+    const worldCounter = groupQuat.clone().multiply(counter).multiply(groupInverse);
+    const parentQuat = new THREE.Quaternion();
+    const spineWorld = new THREE.Quaternion();
+
+    spine.parent?.getWorldQuaternion(parentQuat);
+    spine.getWorldQuaternion(spineWorld);
+    spine.quaternion.copy(
+      parentQuat.invert().multiply(worldCounter.multiply(spineWorld)),
+    );
+    spine.updateMatrixWorld(true);
+  }
+
+  /**
+   * Aiming a punch steeply downward (at a crouched opponent) bends the knees
+   * and drops the hips, by blending toward the crouch pose, so the fist can
+   * actually reach that low. Stronger when standing than when moving.
+   */
+  private applyLowPunchCrouch(dt: number): void {
+    const clip = this.crouchAction?.getClip();
+
+    if (!clip) {
+      return;
+    }
+
+    if (!this.crouchPose) {
+      this.crouchPose = new Map();
+
+      for (const track of clip.tracks) {
+        if (track.name.endsWith(".quaternion")) {
+          this.crouchPose.set(
+            track.name.split(".")[0],
+            new THREE.Quaternion().fromArray(track.values, 0),
+          );
+        } else if (track.name === "Hips.position") {
+          this.crouchHipsPosition = new THREE.Vector3().fromArray(
+            track.values,
+            0,
+          );
+        }
+      }
+    }
+
+    const rate = this.lowPunch ? 1 / 0.12 : 1 / 0.2;
+    this.lowPunchMix = THREE.MathUtils.clamp(
+      this.lowPunchMix + (this.lowPunch ? 1 : -1) * rate * dt,
+      0,
+      1,
+    );
+
+    // 0 above about -20 degrees, the full crouch stance by about -45 degrees.
+    const t = THREE.MathUtils.clamp((-this.aimPitch - 0.35) / 0.45, 0, 1);
+    const k =
+      this.lowPunchMix *
+      t *
+      t *
+      (3 - 2 * t) *
+      (this.lastMovementState === "punch" ||
+      this.lastMovementState === "runPunch"
+        ? 1
+        : 0.85);
+
+    if (k <= 0.001) {
+      return;
+    }
+
+    for (const name of [
+      "LeftUpLeg",
+      "LeftLeg",
+      "LeftFoot",
+      "RightUpLeg",
+      "RightLeg",
+      "RightFoot",
+    ]) {
+      const bone = this.group.getObjectByName(name);
+      const target = this.crouchPose.get(name);
+
+      if (!bone || !target) {
+        continue;
+      }
+
+      this.saveForRestore(bone);
+      bone.quaternion.slerp(target, k);
+    }
+
+    const hips = this.group.getObjectByName("Hips");
+
+    if (hips && this.crouchHipsPosition) {
+      if (!this.aimSavedPositions.has(hips)) {
+        this.aimSavedPositions.set(hips, hips.position.clone());
+      }
+
+      hips.position.lerp(this.crouchHipsPosition, k);
+    }
+
+    this.group.updateMatrixWorld(true);
   }
 
   private restoreAimBones(): void {
     for (const [bone, quaternion] of this.aimSaved) {
       bone.quaternion.copy(quaternion);
     }
+
+    for (const [bone, position] of this.aimSavedPositions) {
+      bone.position.copy(position);
+    }
+
+    this.aimSavedPositions.clear();
 
     this.aimSaved.clear();
   }
@@ -1305,7 +1562,7 @@ export class Character {
       return;
     }
 
-    const down = this.aimAirborne ? -25 : -50;
+    const down = this.aimAirborne ? -25 : -70;
     const pitch = THREE.MathUtils.clamp(
       this.aimPitch,
       THREE.MathUtils.degToRad(down),
@@ -1367,7 +1624,7 @@ export class Character {
         continue;
       }
 
-      this.aimSaved.set(bone, bone.quaternion.clone());
+      this.saveForRestore(bone);
 
       bone.parent.getWorldQuaternion(parentQuat);
       bone.getWorldQuaternion(worldQuat);
@@ -1420,6 +1677,51 @@ export class Character {
     if (this.flyLandAction) {
       this.flyLandAction.timeScale = light ? 1.7 : 1;
     }
+  }
+
+  /**
+   * Layers the upper-body block over the current locomotion (same weighting
+   * trick as updatePunchOverlay: weight = m / (1 - m) against a base of 1).
+   */
+  private updateBlockOverlay(dt: number, active: boolean): void {
+    const action = this.blockUpperAction;
+
+    if (!action) {
+      return;
+    }
+
+    if (active && this.blockUpperMix === 0) {
+      action.enabled = true;
+      action.reset().play();
+    }
+
+    if (!active && this.blockUpperMix === 0) {
+      return;
+    }
+
+    const rate = active ? 1 / 0.1 : 1 / 0.12;
+    this.blockUpperMix = THREE.MathUtils.clamp(
+      this.blockUpperMix + (active ? 1 : -1) * rate * dt,
+      0,
+      1,
+    );
+
+    if (!active && this.blockUpperMix === 0) {
+      action.stop();
+
+      return;
+    }
+
+    const mix = Math.min(this.blockUpperMix, 0.999);
+    action.setEffectiveWeight(mix / (1 - mix));
+  }
+
+  private playBlock(): void {
+    if (!this.blockAction || this.currentAction === this.blockAction) {
+      return;
+    }
+
+    this.switchAnimation(this.blockAction);
   }
 
   private playFlyLand(): void {

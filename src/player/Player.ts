@@ -39,6 +39,11 @@ export class Player {
   public isSprinting = false;
 
   /**
+   * Set by Game.ts while guarding (block held and not sprinting).
+   */
+  public isBlocking = false;
+
+  /**
    * Crouch state. Set by Game.ts; slows movement and overrides sprint.
    */
   public isCrouching = false;

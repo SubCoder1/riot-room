@@ -272,6 +272,17 @@ export class Game {
 
     this.updateCrouchState();
 
+    // Holding right click guards. Sprinting wins only when it changes the
+    // animation to a run: Shift + W / S while standing. Fast strafing keeps the
+    // guard, and Shift does nothing special while crouched.
+    const sprintRequested =
+      (this.input.isPressed("ShiftLeft") || this.input.isPressed("ShiftRight")) &&
+      (this.input.isPressed("KeyW") || this.input.isPressed("KeyS")) &&
+      !this.player.isCrouching;
+
+    this.player.isBlocking =
+      this.input.isMouseDown(2) && this.player.isGrounded && !sprintRequested;
+
     this.updatePunchState(dt);
 
     this.player.update(dt, this.input);
@@ -294,8 +305,11 @@ export class Game {
       this.player.pitch,
       this.punchTimeLeft > 0 ||
         this.runPunchTimeLeft > 0 ||
-        this.flyPunchActive,
+        this.flyPunchActive ||
+        this.player.isBlocking,
       !this.player.isGrounded,
+      (this.punchTimeLeft > 0 || this.runPunchTimeLeft > 0) &&
+        this.player.isGrounded,
     );
 
     this.character.update(
@@ -305,6 +319,20 @@ export class Game {
         movementState !== "punch" &&
         movementState !== "runPunch",
       this.flyPunchActive,
+      this.player.isBlocking &&
+        this.flyLandTimeLeft <= 0 &&
+        this.punchTimeLeft <= 0 &&
+        this.runPunchTimeLeft <= 0 &&
+        (movementState === "block" ||
+          movementState === "crouch" ||
+          movementState === "crouchWalk" ||
+          movementState === "crouchWalkBackwards" ||
+          movementState === "crouchStrafeLeft" ||
+          movementState === "crouchStrafeRight" ||
+          movementState === "walk" ||
+          movementState === "walkBackwards" ||
+          movementState === "strafeLeft" ||
+          movementState === "strafeRight"),
     );
 
     // ----------------------------------------------------------
@@ -432,7 +460,10 @@ export class Game {
       }
       this.jumpPunchReady = false;
 
-      if (landingClick) {
+      // Clicks are ignored while holding a block (standing still).
+      const blocking = this.player.isBlocking;
+
+      if (landingClick && !blocking) {
         this.punchBufferLeft = this.punchBufferTime;
       }
     }
@@ -579,6 +610,17 @@ export class Game {
      * PUNCH
      * --------------------------------------------------------
      */
+
+    // Idle block: hold right click while standing still.
+    if (
+      this.input.isMouseDown(2) &&
+      this.flyLandTimeLeft <= 0 &&
+      this.punchTimeLeft <= 0 &&
+      this.runPunchTimeLeft <= 0 &&
+      !this.isMovementInputActive()
+    ) {
+      return "block";
+    }
 
     // Heavy landing after a flying punch.
     if (this.flyLandTimeLeft > 0) {
