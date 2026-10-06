@@ -76,7 +76,8 @@ export class InputManager {
       event.code === "F6" ||
       event.code === "F7" ||
       event.code === "F8" ||
-      event.code === "F9"
+      event.code === "F9" ||
+      event.code === "F10"
     ) {
       event.preventDefault();
     }

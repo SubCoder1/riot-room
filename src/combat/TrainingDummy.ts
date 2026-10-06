@@ -48,8 +48,22 @@ export class TrainingDummy implements Combatant {
    */
   public trackPlayer = false;
 
+  /**
+   * Optional arena collision for knockback: given where the dummy was and
+   * where it would end up, returns where it actually can be.
+   */
+  public constrain:
+    | ((
+        fromX: number,
+        fromZ: number,
+        toX: number,
+        toZ: number,
+      ) => { x: number; z: number })
+    | null = null;
+
   private readonly events: CombatEventBus;
   private readonly spawn: THREE.Vector3;
+  private spawnYaw = 0;
   /** Half the arena width: knockback can't push the dummy through walls. */
   private readonly bounds: number;
   private readonly rig: CharacterRig;
@@ -70,7 +84,7 @@ export class TrainingDummy implements Combatant {
 
   constructor(events: CombatEventBus, spawn: THREE.Vector3, bounds: number) {
     this.events = events;
-    this.spawn = spawn;
+    this.spawn = spawn.clone();
     this.bounds = bounds;
     this.position = spawn.clone();
 
@@ -247,7 +261,22 @@ export class TrainingDummy implements Combatant {
       }
     }
 
+    const previousX = this.position.x;
+    const previousZ = this.position.z;
+
     this.position.addScaledVector(this.velocity, dt);
+
+    if (this.constrain) {
+      const allowed = this.constrain(
+        previousX,
+        previousZ,
+        this.position.x,
+        this.position.z,
+      );
+
+      this.position.x = allowed.x;
+      this.position.z = allowed.z;
+    }
     this.velocity.multiplyScalar(Math.exp(-KNOCKBACK_DECAY * dt));
     this.position.x = THREE.MathUtils.clamp(
       this.position.x,
@@ -290,6 +319,13 @@ export class TrainingDummy implements Combatant {
     this.refreshLabel();
   }
 
+  /** A new round: stand at the given spawn point (facing `yaw`) with full health. */
+  public startRound(spawn: THREE.Vector3, yaw: number): void {
+    this.spawn.copy(spawn);
+    this.spawnYaw = yaw;
+    this.respawn();
+  }
+
   private respawn(): void {
     this.position.copy(this.spawn);
     this.velocity.set(0, 0, 0);
@@ -297,7 +333,7 @@ export class TrainingDummy implements Combatant {
     this.dead = false;
     this.fall = 0;
     this.hitstunLeft = 0;
-    this.yaw = 0;
+    this.yaw = this.spawnYaw;
     this.crouched = false;
     this.lookUp = false;
 

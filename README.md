@@ -44,11 +44,12 @@ Open the URL Vite prints, then **click the game canvas** to capture the mouse (p
 
 | Key | Action |
 | --- | --- |
-| `F4` | Show / hide the combat debug view (hitboxes, hurtboxes, guard cone) |
+| `F4` | Show / hide the debug view: combat shapes and guard cone, plus the arena's spawn points (S1-S10) with safety rings, collision boxes, boundary and platform heights |
 | `F6` | Dummy holds / drops its guard |
 | `F7` | Dummy turns to face you (off by default, so you can test side and rear hits) |
 | `F8` | Dummy crouches (a crouched guard also covers the legs) |
 | `F9` | Dummy looks up (its guard aims up too) |
+| `F10` | Start a new round: the player and the dummy are given new random spawn points |
 
 ---
 
@@ -123,9 +124,33 @@ All attack numbers (damage, timing, knockback, reach, blockability) live in [src
 
 ---
 
+## The arena
+
+A graybox **Free-For-All** arena, 40 m x 40 m with 4 m outer walls, built from basic Three.js geometry (no external assets). There are no teams: every fighter is an individual opponent.
+
+| Feature | Details |
+| --- | --- |
+| Open floor | Kept clear in the middle for sprinting, flying punches and knockback |
+| Central platform | 10 x 10 m, 1.8 m high. Ramp on the south side, stairs on the north, open edges east and west |
+| Side platforms | Two 8 x 8 m platforms (west 1.2 m, east 1.5 m), deliberately not mirrored, each with a ramp and stairs |
+| Cover | 0.8 m low walls (can be hopped with a jump) and 1.4 m blocks (must be walked around) |
+| Pillars | 2.2 m cylinders for breaking line of sight and going round the side |
+
+Movement on it: you can walk and sprint up ramps and stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, and jump onto the lowest cover. Walls and solid scenery stop you and let you slide along them. Platforms taller than your jump (about 0.93 m) can only be reached by the ramps and stairs.
+
+### Spawning
+
+There are 10 predefined spawn points (S1 to S10), spread around the arena on open floor, clear of walls, obstacles and platform edges. Each round every fighter is given one **unique** point chosen at random (the list is shuffled each time), preferring points at least 10 m apart and relaxing that when the arena is full. Nothing about a fighter decides where it starts, and a new round avoids repeating the previous assignment. Fighters start facing the centre.
+
+The game currently has one player and the training dummy, so it spawns both. `F10` starts a new round. The dummy still respawns by itself 2.5 s after dying (training behaviour); in a real Last Man Standing round the dead would stay out until the next round.
+
+The layout lives in [src/world/ArenaLayout.ts](src/world/ArenaLayout.ts) (one description used by the meshes, the collision and the spawn system), collision in [src/world/ArenaCollision.ts](src/world/ArenaCollision.ts) and spawn logic in [src/world/SpawnSystem.ts](src/world/SpawnSystem.ts).
+
+---
+
 ## Training dummy
 
-A character with **100 HP** stands at the centre of the arena. It never attacks and has no AI. It takes damage and knockback, plays hit reactions, dies at 0 HP, and **respawns after 2.5 seconds** with full health at its spawn point. A label above it shows its HP and what its guard did with the last hit (for example `BLOCKED`, `BLOCK FAILED: REAR`, `GUARD REDUCED`). The dummy is solid, so you can't walk through it.
+A character with **100 HP** stands on one of the arena's spawn points. It never attacks and has no AI. It takes damage and knockback, plays hit reactions, dies at 0 HP, and **respawns after 2.5 seconds** with full health at its spawn point. A label above it shows its HP and what its guard did with the last hit (for example `BLOCKED`, `BLOCK FAILED: REAR`, `GUARD REDUCED`). The dummy is solid, so you can't walk through it.
 
 Use `F6` to `F9` to put it into different guard states and `F4` to see the shapes.
 
@@ -169,9 +194,10 @@ src/
   character/              Character model, animations, procedural aim/IK layers
   combat/                 Combat system, attack definitions, guard rules, dummy, debug view
   rendering/Renderer.ts   Three.js renderer, scene and camera
-  world/Arena.ts          The arena
+  world/                  Arena layout, meshes, collision, spawn system, debug overlay
 public/assets/            Character model and animation .glb files
 tests/combat/             Automated combat tests (Vitest)
+  tests/world/              Arena layout, collision, player-on-arena and spawn tests
 ```
 
 Combat logic (`CombatSystem`) has no rendering or input code. It talks to fighters through the `Combatant` interface, which keeps it testable and reusable for networked play later.
@@ -184,7 +210,7 @@ Combat logic (`CombatSystem`) has no rendering or input code. It talks to fighte
 npm test
 ```
 
-The suite (Vitest, 104 tests, under a second) covers the real combat code: attack definitions, directional blocking and guard rotation, light and heavy attacks against blocks, hit-once registration, attack timing, damage, health limits, death, respawn, knockback and the full hit pipeline. It deliberately doesn't test animations, camera or input, so those remain manual checks.
+The suite (Vitest, under a second) covers the real combat code and the arena (layout, collision, ramps and stairs with the real `Player`, spawn assignment): attack definitions, directional blocking and guard rotation, light and heavy attacks against blocks, hit-once registration, attack timing, damage, health limits, death, respawn, knockback and the full hit pipeline. It deliberately doesn't test animations, camera or input, so those remain manual checks.
 
 ---
 

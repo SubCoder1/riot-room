@@ -1,6 +1,11 @@
 import * as THREE from "three";
 
 import { InputManager } from "../input/InputManager";
+import {
+  PLAYER_RADIUS,
+  SNAP_DOWN,
+  type ArenaCollision,
+} from "../world/ArenaCollision";
 
 export class Player {
   /**
@@ -79,9 +84,26 @@ export class Player {
   private readonly gravity = 18;
 
   /**
-   * Arena boundary.
+   * Arena boundary, used only when no arena collision is attached.
    */
   private readonly arenaHalfSize = 8.4;
+
+  /**
+   * Arena collision (floor, platforms, ramps, cover, walls). Set by Game.ts.
+   * Without it the player walks on a flat floor inside a small square.
+   */
+  private world: ArenaCollision | null = null;
+
+  public setWorld(world: ArenaCollision): void {
+    this.world = world;
+  }
+
+  /** Puts the player (feet position) somewhere new and stops all movement. */
+  public teleport(x: number, feetY: number, z: number): void {
+    this.position.set(x, feetY + this.eyeHeight, z);
+    this.velocity.set(0, 0, 0);
+    this.grounded = true;
+  }
 
   /**
    * ========================================================
@@ -202,9 +224,23 @@ export class Player {
         speed *= this.punchSpeedFactor;
       }
 
-      this.position.x += direction.x * speed * dt;
+      if (this.world) {
+        const moved = this.world.moveHorizontal(
+          this.position.x,
+          this.position.z,
+          direction.x * speed * dt,
+          direction.z * speed * dt,
+          this.position.y - this.eyeHeight,
+          PLAYER_RADIUS,
+        );
 
-      this.position.z += direction.z * speed * dt;
+        this.position.x = moved.x;
+        this.position.z = moved.z;
+      } else {
+        this.position.x += direction.x * speed * dt;
+
+        this.position.z += direction.z * speed * dt;
+      }
     }
 
     /**
@@ -233,6 +269,9 @@ export class Player {
      * ======================================================
      */
 
+    // Grounded after the jump check: a jump this frame is never snapped back.
+    const wasGrounded = this.grounded;
+
     this.velocity.y -= this.gravity * dt;
 
     this.position.y += this.velocity.y * dt;
@@ -252,8 +291,25 @@ export class Player {
      *
      *     y = eyeHeight
      */
-    if (this.position.y <= this.eyeHeight) {
-      this.position.y = this.eyeHeight;
+    // The surface under the feet: the floor, or a platform / ramp / step that
+    // is no more than a step above them.
+    const feetY = this.position.y - this.eyeHeight;
+    const groundY = this.world
+      ? this.world.groundHeight(this.position.x, this.position.z, feetY)
+      : 0;
+
+    // Walking down a ramp or stairs keeps the feet on the surface (no
+    // flicker into the jump animation); a real drop falls normally.
+    const snapDown =
+      this.world !== null &&
+      wasGrounded &&
+      this.velocity.y <= 0 &&
+      feetY - groundY <= SNAP_DOWN;
+
+    this.grounded = false;
+
+    if (feetY <= groundY || snapDown) {
+      this.position.y = groundY + this.eyeHeight;
 
       this.velocity.y = 0;
 
@@ -266,17 +322,19 @@ export class Player {
      * ======================================================
      */
 
-    this.position.x = clamp(
-      this.position.x,
-      -this.arenaHalfSize,
-      this.arenaHalfSize,
-    );
+    if (!this.world) {
+      this.position.x = clamp(
+        this.position.x,
+        -this.arenaHalfSize,
+        this.arenaHalfSize,
+      );
 
-    this.position.z = clamp(
-      this.position.z,
-      -this.arenaHalfSize,
-      this.arenaHalfSize,
-    );
+      this.position.z = clamp(
+        this.position.z,
+        -this.arenaHalfSize,
+        this.arenaHalfSize,
+      );
+    }
   }
 }
 

@@ -4,6 +4,10 @@ import { Renderer } from "../rendering/Renderer";
 import { InputManager } from "../input/InputManager";
 import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
+import { ArenaCollision } from "../world/ArenaCollision";
+import { ArenaDebug } from "../world/ArenaDebug";
+import { ARENA_HALF, ARENA_LAYOUT } from "../world/ArenaLayout";
+import { assignSpawns } from "../world/SpawnSystem";
 import { Character } from "../character/Character";
 import type { CharacterMovementState } from "../character/Character";
 import { CHARACTER_ASSET_PATH } from "../character/CharacterConfig";
@@ -21,6 +25,8 @@ export class Game {
 
   private readonly renderer: Renderer;
   private readonly arena: Arena;
+  private readonly collision = new ArenaCollision();
+  private readonly arenaDebug = new ArenaDebug(ARENA_LAYOUT);
   private readonly input: InputManager;
   private readonly player: Player;
   private crouchCancelled = false;
@@ -61,6 +67,11 @@ export class Game {
   private readonly combatDebug = new CombatDebug();
   private readonly dummy: TrainingDummy;
   private readonly playerRig: CharacterRig;
+  private readonly playerCombatant: PlayerCombatant;
+
+  /** Last round's spawn assignment (player id -> spawn id), so a new round differs. */
+  private lastSpawns: Record<string, string> | undefined;
+  private previousF10 = false;
 
   /** F4 toggles the combat debug overlay, F6 toggles the dummy's guard. */
   private previousF4 = false;
@@ -169,6 +180,7 @@ export class Game {
     // ----------------------------------------------------------
 
     this.player = new Player();
+    this.player.setWorld(this.collision);
 
     // ----------------------------------------------------------
     // Complete Polyfork character
@@ -182,25 +194,30 @@ export class Game {
 
     this.playerRig = new CharacterRig(this.character.group);
 
-    this.combat.register(
-      new PlayerCombatant(
-        this.playerRig,
-        () => this.player.yaw,
-        () => this.player.isBlocking,
-        () => this.getAimDirection(),
-        () => this.getPlayerFeet(),
-        () => this.player.isCrouching,
-        () => this.player.pitch,
-      ),
+    this.playerCombatant = new PlayerCombatant(
+      this.playerRig,
+      () => this.player.yaw,
+      () => this.player.isBlocking,
+      () => this.getAimDirection(),
+      () => this.getPlayerFeet(),
+      () => this.player.isCrouching,
+      () => this.player.pitch,
     );
+
+    this.combat.register(this.playerCombatant);
 
     this.dummy = new TrainingDummy(
       this.combat.events,
       new THREE.Vector3(0, 0, 4),
-      9.3,
+      ARENA_HALF - 0.6,
     );
 
+    // Knockback can't push the dummy through cover, platforms or walls.
+    this.dummy.constrain = (fromX, fromZ, toX, toZ) =>
+      this.collision.moveHorizontal(fromX, fromZ, toX - fromX, toZ - fromZ, 0, 0.4);
+
     this.combat.register(this.dummy);
+    this.startRound();
     this.combat.events.subscribe(logCombatEvent);
 
     // ----------------------------------------------------------
@@ -234,6 +251,7 @@ export class Game {
     this.renderer.scene.add(this.character.group);
     this.renderer.scene.add(this.dummy.root);
     this.renderer.scene.add(this.combatDebug.group);
+    this.renderer.scene.add(this.arenaDebug.group);
 
     void this.dummy.load();
 
@@ -836,6 +854,7 @@ export class Game {
 
     if (f4 && !this.previousF4) {
       this.combatDebug.toggle();
+      this.arenaDebug.toggle();
     }
 
     if (f6 && !this.previousF6) {
@@ -844,6 +863,15 @@ export class Game {
 
     // F7: make the dummy turn to face you (off = it keeps its facing, so you
     // can attack it from the side and from behind).
+    // F10: start a new round (everyone is re-assigned a random spawn point).
+    const f10 = this.input.isPressed("F10");
+
+    if (f10 && !this.previousF10) {
+      this.startRound();
+    }
+
+    this.previousF10 = f10;
+
     const f7 = this.input.isPressed("F7");
 
     if (f7 && !this.previousF7) {
@@ -970,10 +998,49 @@ export class Game {
     );
   }
 
+  /**
+   * Starts a round: every active fighter (the player and the dummy for now)
+   * is given its own randomly chosen spawn point, full health and a clean
+   * state. Free-for-all: nothing about a fighter decides where it starts.
+   */
+  private startRound(): void {
+    const spawns = assignSpawns(["player", "dummy"], {
+      previous: this.lastSpawns,
+    });
+
+    this.lastSpawns = Object.fromEntries(
+      Object.entries(spawns).map(([id, point]) => [id, point.id]),
+    );
+
+    const own = spawns.player;
+    const foe = spawns.dummy;
+
+    this.combat.cancelAttack("player");
+    this.playerCombatant.health.reset();
+
+    this.player.teleport(own.x, own.y, own.z);
+    this.input.yaw = own.yaw;
+    this.input.pitch = -0.1;
+
+    // The dummy faces the arena centre (its facing convention is the opposite
+    // of the camera's).
+    this.dummy.startRound(
+      new THREE.Vector3(foe.x, foe.y, foe.z),
+      Math.atan2(-foe.x, -foe.z),
+    );
+  }
+
   /** The dummy is solid: the player can't walk through it. */
   private resolveDummyCollision(): void {
     const dummyPosition = this.dummy.getPosition();
     const minimumDistance = 0.55;
+
+    // Standing on a platform above (or below) the dummy is not touching it.
+    const feetY = this.player.position.y - this.player.eyeHeight;
+
+    if (Math.abs(feetY - dummyPosition.y) > 1) {
+      return;
+    }
 
     const dx = this.player.position.x - dummyPosition.x;
     const dz = this.player.position.z - dummyPosition.z;
@@ -993,6 +1060,16 @@ export class Game {
 
     this.player.position.x += dx * push;
     this.player.position.z += dz * push;
+
+    // Being shoved must never put the player inside cover or a wall.
+    const free = this.collision.pushOut(
+      this.player.position.x,
+      this.player.position.z,
+      feetY,
+    );
+
+    this.player.position.x = free.x;
+    this.player.position.z = free.z;
   }
 
   // ============================================================
