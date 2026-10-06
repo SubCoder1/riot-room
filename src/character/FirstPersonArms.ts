@@ -253,7 +253,7 @@ export class FirstPersonArms {
     this.group.visible = true;
   }
 
-  public update(_dt: number): void {
+  public update(): void {
     if (
       !this.sourceSkeleton ||
       !this.viewModelSkeleton ||
