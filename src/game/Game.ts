@@ -494,9 +494,7 @@ export class Game {
     // It holds while airborne (so a sprint jump keeps its build-up) and drops
     // as soon as the sprint stops.
     if (grounded) {
-      this.sprintBuildTime = sprintingForward
-        ? this.sprintBuildTime + dt
-        : 0;
+      this.sprintBuildTime = sprintingForward ? this.sprintBuildTime + dt : 0;
     }
 
     const builtUp = this.sprintBuildTime >= this.heavyBuildUpSeconds;

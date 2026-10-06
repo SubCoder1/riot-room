@@ -103,7 +103,9 @@ export class TrainingDummy implements Combatant {
         break;
 
       case "block-failed":
-        this.note = upper(`block failed: ${event.reason}`) + (event.detail ? ` - ${event.detail}` : "");
+        this.note =
+          upper(`block failed: ${event.reason}`) +
+          (event.detail ? ` - ${event.detail}` : "");
         break;
 
       case "guard-reduced":
@@ -116,7 +118,10 @@ export class TrainingDummy implements Combatant {
 
       case "hit":
         // A hit that follows a failed/ignored block adds its damage to that note.
-        this.note = this.noteTimer > 3.9 ? `${this.note} -${event.damage}` : `HIT -${event.damage}`;
+        this.note =
+          this.noteTimer > 3.9
+            ? `${this.note} -${event.damage}`
+            : `HIT -${event.damage}`;
         break;
 
       default:
@@ -129,7 +134,12 @@ export class TrainingDummy implements Combatant {
   private refreshLabel(): void {
     const status = this.noteTimer > 0 ? this.note : this.statusText();
 
-    this.label.set(this.name.toUpperCase(), this.health.current, this.dead, status);
+    this.label.set(
+      this.name.toUpperCase(),
+      this.health.current,
+      this.dead,
+      status,
+    );
   }
 
   /** Persistent line: which dev toggles are on. */

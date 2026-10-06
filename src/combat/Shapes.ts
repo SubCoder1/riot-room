@@ -104,5 +104,7 @@ export function capsulesOverlap(a: CapsuleShape, b: CapsuleShape): boolean {
 export function capsuleContactScore(a: CapsuleShape, b: CapsuleShape): number {
   const reach = a.radius + b.radius;
 
-  return segmentDistanceSquared(a.start, a.end, b.start, b.end) / (reach * reach);
+  return (
+    segmentDistanceSquared(a.start, a.end, b.start, b.end) / (reach * reach)
+  );
 }

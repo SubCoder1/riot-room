@@ -1360,13 +1360,18 @@ export class Character {
       bend.addScaledVector(toFoot, -bend.dot(toFoot));
 
       if (bend.lengthSq() < 1e-6) {
-        bend.set(0, 0, 1).applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()));
+        bend
+          .set(0, 0, 1)
+          .applyQuaternion(
+            this.group.getWorldQuaternion(new THREE.Quaternion()),
+          );
         bend.addScaledVector(toFoot, -bend.dot(toFoot));
       }
 
       bend.normalize();
 
-      const along = (thigh * thigh - shin * shin + distance * distance) / (2 * distance);
+      const along =
+        (thigh * thigh - shin * shin + distance * distance) / (2 * distance);
       const height = Math.sqrt(Math.max(0, thigh * thigh - along * along));
 
       const newKnee = hip
@@ -1397,10 +1402,7 @@ export class Character {
       // Keep the foot flat the way the animation had it.
       const footNow = foot.getWorldQuaternion(new THREE.Quaternion());
 
-      rotateTo(
-        foot,
-        goal.quaternion.clone().multiply(footNow.invert()),
-      );
+      rotateTo(foot, goal.quaternion.clone().multiply(footNow.invert()));
     });
   }
 
@@ -1712,9 +1714,7 @@ export class Character {
     // person, completely while aiming/punching, and completely in first person
     // so the arms stay in front of the camera.
     if (Math.abs(this.bodyYawOffset) > 1e-3) {
-      const spineShare = this.upperBodyFollowsLook
-        ? 1
-        : 0.45 + 0.55 * m;
+      const spineShare = this.upperBodyFollowsLook ? 1 : 0.45 + 0.55 * m;
 
       const counter: Array<[string, number]> = [
         ["Spine", 0.3 * spineShare],
@@ -1794,7 +1794,9 @@ export class Character {
       const target = groupQuat
         .clone()
         // Face the crosshair, not the direction the body is running.
-        .multiply(new THREE.Quaternion().setFromAxisAngle(up, -this.bodyYawOffset))
+        .multiply(
+          new THREE.Quaternion().setFromAxisAngle(up, -this.bodyYawOffset),
+        )
         .multiply(
           new THREE.Quaternion().setFromAxisAngle(this.aimAxisLocal, headPitch),
         )
@@ -1937,10 +1939,7 @@ export class Character {
    * Raises or lowers the striking arm from the shoulder so the fist ends up on
    * the crosshair line (a touch above it), not at chest height below it.
    */
-  private alignFistToAim(
-    upper: THREE.Object3D,
-    hand: THREE.Object3D,
-  ): void {
+  private alignFistToAim(upper: THREE.Object3D, hand: THREE.Object3D): void {
     const head = this.group.getObjectByName("Head");
 
     if (!head) {
@@ -2021,7 +2020,9 @@ export class Character {
     const rightAxis = this.aimAxisLocal
       ? this.aimAxisLocal
           .clone()
-          .applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()))
+          .applyQuaternion(
+            this.group.getWorldQuaternion(new THREE.Quaternion()),
+          )
       : null;
     const leanWeights: Record<string, number> = {
       Spine: 0.3,
@@ -2060,7 +2061,9 @@ export class Character {
         );
       }
 
-      bone.quaternion.copy(parentQuat.invert().multiply(delta.multiply(worldQuat)));
+      bone.quaternion.copy(
+        parentQuat.invert().multiply(delta.multiply(worldQuat)),
+      );
       bone.updateMatrixWorld(true);
     }
   }

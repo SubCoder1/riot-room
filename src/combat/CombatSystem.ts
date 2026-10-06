@@ -189,8 +189,10 @@ export class CombatSystem {
     );
     const toDegrees = 180 / Math.PI;
     const elevation =
-      Math.atan2(this.attackerPosition.y - this.defenderPosition.y, horizontal) *
-      toDegrees;
+      Math.atan2(
+        this.attackerPosition.y - this.defenderPosition.y,
+        horizontal,
+      ) * toDegrees;
 
     const { low, high } = guardElevationRange(defender.getLookPitch());
 
@@ -198,7 +200,10 @@ export class CombatSystem {
   }
 
   /** Is the defender looking (pitch) toward where the attacker is, up or down? */
-  private guardAimedAtAttacker(attacker: Combatant, defender: Combatant): boolean {
+  private guardAimedAtAttacker(
+    attacker: Combatant,
+    defender: Combatant,
+  ): boolean {
     defender.getPosition(this.defenderPosition);
     attacker.getPosition(this.attackerPosition);
 
@@ -293,7 +298,9 @@ export class CombatSystem {
         // (same checks as a real block) still softens the hit; otherwise the
         // full damage lands.
         if (insideCone && aimedAtAttacker && covered) {
-          hit.damage = Math.round(hit.damage * definition.guardedDamageMultiplier);
+          hit.damage = Math.round(
+            hit.damage * definition.guardedDamageMultiplier,
+          );
 
           this.events.emit({
             type: "guard-reduced",

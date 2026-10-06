@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { ATTACKS, type AttackId } from "../../src/combat/AttackDefinitions";
 import { makeScene, runAttack } from "./helpers";
 
-const ids: AttackId[] = ["light-punch", "heavy-run-punch", "flying-heavy-punch"];
+const ids: AttackId[] = [
+  "light-punch",
+  "heavy-run-punch",
+  "flying-heavy-punch",
+];
 
 describe("Knockback", () => {
   it.each(ids)("%s carries its configured knockback", (id) => {

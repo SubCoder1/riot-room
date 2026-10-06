@@ -1,6 +1,10 @@
 import * as THREE from "three";
 
-import { COMBAT_CONFIG, guardAlignment, guardDotThreshold } from "./CombatConfig";
+import {
+  COMBAT_CONFIG,
+  guardAlignment,
+  guardDotThreshold,
+} from "./CombatConfig";
 import type { CombatSystem } from "./CombatSystem";
 import { createCapsule, type CapsuleShape } from "./Shapes";
 

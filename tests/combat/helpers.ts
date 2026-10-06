@@ -69,7 +69,11 @@ export class TestFighter implements Combatant {
       id,
       damageMultiplier: 1,
       getShape: (out: CapsuleShape) => {
-        out.start.set(this.position.x, this.position.y + PART_HEIGHT[id], this.position.z);
+        out.start.set(
+          this.position.x,
+          this.position.y + PART_HEIGHT[id],
+          this.position.z,
+        );
         out.end.copy(out.start);
         out.radius = 0.2;
         return true;

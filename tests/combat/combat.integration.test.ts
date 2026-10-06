@@ -77,7 +77,11 @@ describe("Combat pipeline", () => {
     const needed = Math.ceil(100 / ATTACKS["light-punch"].damage);
 
     for (let i = 0; i < needed + 3; i++) {
-      scene.system.startAttack("attacker", "light-punch", i % 2 ? "left" : "right");
+      scene.system.startAttack(
+        "attacker",
+        "light-punch",
+        i % 2 ? "left" : "right",
+      );
       step(scene, 0.3);
     }
 
