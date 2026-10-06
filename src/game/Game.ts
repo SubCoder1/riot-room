@@ -19,6 +19,19 @@ export class Game {
   private readonly player: Player;
   private crouchCancelled = false;
   private punchTimeLeft = 0;
+  /** Flying punch: sprint-jump state, one punch per jump, held until landing. */
+  private wasGrounded = true;
+  private jumpPunchReady = false;
+  private flyPunchUsed = false;
+  private flyPunchActive = false;
+  /** Heavy landing recovery after a flying punch; early clicks are ignored. */
+  private flyLandTimeLeft = 0;
+  private readonly flyLandIgnoreClicksTime = 0.35;
+  private flyLandDuration = 0;
+  /** Walking (not sprinting) jump punch: lighter punch and landing. */
+  private flyPunchLight = false;
+  /** Heavy running punch in progress (first click while sprinting forward). */
+  private runPunchTimeLeft = 0;
   /** An early click is remembered this long so fast spamming isn't dropped. */
   private punchBufferLeft = 0;
   private readonly punchBufferTime = 0.2;
@@ -81,6 +94,11 @@ export class Game {
   private readonly playerForward = new THREE.Vector3();
 
   private readonly firstPersonCameraPosition = new THREE.Vector3();
+  private readonly cameraOffsetDirection = new THREE.Vector3();
+  private readonly cameraUp = new THREE.Vector3(0, 1, 0);
+  private readonly cameraHeadQuat = new THREE.Quaternion();
+  private readonly cameraHipsQuat = new THREE.Quaternion();
+  private headLocalEye: THREE.Vector3 | null = null;
 
   private readonly characterFeet = new THREE.Vector3();
 
@@ -272,7 +290,22 @@ export class Game {
 
     const movementState = this.getCharacterMovementState();
 
-    this.character.update(dt, movementState);
+    this.character.setAim(
+      this.player.pitch,
+      this.punchTimeLeft > 0 ||
+        this.runPunchTimeLeft > 0 ||
+        this.flyPunchActive,
+      !this.player.isGrounded,
+    );
+
+    this.character.update(
+      dt,
+      movementState,
+      this.punchTimeLeft > 0 &&
+        movementState !== "punch" &&
+        movementState !== "runPunch",
+      this.flyPunchActive,
+    );
 
     // ----------------------------------------------------------
     // Character world transform
@@ -343,24 +376,114 @@ export class Game {
   // ============================================================
 
   private updatePunchState(dt: number): void {
-    if (this.input.consumeAttack()) {
-      this.punchBufferLeft = this.punchBufferTime;
+    const attackClick = this.input.consumeAttack();
+    const grounded = this.player.isGrounded;
+    const sprintingForward =
+      this.player.isSprinting && this.input.isPressed("KeyW");
+
+    // Sprint-jump -> one flying punch on the first click in the air; every
+    // other click while airborne is ignored.
+    if (this.wasGrounded && !grounded) {
+      // Sprint-jump = heavy; jumping while walking/strafing = light version.
+      this.jumpPunchReady = sprintingForward || this.isMovementInputActive();
+      this.flyPunchLight = !sprintingForward;
+      this.flyPunchUsed = false;
     }
-    const canPunch = this.player.isGrounded && !this.player.isCrouching;
+    this.wasGrounded = grounded;
+
+    this.flyLandTimeLeft = Math.max(0, this.flyLandTimeLeft - dt);
+
+    if (!grounded || this.player.isCrouching) {
+      this.flyLandTimeLeft = 0;
+    }
+
+    let landingClick = attackClick;
+
+    if (this.flyLandTimeLeft > 0 && attackClick) {
+      const elapsed = this.flyLandDuration - this.flyLandTimeLeft;
+      const ignoreFor = this.flyPunchLight
+        ? this.flyLandIgnoreClicksTime * 0.5
+        : this.flyLandIgnoreClicksTime;
+
+      if (elapsed < ignoreFor) {
+        landingClick = false;
+      } else {
+        // Spamming again once the impact has settled breaks out of the landing.
+        this.flyLandTimeLeft = 0;
+      }
+    }
+
+    if (!grounded) {
+      if (attackClick && this.jumpPunchReady && !this.flyPunchUsed) {
+        this.flyPunchUsed = true;
+        this.flyPunchActive = true;
+        this.character.startFlyingPunch(this.flyPunchLight);
+      }
+      this.punchBufferLeft = 0;
+    } else {
+      if (this.flyPunchActive) {
+        // Landed: spamming now continues with the normal combo (left hook first).
+        this.flyPunchActive = false;
+        this.character.setFlyLandLight(this.flyPunchLight);
+        this.flyLandDuration = this.character.flyLandDuration;
+        this.flyLandTimeLeft = this.flyLandDuration;
+        this.comboTimeLeft = this.flyLandDuration + this.comboGraceTime;
+        landingClick = false;
+      }
+      this.jumpPunchReady = false;
+
+      if (landingClick) {
+        this.punchBufferLeft = this.punchBufferTime;
+      }
+    }
+
+    // The heavy running punch always plays out in full: clicks during it are dropped.
+    if (this.runPunchTimeLeft > 0) {
+      this.punchBufferLeft = 0;
+    }
+
+    const canPunch = grounded && !this.player.isCrouching;
     const duration = this.character.punchDuration;
+    const runDuration = this.character.runPunchDuration;
+
+    if (!canPunch || (this.runPunchTimeLeft > 0 && !sprintingForward)) {
+      this.runPunchTimeLeft = 0;
+    }
 
     if (!canPunch) {
       this.punchTimeLeft = 0;
       this.punchBufferLeft = 0;
       this.comboTimeLeft = 0;
-      this.character.resetPunchCombo();
-    } else if (this.punchBufferLeft > 0 && this.punchTimeLeft <= duration * 0.35) {
+      if (!this.flyPunchActive) {
+        this.character.resetPunchCombo();
+      }
+    } else if (
+      this.punchBufferLeft > 0 &&
+      sprintingForward &&
+      runDuration > 0 &&
+      this.punchTimeLeft <= 0 &&
+      this.runPunchTimeLeft <= 0 &&
+      this.comboTimeLeft <= 0
+    ) {
+      // First click of a sprint: one heavy right-hand punch, then keep running.
+      this.character.startRunPunch();
+      this.runPunchTimeLeft = runDuration;
+      this.punchBufferLeft = 0;
+      this.comboTimeLeft = runDuration + this.comboGraceTime;
+    } else if (
+      this.punchBufferLeft > 0 &&
+      this.punchTimeLeft <= duration * 0.35 &&
+      this.runPunchTimeLeft <= 0
+    ) {
+      // Clicks after the heavy punch has finished: normal alternating combo.
       this.character.startPunch();
       this.punchTimeLeft = duration;
+      this.runPunchTimeLeft = 0;
       this.punchBufferLeft = 0;
       this.comboTimeLeft = duration + this.comboGraceTime;
     } else {
       this.punchTimeLeft = Math.max(0, this.punchTimeLeft - dt);
+      this.runPunchTimeLeft = Math.max(0, this.runPunchTimeLeft - dt);
       this.punchBufferLeft = Math.max(0, this.punchBufferLeft - dt);
       if (this.comboTimeLeft > 0) {
         this.comboTimeLeft -= dt;
@@ -370,7 +493,16 @@ export class Game {
       }
     }
 
-    this.player.isPunching = this.punchTimeLeft > 0;
+    this.player.isPunching =
+      this.punchTimeLeft > 0 || this.flyLandTimeLeft > 0;
+    this.player.punchSpeedFactor =
+      this.flyLandTimeLeft > 0
+        ? this.flyPunchLight
+          ? 0.55
+          : 0.2
+        : this.isThirdPerson
+          ? 0.8
+          : 0.3;
   }
 
   // ============================================================
@@ -449,8 +581,24 @@ export class Game {
      * --------------------------------------------------------
      */
 
-    if (this.punchTimeLeft > 0) {
+    // Heavy landing after a flying punch.
+    if (this.flyLandTimeLeft > 0) {
+      return "flyLand";
+    }
+
+    // Standing punches use the full-body clip. In third person, a moving punch
+    // only drives the upper body so the legs keep their locomotion cycle. In
+    // first person the camera rides the head bone, so the steady full-body
+    // clip is kept to avoid walk-bob jitter.
+    if (
+      this.punchTimeLeft > 0 &&
+      (!this.isThirdPerson || !this.isMovementInputActive())
+    ) {
       return "punch";
+    }
+
+    if (this.runPunchTimeLeft > 0) {
+      return "runPunch";
     }
 
     /**
@@ -503,6 +651,15 @@ export class Game {
      */
 
     return "idle";
+  }
+
+  private isMovementInputActive(): boolean {
+    return (
+      this.input.isPressed("KeyW") ||
+      this.input.isPressed("KeyA") ||
+      this.input.isPressed("KeyS") ||
+      this.input.isPressed("KeyD")
+    );
   }
 
   // ============================================================
@@ -590,47 +747,9 @@ export class Game {
   // ============================================================
 
   private updateFirstPersonCamera(): void {
-    /**
-     * Find actual Polyfork Head bone.
-     */
     const head = this.findHeadBone();
 
-    if (head) {
-      /**
-       * Make sure all skeleton transforms
-       * are current before reading the head.
-       */
-      this.character.group.updateMatrixWorld(true);
-
-      /**
-       * Get actual world position
-       * of the Head bone.
-       */
-      head.getWorldPosition(this.headWorldPosition);
-
-      /**
-       * Start camera from head.
-       */
-      this.firstPersonCameraPosition.copy(this.headWorldPosition);
-
-      /**
-       * Move slightly down toward eye line.
-       */
-      this.firstPersonCameraPosition.y -= this.firstPersonHeadDownOffset;
-    } else {
-      /**
-       * Fallback.
-       *
-       * Normally this should not happen because
-       * Polyfork contains a Head bone.
-       */
-      this.firstPersonCameraPosition.copy(this.player.position);
-    }
-
-    // ----------------------------------------------------------
-    // Player forward direction
-    // ----------------------------------------------------------
-
+    // Player forward direction (horizontal).
     this.playerForward.set(
       -Math.sin(this.player.yaw),
 
@@ -641,14 +760,59 @@ export class Game {
 
     this.playerForward.normalize();
 
-    // ----------------------------------------------------------
-    // Move camera slightly forward
-    // ----------------------------------------------------------
+    if (head) {
+      // Make sure all skeleton transforms are current before reading the head.
+      this.character.group.updateMatrixWorld(true);
 
-    this.firstPersonCameraPosition.addScaledVector(
-      this.playerForward,
-      this.firstPersonForwardOffset,
-    );
+      head.getWorldPosition(this.headWorldPosition);
+      head.getWorldQuaternion(this.cameraHeadQuat);
+
+      // Eye point: slightly forward of and below the head bone. It is stored
+      // in the head's own frame, so however the head leans, twists or pitches
+      // during punches, the camera stays in front of the face.
+      if (!this.headLocalEye) {
+        const punching =
+          this.punchTimeLeft > 0 ||
+          this.runPunchTimeLeft > 0 ||
+          this.flyPunchActive;
+
+        // Calibrate once, from a neutral (non-punching) pose.
+        if (!punching) {
+          this.headLocalEye = this.cameraOffsetDirection
+            .copy(this.playerForward)
+            .multiplyScalar(this.firstPersonForwardOffset)
+            .addScaledVector(this.cameraUp, -this.firstPersonHeadDownOffset)
+            .applyQuaternion(this.cameraHipsQuat.copy(this.cameraHeadQuat).invert())
+            .clone();
+        }
+      }
+
+      this.firstPersonCameraPosition.copy(this.headWorldPosition);
+
+      if (this.headLocalEye) {
+        this.firstPersonCameraPosition.add(
+          this.cameraOffsetDirection
+            .copy(this.headLocalEye)
+            .applyQuaternion(this.cameraHeadQuat),
+        );
+      } else {
+        this.firstPersonCameraPosition.y -= this.firstPersonHeadDownOffset;
+        this.firstPersonCameraPosition.addScaledVector(
+          this.playerForward,
+          this.firstPersonForwardOffset,
+        );
+      }
+
+      // Small extra margin while looking up, where the forehead/brow sweeps
+      // closest to the camera.
+      this.firstPersonCameraPosition.addScaledVector(
+        this.playerForward,
+        0.05 * THREE.MathUtils.clamp(this.player.pitch / 1.0, 0, 1),
+      );
+    } else {
+      // Fallback: Polyfork normally always has a Head bone.
+      this.firstPersonCameraPosition.copy(this.player.position);
+    }
 
     // ----------------------------------------------------------
     // Apply camera position

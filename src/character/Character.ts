@@ -19,7 +19,9 @@ export type CharacterMovementState =
   | "crouchStrafeRight"
   | "run"
   | "runBackwards"
-  | "punch";
+  | "punch"
+  | "runPunch"
+  | "flyLand";
 
 export class Character {
   public readonly group: THREE.Group;
@@ -46,6 +48,29 @@ export class Character {
   /** Fraction of the clip's leg / hips rotation kept (lower = feet stay planted). */
   private readonly punchLegMotion = 0.1;
   private readonly punchHipsMotion = 0.6;
+  private runPunchAction: THREE.AnimationAction | null = null;
+  private runPunchRequested = false;
+  /** Upper-body-only punch clips layered over locomotion (legs untouched). */
+  private punchUpperRightAction: THREE.AnimationAction | null = null;
+  private punchUpperLeftAction: THREE.AnimationAction | null = null;
+  private overlayAction: THREE.AnimationAction | null = null;
+  private overlayMix = 0;
+  /** Upper-body flying punch layered over the jump animation. */
+  private flyingPunchAction: THREE.AnimationAction | null = null;
+  private flyLandAction: THREE.AnimationAction | null = null;
+  private flyingPunchRequested = false;
+  private flyingPunchLight = false;
+  private flyingPunchLightAction: THREE.AnimationAction | null = null;
+  private flyingPunchMix = 0;
+  /** Camera pitch the upper body aims at while punching. */
+  private aimPitch = 0;
+  private aimActive = false;
+  private aimAirborne = false;
+  private aimMix = 0;
+  private aimAxisLocal: THREE.Vector3 | null = null;
+  private headRestInGroup: THREE.Quaternion | null = null;
+  private readonly aimSaved = new Map<THREE.Object3D, THREE.Quaternion>();
+  private aimBones: Record<string, THREE.Object3D | null> | null = null;
   private punchLeftAction: THREE.AnimationAction | null = null;
   private pendingPunchAction: THREE.AnimationAction | null = null;
   private nextPunchIsLeft = false;
@@ -86,6 +111,11 @@ export class Character {
   private readonly runBackwardsAnimationPath =
     "/assets/animations/run-backwards.glb";
   private readonly punchAnimationPath = "/assets/animations/punch.glb";
+  private readonly flyingPunchAnimationPath =
+    "/assets/animations/flying-punch.glb";
+  private readonly flyLandAnimationPath =
+    "/assets/animations/flying-punch-land.glb";
+  private readonly runPunchAnimationPath = "/assets/animations/run-punch.glb";
 
   /**
    * Small cross-fade keeps transitions crisp
@@ -183,11 +213,22 @@ export class Character {
   public update(
     dt: number,
     movementState: CharacterMovementState = "idle",
+    upperBodyPunch = false,
+    flyingPunch = false,
   ): void {
+    /**
+     * Undo last frame's aim first. The mixer only rewrites a bone when its
+     * animated value changes, so a static pose (idle, held clips) would
+     * otherwise keep our rotation and stack a new one on top every frame.
+     */
+    this.restoreAimBones();
+
     /**
      * Existing CharacterAnimator.
      */
     this.animator.update(dt);
+
+    this.applyPunchAim(dt);
 
     /**
      * Select animation.
@@ -249,11 +290,23 @@ export class Character {
         this.playPunch();
         break;
 
+      case "runPunch":
+        this.playRunPunch();
+        break;
+
+      case "flyLand":
+        this.playFlyLand();
+        break;
+
       case "idle":
       default:
         this.playIdle();
         break;
     }
+
+    this.updatePunchOverlay(dt, upperBodyPunch);
+
+    this.updateFlyingPunchOverlay(dt, flyingPunch);
   }
 
   /**
@@ -277,6 +330,16 @@ export class Character {
     this.runAction = null;
     this.runBackwardsAction = null;
     this.punchAction = null;
+    this.runPunchAction = null;
+    this.flyingPunchAction = null;
+    this.flyingPunchLightAction = null;
+    this.flyLandAction = null;
+    this.flyingPunchRequested = false;
+    this.flyingPunchMix = 0;
+    this.punchUpperRightAction = null;
+    this.punchUpperLeftAction = null;
+    this.overlayAction = null;
+    this.overlayMix = 0;
     this.punchLeftAction = null;
     this.pendingPunchAction = null;
     this.nextPunchIsLeft = false;
@@ -537,6 +600,72 @@ export class Character {
         if (this.punchLeftAction) {
           this.punchLeftAction.timeScale = this.punchTimeScale;
         }
+
+        this.punchUpperRightAction = this.createUpperBodyAction(
+          action.getClip(),
+          "PunchUpperRight",
+        );
+        if (this.punchLeftAction) {
+          this.punchUpperLeftAction = this.createUpperBodyAction(
+            this.punchLeftAction.getClip(),
+            "PunchUpperLeft",
+          );
+        }
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.runPunchAnimationPath,
+      "RunPunch",
+      (action) => {
+        this.runPunchAction = action;
+
+        // One-shot heavy punch; legs follow one run cycle so it hands back to run.
+        action.setLoop(THREE.LoopOnce, 1);
+
+        action.clampWhenFinished = true;
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.flyingPunchAnimationPath,
+      "FlyingPunch",
+      (action) => {
+        this.flyingPunchAction = action;
+
+
+        // One-shot; the extended-arm pose is held until landing.
+        action.setLoop(THREE.LoopOnce, 1);
+
+        action.clampWhenFinished = true;
+      },
+    );
+
+    // Light variant (walking jump): torso, neck and head follow less of the
+    // lean/twist, and the arm is re-solved for that torso so the fist still
+    // lands on the crosshair.
+    await this.loadDirectAnimation(
+      "/assets/animations/flying-punch-light.glb",
+      "FlyingPunch",
+      (action) => {
+        this.flyingPunchLightAction = action;
+
+        action.setLoop(THREE.LoopOnce, 1);
+
+        action.clampWhenFinished = true;
+      },
+    );
+
+    await this.loadDirectAnimation(
+      this.flyLandAnimationPath,
+      "FlyingPunchLand",
+      (action) => {
+        this.flyLandAction = action;
+
+        // One-shot heavy landing recovery; holds the last (idle) pose.
+        action.setLoop(THREE.LoopOnce, 1);
+
+        action.clampWhenFinished = true;
       },
     );
 
@@ -974,6 +1103,41 @@ export class Character {
     this.nextPunchIsLeft = !this.nextPunchIsLeft;
   }
 
+  public get runPunchDuration(): number {
+    return this.runPunchAction?.getClip().duration ?? 0;
+  }
+
+  /**
+   * Queues the heavy running punch (right hand). The next punch in the combo
+   * is a left hook.
+   */
+  public startRunPunch(): void {
+    this.runPunchRequested = true;
+    this.nextPunchIsLeft = true;
+  }
+
+  private playRunPunch(): void {
+    const action = this.runPunchAction;
+
+    if (!action) {
+      return;
+    }
+
+    if (this.currentAction !== action) {
+      this.runPunchRequested = false;
+
+      this.switchAnimation(action);
+
+      return;
+    }
+
+    if (this.runPunchRequested) {
+      this.runPunchRequested = false;
+
+      action.reset().play();
+    }
+  }
+
   /**
    * Call when the punch spam stops so the next punch starts with the right hand.
    */
@@ -1007,6 +1171,330 @@ export class Character {
   }
 
   /**
+   * Upper-body copy of a punch clip (no hips or legs), looped once and held.
+   */
+  private createUpperBodyAction(
+    clip: THREE.AnimationClip,
+    name: string,
+  ): THREE.AnimationAction | null {
+    const upper = /^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm|LeftHand|RightHand)\./;
+    const tracks = clip.tracks.filter((track) => upper.test(track.name));
+    const action = this.animator.createAction(
+      new THREE.AnimationClip(name, clip.duration, tracks),
+    );
+
+    if (action) {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.timeScale = this.punchTimeScale;
+    }
+
+    return action;
+  }
+
+  /**
+   * Layers the upper-body punch over whatever locomotion is playing. The mixer
+   * blends actions by weight, so the overlay is weighted so its share of the
+   * blend is `overlayMix` (weight = m / (1 - m) against the base weight of 1).
+   */
+  private updatePunchOverlay(dt: number, active: boolean): void {
+    const requested = this.pendingPunchAction;
+
+    if (active && requested) {
+      const next =
+        requested === this.punchLeftAction
+          ? this.punchUpperLeftAction
+          : this.punchUpperRightAction;
+
+      this.pendingPunchAction = null;
+
+      if (next) {
+        if (this.overlayAction && this.overlayAction !== next) {
+          this.overlayAction.stop();
+        }
+
+        this.overlayAction = next;
+        next.enabled = true;
+        next.reset().play();
+      }
+    }
+
+    if (!this.overlayAction) {
+      return;
+    }
+
+    const rate = active ? 1 / 0.06 : 1 / 0.15;
+    this.overlayMix = THREE.MathUtils.clamp(
+      this.overlayMix + (active ? 1 : -1) * rate * dt,
+      0,
+      1,
+    );
+
+    if (!active && this.overlayMix === 0) {
+      this.overlayAction.stop();
+      this.overlayAction = null;
+
+      return;
+    }
+
+    const mix = Math.min(this.overlayMix, 0.999);
+    this.overlayAction.setEffectiveWeight(mix / (1 - mix));
+  }
+
+  /**
+   * Tells the character where the crosshair points (camera pitch, radians,
+   * positive = up) and whether a punch is in progress.
+   */
+  public setAim(pitch: number, active: boolean, airborne: boolean): void {
+    this.aimPitch = pitch;
+    this.aimActive = active;
+    this.aimAirborne = airborne;
+  }
+
+  private restoreAimBones(): void {
+    for (const [bone, quaternion] of this.aimSaved) {
+      bone.quaternion.copy(quaternion);
+    }
+
+    this.aimSaved.clear();
+  }
+
+  /**
+   * Pitches the neck and head toward the crosshair at all times, and the whole
+   * spine too while punching (arms ride the spine), so punches point where the
+   * player looks.
+   * Limits keep the body from folding or bending backwards unnaturally.
+   */
+  private applyPunchAim(dt: number): void {
+    const rate = this.aimActive ? 1 / 0.08 : 1 / 0.15;
+    this.aimMix = THREE.MathUtils.clamp(
+      this.aimMix + (this.aimActive ? 1 : -1) * rate * dt,
+      0,
+      1,
+    );
+
+    // The model loads asynchronously, so keep looking until every bone exists
+    // (caching a failed lookup would disable aiming for good).
+    if (!this.aimBones) {
+      const found: Record<string, THREE.Object3D | null> = {};
+
+      for (const name of [
+        "Spine",
+        "Spine1",
+        "Spine2",
+        "Neck",
+        "Head",
+        "LeftUpLeg",
+        "RightUpLeg",
+      ]) {
+        found[name] = this.group.getObjectByName(name) ?? null;
+      }
+
+      if (Object.values(found).some((bone) => !bone)) {
+        return;
+      }
+
+      this.aimBones = found;
+    }
+
+    const bones = this.aimBones;
+    const left = bones.LeftUpLeg;
+    const right = bones.RightUpLeg;
+
+    if (!left || !right) {
+      return;
+    }
+
+    const down = this.aimAirborne ? -25 : -50;
+    const pitch =
+      THREE.MathUtils.clamp(
+        this.aimPitch,
+        THREE.MathUtils.degToRad(down),
+        THREE.MathUtils.degToRad(70),
+      );
+
+    this.group.updateMatrixWorld(true);
+
+    // Character's right axis: rotating about it by +angle raises the forward
+    // direction (forward = up x right). Measured once from the legs (while the
+    // pose is calm) and kept in the group's frame, so it doesn't wobble with
+    // the walk cycle.
+    if (!this.aimAxisLocal) {
+      const measured = right
+        .getWorldPosition(new THREE.Vector3())
+        .sub(left.getWorldPosition(new THREE.Vector3()));
+      measured.y = 0;
+      measured.normalize();
+
+      const groupQuat = this.group.getWorldQuaternion(new THREE.Quaternion());
+
+      // The hips sway/yaw in the idle stance, which would skew the measured
+      // axis slightly; the character's right is exactly along its local X.
+      const local = measured.applyQuaternion(groupQuat.clone().invert());
+      this.aimAxisLocal = new THREE.Vector3(Math.sign(local.x) || 1, 0, 0);
+
+      this.headRestInGroup = groupQuat
+        .clone()
+        .invert()
+        .multiply(bones.Head!.getWorldQuaternion(new THREE.Quaternion()));
+    }
+
+    const axis = this.aimAxisLocal
+      .clone()
+      .applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()));
+
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    // Neck and head always follow the look direction; the spine (and with it
+    // the arms) joins in while punching.
+    const m = this.aimMix;
+    const weights: Array<[string, number]> = [
+      ["Spine", 0.2 * m],
+      ["Spine1", 0.25 * m],
+      ["Spine2", 0.25 * m],
+      ["Neck", 0.25 * (1 - m) + 0.1 * m],
+      ["Head", 0.5 * (1 - m) + 0.2 * m],
+    ];
+
+    for (const [name, weight] of weights) {
+      const bone = bones[name];
+
+      if (!bone || !bone.parent) {
+        continue;
+      }
+
+      if (weight <= 0) {
+        continue;
+      }
+
+      this.aimSaved.set(bone, bone.quaternion.clone());
+
+      bone.parent.getWorldQuaternion(parentQuat);
+      bone.getWorldQuaternion(worldQuat);
+
+      const delta = new THREE.Quaternion().setFromAxisAngle(
+        axis,
+        pitch * weight,
+      );
+
+      bone.quaternion.copy(
+        parentQuat.invert().multiply(delta.multiply(worldQuat)),
+      );
+      bone.updateMatrixWorld(true);
+    }
+
+    // Outside punches the head faces exactly along the crosshair: the idle
+    // stance turns the torso a few degrees, and that would otherwise make the
+    // raised head look off to one side. Pure pitch on the character's forward.
+    const head = bones.Head;
+
+    if (head && head.parent && this.headRestInGroup && m < 1) {
+      const groupQuat = this.group.getWorldQuaternion(new THREE.Quaternion());
+      const headPitch = pitch * (0.25 + 0.5);
+
+      const target = groupQuat
+        .clone()
+        .multiply(
+          new THREE.Quaternion().setFromAxisAngle(this.aimAxisLocal, headPitch),
+        )
+        .multiply(this.headRestInGroup);
+
+      const current = head.getWorldQuaternion(new THREE.Quaternion());
+      const blended = current.slerp(target, 0.9 * (1 - m));
+
+      head.parent.getWorldQuaternion(parentQuat);
+      head.quaternion.copy(parentQuat.invert().multiply(blended));
+      head.updateMatrixWorld(true);
+    }
+  }
+
+  public get flyLandDuration(): number {
+    return (
+      (this.flyLandAction?.getClip().duration ?? 0) /
+      (this.flyLandAction?.timeScale || 1)
+    );
+  }
+
+  /** Lighter landing (after a walking jump punch) plays faster, so it's shorter. */
+  public setFlyLandLight(light: boolean): void {
+    if (this.flyLandAction) {
+      this.flyLandAction.timeScale = light ? 1.7 : 1;
+    }
+  }
+
+  private playFlyLand(): void {
+    if (!this.flyLandAction) {
+      return;
+    }
+
+    if (this.currentAction !== this.flyLandAction) {
+      this.switchAnimation(this.flyLandAction);
+    }
+  }
+
+  /**
+   * Queues the flying punch (right hand). A left hook follows after landing.
+   */
+  public startFlyingPunch(light = false): void {
+    this.flyingPunchLight = light;
+    if (this.flyingPunchLightAction) {
+      // Walking jump: same punch, a bit quicker with a gentler torso.
+      this.flyingPunchLightAction.timeScale = 1.3;
+    }
+    this.flyingPunchRequested = true;
+    this.nextPunchIsLeft = true;
+  }
+
+  /**
+   * Layers the upper-body flying punch over the jump (same weighting trick as
+   * updatePunchOverlay), then fades out once the player lands.
+   */
+  private updateFlyingPunchOverlay(dt: number, active: boolean): void {
+    const action =
+      this.flyingPunchLight && this.flyingPunchLightAction
+        ? this.flyingPunchLightAction
+        : this.flyingPunchAction;
+
+    if (!action) {
+      return;
+    }
+
+    if (active && this.flyingPunchRequested) {
+      // Make sure the other variant isn't left playing.
+      for (const other of [this.flyingPunchAction, this.flyingPunchLightAction]) {
+        if (other && other !== action) {
+          other.stop();
+        }
+      }
+
+      this.flyingPunchRequested = false;
+      action.enabled = true;
+      action.reset().play();
+    }
+
+    if (!active && this.flyingPunchMix === 0) {
+      return;
+    }
+
+    const rate = active ? 1 / 0.06 : 1 / 0.15;
+    this.flyingPunchMix = THREE.MathUtils.clamp(
+      this.flyingPunchMix + (active ? 1 : -1) * rate * dt,
+      0,
+      1,
+    );
+
+    if (!active && this.flyingPunchMix === 0) {
+      action.stop();
+
+      return;
+    }
+
+    const mix = Math.min(this.flyingPunchMix, 0.999);
+    action.setEffectiveWeight(mix / (1 - mix));
+  }
+
+  /**
    * Mirrors a clip across the character's sagittal plane: swaps Left/Right
    * bone tracks and flips the rotation axes that mirror.
    */
@@ -1019,8 +1507,11 @@ export class Character {
       const bone = track.name.slice(0, dot);
       const property = track.name.slice(dot);
       const values = Array.from(track.values);
+      // Legs stay as authored: swapping/mirroring them would flip the planted
+      // stance on every alternate punch, which reads as stepping.
+      const isLeg = /(UpLeg|Leg|Foot|Toe)/.test(bone);
 
-      if (property === ".quaternion") {
+      if (!isLeg && property === ".quaternion") {
         for (let i = 0; i < values.length; i += 4) {
           values[i + 1] = -values[i + 1];
           values[i + 2] = -values[i + 2];
@@ -1034,7 +1525,7 @@ export class Character {
         times: ArrayLike<number>,
         values: ArrayLike<number>,
       ) => THREE.KeyframeTrack)(
-        swapSide(bone) + property,
+        (isLeg ? bone : swapSide(bone)) + property,
         Array.from(track.times),
         values,
       );
@@ -1050,6 +1541,11 @@ export class Character {
    */
 
   private getTransitionDuration(nextAction: THREE.AnimationAction): number {
+    // The landing impact should hit immediately.
+    if (nextAction === this.flyLandAction) {
+      return 0.08;
+    }
+
     if (this.currentAction === this.jumpAction) {
       return this.landingTransitionDuration;
     }

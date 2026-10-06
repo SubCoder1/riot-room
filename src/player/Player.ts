@@ -60,7 +60,8 @@ export class Player {
 
   private readonly crouchSpeed = 2.2;
 
-  private readonly punchSpeedFactor = 0.3;
+  /** Set by Game.ts: third person keeps the walk cycle, so it slows less. */
+  public punchSpeedFactor = 0.3;
 
   /**
    * Jump strength.
