@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 import { CharacterModel } from "./CharacterModel";
 import { CharacterAnimator } from "./CharacterAnimator";
+import { limitArmReach, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
 
 export type CharacterMovementState =
@@ -266,6 +267,8 @@ export class Character {
     this.applyHitRecoil(dt);
 
     this.applyPunchReach();
+
+    this.limitArmsToWorld();
 
     /**
      * Select animation.
@@ -1885,6 +1888,81 @@ export class Character {
    * 1 = fully extended). Driven by the attack's timing so the arm reaches out
    * as the hitbox becomes active.
    */
+  /**
+   * Optional world check used to keep the arms out of walls: given a line, how
+   * much of it is free of scenery (1 = all). Set by Game.ts from the arena.
+   */
+  public armProbe: ClearFraction | null = null;
+
+  /**
+   * After every other arm adjustment: if an arm (or a punch) would end up
+   * inside cover or a wall, shorten it so the fist stops at the surface.
+   */
+  private limitArmsToWorld(): void {
+    if (!this.armProbe) {
+      return;
+    }
+
+    const probe = this.armProbe;
+
+    for (const side of ["Left", "Right"]) {
+      const upper = this.group.getObjectByName(side + "Arm");
+      const fore = this.group.getObjectByName(side + "ForeArm");
+      const hand = this.group.getObjectByName(side + "Hand");
+
+      if (!upper || !fore || !hand) {
+        continue;
+      }
+
+      this.group.updateMatrixWorld(true);
+
+      const shoulder = upper.getWorldPosition(new THREE.Vector3());
+      const elbow = fore.getWorldPosition(new THREE.Vector3());
+      const wrist = hand.getWorldPosition(new THREE.Vector3());
+      const pose = limitArmReach(shoulder, elbow, wrist, probe);
+
+      if (!pose) {
+        continue;
+      }
+
+      // Swing the upper arm to the new elbow, then the forearm to the new wrist.
+      this.rotateBoneBetween(upper, elbow.sub(shoulder), pose.elbow.clone().sub(shoulder));
+
+      this.group.updateMatrixWorld(true);
+
+      const elbowNow = fore.getWorldPosition(new THREE.Vector3());
+      const wristNow = hand.getWorldPosition(new THREE.Vector3());
+
+      this.rotateBoneBetween(fore, wristNow.sub(elbowNow), pose.wrist.clone().sub(pose.elbow));
+      this.group.updateMatrixWorld(true);
+    }
+  }
+
+  /** Rotates a bone (in world space) so direction `from` becomes direction `to`. */
+  private rotateBoneBetween(
+    bone: THREE.Object3D,
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+  ): void {
+    if (from.lengthSq() < 1e-8 || to.lengthSq() < 1e-8) {
+      return;
+    }
+
+    const delta = new THREE.Quaternion().setFromUnitVectors(
+      from.normalize(),
+      to.normalize(),
+    );
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    this.saveForRestore(bone);
+
+    bone.parent?.getWorldQuaternion(parentQuat);
+    bone.getWorldQuaternion(worldQuat);
+    bone.quaternion.copy(parentQuat.invert().multiply(delta.multiply(worldQuat)));
+    bone.updateMatrixWorld(true);
+  }
+
   public setPunchReach(hand: "left" | "right", amount: number): void {
     this.reachHand = hand;
     this.reachAmount = amount;

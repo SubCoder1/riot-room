@@ -133,7 +133,7 @@ A graybox **Free-For-All** arena, 40 m x 40 m with 4 m outer walls, built from b
 | Open floor | Kept clear in the middle for sprinting, flying punches and knockback |
 | Central platform | 10 x 10 m, 1.8 m high. Ramp on the south side, stairs on the north, open edges east and west |
 | Side platforms | Two 8 x 8 m platforms (west 1.2 m, east 1.5 m), deliberately not mirrored, each with a ramp and stairs |
-| Cover | 0.8 m low walls (can be hopped with a jump) and 1.4 m blocks (must be walked around) |
+| Cover | 0.8 m low walls (can be hopped with a jump) and 2 m blocks (tall enough to hide behind and stop punches; must be walked around) |
 | Pillars | 2.2 m cylinders for breaking line of sight and going round the side |
 
 Movement on it: you can walk and sprint up ramps and stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, and jump onto the lowest cover. Walls and solid scenery stop you and let you slide along them. Platforms taller than your jump (about 0.93 m) can only be reached by the ramps and stairs.

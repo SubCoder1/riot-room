@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { OVERLAY_LAYER, Renderer } from "../rendering/Renderer";
+import { Renderer } from "../rendering/Renderer";
 import { InputManager } from "../input/InputManager";
 import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
@@ -16,6 +16,7 @@ import { CombatDebug } from "../combat/CombatDebug";
 import { logCombatEvent } from "../combat/CombatLog";
 import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
+import { createCapsule, segmentCapsuleEntry } from "../combat/Shapes";
 import { TrainingDummy } from "../combat/TrainingDummy";
 
 export class Game {
@@ -222,6 +223,9 @@ export class Game {
     this.combat.lineOfSight = (from, to) =>
       !this.collision.segmentBlocked(from.x, from.y, from.z, to.x, to.y, to.z);
 
+    // Arms and fists stop at cover and walls instead of sinking into them.
+    this.character.armProbe = (from, to) => this.armClearFraction(from, to);
+
     this.startRound();
     this.combat.events.subscribe(logCombatEvent);
 
@@ -295,10 +299,6 @@ export class Game {
     // ----------------------------------------------------------
 
     this.character.group.visible = true;
-
-    // In first person the character is drawn again on top of the scene, so the
-    // arms never vanish into a wall or cover you are pressed against.
-    this.character.group.traverse((object) => object.layers.enable(OVERLAY_LAYER));
 
     // ----------------------------------------------------------
     // Initial character position
@@ -459,7 +459,6 @@ export class Game {
     // Render
     // ----------------------------------------------------------
 
-    this.renderer.drawOverlayOnTop = !this.isThirdPerson;
     this.renderer.render();
 
     // ----------------------------------------------------------
@@ -1008,6 +1007,44 @@ export class Game {
     );
   }
 
+  private readonly armBodyShape = createCapsule();
+
+  /**
+   * How much of the line from `from` to `to` an arm can travel before it meets
+   * something: cover, walls and platforms, or another fighter's body. Used so
+   * fists stop at contact instead of passing through.
+   */
+  private armClearFraction(from: THREE.Vector3, to: THREE.Vector3): number {
+    let fraction = this.collision.segmentClearFraction(
+      from.x,
+      from.y,
+      from.z,
+      to.x,
+      to.y,
+      to.z,
+    );
+
+    for (const other of this.combat.getCombatants()) {
+      if (other === this.playerCombatant || other.isDead()) {
+        continue;
+      }
+
+      for (const hurtbox of other.getHurtboxes()) {
+        if (!hurtbox.getShape(this.armBodyShape)) {
+          continue;
+        }
+
+        const entry = segmentCapsuleEntry(from, to, this.armBodyShape);
+
+        if (entry !== null) {
+          fraction = Math.min(fraction, entry);
+        }
+      }
+    }
+
+    return fraction;
+  }
+
   /**
    * Starts a round: every active fighter (the player and the dummy for now)
    * is given its own randomly chosen spawn point, full health and a clean
@@ -1148,6 +1185,23 @@ export class Game {
   // CAMERA
   // ============================================================
 
+  /**
+   * The camera never enters a wall, platform or block that is taller than it
+   * is, so you can't see the inside of scenery (or through it).
+   */
+  private keepCameraOutOfScenery(position: THREE.Vector3): void {
+    const free = this.collision.pushOut(
+      position.x,
+      position.z,
+      0,
+      0.15,
+      position.y - 0.05,
+    );
+
+    position.x = free.x;
+    position.z = free.z;
+  }
+
   private updateCamera(): void {
     this.updatePresentation();
 
@@ -1246,6 +1300,7 @@ export class Game {
     // Apply camera position
     // ----------------------------------------------------------
 
+    this.keepCameraOutOfScenery(this.firstPersonCameraPosition);
     this.renderer.camera.position.copy(this.firstPersonCameraPosition);
 
     // ----------------------------------------------------------
@@ -1349,6 +1404,7 @@ export class Game {
     // Apply camera position
     // ----------------------------------------------------------
 
+    this.keepCameraOutOfScenery(this.thirdPersonCameraPosition);
     this.renderer.camera.position.copy(this.thirdPersonCameraPosition);
 
     // ----------------------------------------------------------

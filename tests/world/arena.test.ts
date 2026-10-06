@@ -138,10 +138,16 @@ describe("Arena collision", () => {
   });
 
   it("walking into a wall slides along it instead of sticking", () => {
-    const move = world.moveHorizontal(19.6, 0, 0.1, 0.1, 0);
+    const move = world.moveHorizontal(
+      ARENA_HALF - PLAYER_RADIUS,
+      0,
+      0.1,
+      0.1,
+      0,
+    );
 
     expect(move.z).toBeCloseTo(0.1);
-    expect(move.x).toBeCloseTo(19.6);
+    expect(move.x).toBeCloseTo(ARENA_HALF - PLAYER_RADIUS);
   });
 
   it.each([
@@ -186,7 +192,7 @@ describe("Arena collision", () => {
 
     // At the top of a jump (about 0.93 m) the 0.8 m wall can be crossed...
     expect(world.isBlocked(lx, low.minZ - 0.2, 0.5, PLAYER_RADIUS)).toBe(false);
-    // ...but the 1.4 m block cannot.
+    // ...but the 2 m block cannot.
     expect(world.isBlocked(cx, block.minZ - 0.2, 0.93, PLAYER_RADIUS)).toBe(
       true,
     );

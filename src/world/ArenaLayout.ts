@@ -164,7 +164,7 @@ function spawn(index: number, x: number, z: number): SpawnPoint {
  * Open floor in the middle, a 10 x 10 central platform, two smaller side
  * platforms (different heights, not mirrored), ramps and stairs onto each, and
  * scattered cover. Cover heights are chosen against the player's ~0.93 m jump:
- * 0.8 m can be hopped, 1.4 m and pillars must be walked around.
+ * 0.8 m can be hopped, 2 m blocks and pillars must be walked around.
  */
 export const ARENA_LAYOUT: ArenaLayout = {
   size: ARENA_SIZE,
@@ -217,10 +217,10 @@ export const ARENA_LAYOUT: ArenaLayout = {
   covers: [
     box("cover-low-1", -9, -9, 4, 1, 0.8),
     box("cover-low-2", 6, 11, 1, 4, 0.8),
-    box("cover-block-3", -6, 13, 3, 1, 1.4),
-    box("cover-block-4", 7, -13, 3, 1, 1.4),
-    box("cover-block-5", -12, -14, 1, 3, 1.4),
-    box("cover-block-6", 13, 12, 2, 2, 1.4),
+    box("cover-block-3", -6, 13, 3, 1, 2.0),
+    box("cover-block-4", 7, -13, 3, 1, 2.0),
+    box("cover-block-5", -12, -14, 1, 3, 2.0),
+    box("cover-block-6", 13, 12, 2, 2, 2.0),
   ],
 
   pillars: [

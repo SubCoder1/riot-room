@@ -136,7 +136,7 @@ describe("Player on the arena", () => {
     expect(player.isGrounded).toBe(true);
   });
 
-  it("is stopped by a 1.4 m block and by the central platform from the floor", () => {
+  it("is stopped by a 2 m block and by the central platform from the floor", () => {
     const toBlock = spawnPlayer(-6, 0, 16, NORTH);
 
     toBlock.input.keys.add("KeyW");
@@ -152,7 +152,7 @@ describe("Player on the arena", () => {
     expect(toPlatform.player.position.x).toBeLessThan(-5);
   });
 
-  it("can hop a 0.8 m low wall by jumping, but not a 1.4 m block", () => {
+  it("can hop a 0.8 m low wall by jumping, but not a 2 m block", () => {
     // cover-low-1 is at x -11..-7, z -9.5..-8.5 (0.8 m high). Approach from the south.
     const low = spawnPlayer(-9, 0, -6, NORTH);
 

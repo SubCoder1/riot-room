@@ -108,3 +108,49 @@ export function capsuleContactScore(a: CapsuleShape, b: CapsuleShape): number {
     segmentDistanceSquared(a.start, a.end, b.start, b.end) / (reach * reach)
   );
 }
+
+const probePoint = new THREE.Vector3();
+const probeClosest = new THREE.Vector3();
+const probeAxis = new THREE.Vector3();
+
+/**
+ * Where a straight line from `from` to `to` first enters a capsule: a fraction
+ * from 0 to 1 along the line, or null if it never does. (Sampled, which is
+ * plenty for stopping a fist at a body.)
+ */
+export function segmentCapsuleEntry(
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  capsule: CapsuleShape,
+): number | null {
+  const length = from.distanceTo(to);
+  const samples = Math.max(1, Math.ceil(length / 0.03));
+
+  probeAxis.subVectors(capsule.end, capsule.start);
+
+  const axisLengthSq = probeAxis.lengthSq();
+
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+
+    probePoint.lerpVectors(from, to, t);
+
+    const along =
+      axisLengthSq > 1e-10
+        ? THREE.MathUtils.clamp(
+            probeClosest.subVectors(probePoint, capsule.start).dot(probeAxis) /
+              axisLengthSq,
+            0,
+            1,
+          )
+        : 0;
+
+    probeClosest.copy(capsule.start).addScaledVector(probeAxis, along);
+
+    if (probePoint.distanceTo(probeClosest) <= capsule.radius) {
+      return i === 0 ? 0 : (i - 1) / samples;
+    }
+  }
+
+  return null;
+}

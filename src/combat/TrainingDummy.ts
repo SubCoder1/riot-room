@@ -363,7 +363,8 @@ class HpLabel {
       new THREE.SpriteMaterial({
         map: this.texture,
         transparent: true,
-        depthTest: false,
+        // Walls and cover hide the label like anything else.
+        depthTest: true,
       }),
     );
 

@@ -13,7 +13,12 @@ export const STEP_UP = 0.45;
 /** Walking down stairs or a ramp keeps the feet glued to the surface up to this drop. */
 export const SNAP_DOWN = 0.4;
 
-export const PLAYER_RADIUS = 0.35;
+/**
+ * How close the body's centre may get to scenery. The head/camera reach about
+ * 0.4 m ahead of the centre (more when sprinting and looking down) and a fist
+ * about 0.46 m, so this keeps both outside walls and cover.
+ */
+export const PLAYER_RADIUS = 0.5;
 
 const NO_SURFACE = Number.NEGATIVE_INFINITY;
 
@@ -165,13 +170,14 @@ export class ArenaCollision {
     z: number,
     feetY: number,
     radius = PLAYER_RADIUS,
+    topLimit = feetY + STEP_UP + 1e-6,
   ): { x: number; z: number } {
     let px = x;
     let pz = z;
 
     for (let pass = 0; pass < 4; pass++) {
       for (const solid of this.solids) {
-        if (this.solidHeight(solid, px, pz, radius) <= feetY + STEP_UP + 1e-6) {
+        if (this.solidHeight(solid, px, pz, radius) <= topLimit) {
           continue;
         }
 
@@ -252,6 +258,22 @@ export class ArenaCollision {
     by: number,
     bz: number,
   ): boolean {
+    return this.segmentClearFraction(ax, ay, az, bx, by, bz) < 1;
+  }
+
+  /**
+   * How much of the line from A to B is free before it enters scenery: 1 if
+   * the whole line is clear, otherwise the fraction (0 to 1) up to the first
+   * solid it meets. Used to stop arms and fists at walls.
+   */
+  public segmentClearFraction(
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+  ): number {
     const length = Math.hypot(bx - ax, by - ay, bz - az);
     const samples = Math.max(1, Math.ceil(length / 0.1));
 
@@ -264,12 +286,12 @@ export class ArenaCollision {
       for (const solid of this.solids) {
         // A little tolerance so grazing a top edge is not a block.
         if (this.solidHeight(solid, x, z, 0) > y + 0.02) {
-          return true;
+          return i === 0 ? 0 : (i - 1) / samples;
         }
       }
     }
 
-    return false;
+    return 1;
   }
 
   /** Distance from (x, z) to the nearest solid footprint (0 if inside one). */

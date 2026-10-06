@@ -51,7 +51,7 @@ describe("Line of sight (segmentBlocked)", () => {
   const bx = (block.minX + block.maxX) / 2;
   const lx = (low.minX + low.maxX) / 2;
 
-  it("a line through a 1.4 m block is blocked", () => {
+  it("a line through a 2 m block is blocked", () => {
     expect(
       world.segmentBlocked(bx, 1.3, block.minZ - 1, bx, 1.2, block.maxZ + 1),
     ).toBe(true);
@@ -100,7 +100,7 @@ describe("Line of sight (segmentBlocked)", () => {
 });
 
 describe("Punches and cover", () => {
-  it("a punch cannot hit through a 1.4 m concrete block", () => {
+  it("a punch cannot hit through a 2 m concrete block", () => {
     const scene = sceneWithCover();
 
     placeAcross(scene, "cover-block-3", "z");
