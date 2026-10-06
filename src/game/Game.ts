@@ -203,14 +203,7 @@ export class Game {
       return;
     }
 
-    console.log("Game: player character loaded successfully.");
-
     this.findHeadBone();
-
-    console.log(
-      "Game: embedded animations:",
-      this.character.animator.getClipNames(),
-    );
 
     // ----------------------------------------------------------
     // Character visibility
@@ -229,8 +222,6 @@ export class Game {
     // ----------------------------------------------------------
 
     this.updateCamera();
-
-    console.log("Game: full Polyfork character active.");
   }
 
   // ============================================================
@@ -276,7 +267,8 @@ export class Game {
     // animation to a run: Shift + W / S while standing. Fast strafing keeps the
     // guard, and Shift does nothing special while crouched.
     const sprintRequested =
-      (this.input.isPressed("ShiftLeft") || this.input.isPressed("ShiftRight")) &&
+      (this.input.isPressed("ShiftLeft") ||
+        this.input.isPressed("ShiftRight")) &&
       (this.input.isPressed("KeyW") || this.input.isPressed("KeyS")) &&
       !this.player.isCrouching;
 
@@ -716,11 +708,6 @@ export class Game {
      */
     if (f3Pressed && !this.previousF3) {
       this.isThirdPerson = !this.isThirdPerson;
-
-      console.log(
-        "Game: camera mode:",
-        this.isThirdPerson ? "THIRD PERSON" : "FIRST PERSON",
-      );
     }
 
     this.previousF3 = f3Pressed;

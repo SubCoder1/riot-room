@@ -251,10 +251,6 @@ export class FirstPersonArms {
     this.group.add(this.viewModelRoot);
 
     this.group.visible = true;
-
-    console.log("FirstPersonArms: original Polyfork arm geometry created.");
-
-    console.log("FirstPersonArms: arm bones:", Array.from(ARM_BONE_NAMES));
   }
 
   public update(_dt: number): void {
@@ -364,11 +360,6 @@ export class FirstPersonArms {
 
       return null;
     }
-
-    console.log(
-      "FirstPersonArms: arm bone indices:",
-      Array.from(armBoneIndices),
-    );
 
     /*
      * Determine whether each vertex belongs
@@ -612,16 +603,6 @@ export class FirstPersonArms {
     }
 
     geometry.computeBoundingSphere();
-
-    console.log(
-      "FirstPersonArms: selected arm vertices:",
-      selectedVertices.length,
-    );
-
-    console.log(
-      "FirstPersonArms: selected arm triangles:",
-      keptTriangles.length,
-    );
 
     return geometry;
   }

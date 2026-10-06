@@ -173,13 +173,6 @@ export class Character {
 
     this.model.group.visible = true;
 
-    console.log("Character: Polyfork model loaded.");
-
-    console.log(
-      "Character: embedded animations:",
-      this.model.animations.map((clip) => clip.name),
-    );
-
     await this.loadAnimations();
 
     return true;
@@ -397,13 +390,6 @@ export class Character {
       return;
     }
 
-    console.log("Character: Polyfork target mesh:", targetMesh.name);
-
-    console.log(
-      "Character: Polyfork target bones:",
-      targetMesh.skeleton.bones.length,
-    );
-
     /**
      * All animation GLBs were authored from
      * the same Polyfork skeleton.
@@ -414,9 +400,6 @@ export class Character {
      * NO Rokoko retargeting.
      * NO SkeletonUtils.retargetClip().
      */
-    console.log(
-      "Character: loading direct Polyfork clips through CharacterAnimator.",
-    );
 
     /**
      * --------------------------------------------------------
@@ -706,7 +689,8 @@ export class Character {
         this.blockAction = action;
 
         // Upper-body copy (no hips or legs) for blocking while moving.
-        const upper = /^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm|LeftHand|RightHand)\./;
+        const upper =
+          /^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm|LeftHand|RightHand)\./;
         const clip = action.getClip();
         this.blockUpperAction = this.animator.createAction(
           new THREE.AnimationClip(
@@ -737,44 +721,7 @@ export class Character {
       this.idleAction.play();
 
       this.currentAction = this.idleAction;
-
-      console.log("Character: Idle started.");
     }
-
-    console.log("Character: animation setup complete.");
-
-    console.log("Character: idle loaded:", Boolean(this.idleAction));
-
-    console.log("Character: walk loaded:", Boolean(this.walkAction));
-
-    console.log(
-      "Character: walk-backwards loaded:",
-      Boolean(this.walkBackwardsAction),
-    );
-
-    console.log(
-      "Character: strafe-left loaded:",
-      Boolean(this.strafeLeftAction),
-    );
-
-    console.log(
-      "Character: strafe-right loaded:",
-      Boolean(this.strafeRightAction),
-    );
-
-    console.log("Character: jump loaded:", Boolean(this.jumpAction));
-
-    console.log("Character: crouch loaded:", Boolean(this.crouchAction));
-
-    console.log(
-      "Character: crouch-walk loaded:",
-      Boolean(this.crouchWalkAction),
-    );
-
-    console.log(
-      "Character: crouch-walk-backwards loaded:",
-      Boolean(this.crouchWalkBackwardsAction),
-    );
   }
 
   /**
@@ -790,17 +737,8 @@ export class Character {
   ): Promise<void> {
     const loader = new GLTFLoader();
 
-    console.log(`Character: loading ${expectedName} animation:`, path);
-
     try {
       const gltf = await loader.loadAsync(path);
-
-      console.log(`Character: ${expectedName} GLB loaded.`);
-
-      console.log(
-        `Character: ${expectedName} GLB animations:`,
-        gltf.animations.map((clip) => clip.name),
-      );
 
       if (gltf.animations.length === 0) {
         console.error(`Character: ${expectedName} GLB contains no animation.`);
@@ -815,16 +753,6 @@ export class Character {
       const clip =
         gltf.animations.find((candidate) => candidate.name === expectedName) ??
         gltf.animations[0];
-
-      console.log(`Character: ${expectedName} clip:`, clip.name);
-
-      console.log(`Character: ${expectedName} duration:`, clip.duration);
-
-      console.log(`Character: ${expectedName} tracks:`, clip.tracks.length);
-
-      for (const track of clip.tracks) {
-        console.log(`Character: ${expectedName} track:`, track.name);
-      }
 
       const action = this.animator.createAction(clip);
       if (!action) {
@@ -848,8 +776,6 @@ export class Character {
       action.reset();
 
       assignAction(action);
-
-      console.log(`Character: ${expectedName} action created successfully.`);
     } catch (error) {
       console.error(
         `Character: failed to load ${expectedName} animation:`,
@@ -898,8 +824,6 @@ export class Character {
     this.idleAction.setLoop(THREE.LoopRepeat, Infinity);
 
     this.idleAction.clampWhenFinished = false;
-
-    console.log("Character: switching to Idle.");
 
     this.switchAnimation(this.idleAction);
   }
@@ -1009,8 +933,6 @@ export class Character {
 
     this.jumpAnimationStarted = true;
     this.switchAnimation(this.jumpAction);
-
-    console.log("Character: Jump started.");
   }
 
   /**
@@ -1384,7 +1306,12 @@ export class Character {
       crouchRest && this.crouchRestBlend > 0
         ? this.hipsRestInGroup
             .clone()
-            .slerp(crouchRest, this.crouchRestBlend * this.crouchRestBlend * (3 - 2 * this.crouchRestBlend))
+            .slerp(
+              crouchRest,
+              this.crouchRestBlend *
+                this.crouchRestBlend *
+                (3 - 2 * this.crouchRestBlend),
+            )
         : this.hipsRestInGroup;
 
     this.group.updateMatrixWorld(true);
@@ -1405,7 +1332,10 @@ export class Character {
 
     this.saveForRestore(spine);
 
-    const worldCounter = groupQuat.clone().multiply(counter).multiply(groupInverse);
+    const worldCounter = groupQuat
+      .clone()
+      .multiply(counter)
+      .multiply(groupInverse);
     const parentQuat = new THREE.Quaternion();
     const spineWorld = new THREE.Quaternion();
 

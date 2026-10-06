@@ -98,15 +98,6 @@ export class Renderer {
     this.handleResize = this.handleResize.bind(this);
 
     window.addEventListener("resize", this.handleResize);
-
-    console.log("Renderer: initialized.");
-
-    console.log("Renderer: size:", width, height);
-
-    console.log(
-      "Renderer: camera added to scene:",
-      this.scene.children.includes(this.camera),
-    );
   }
 
   public render(): void {
