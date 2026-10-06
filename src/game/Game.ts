@@ -19,6 +19,12 @@ export class Game {
   private readonly player: Player;
   private crouchCancelled = false;
   private punchTimeLeft = 0;
+  /** An early click is remembered this long so fast spamming isn't dropped. */
+  private punchBufferLeft = 0;
+  private readonly punchBufferTime = 0.2;
+  /** Alternating combo survives this long after a punch ends. */
+  private comboTimeLeft = 0;
+  private readonly comboGraceTime = 0.25;
   private readonly character: Character;
 
   private lastFrameTime: number;
@@ -337,17 +343,31 @@ export class Game {
   // ============================================================
 
   private updatePunchState(dt: number): void {
-    const attack = this.input.consumeAttack();
+    if (this.input.consumeAttack()) {
+      this.punchBufferLeft = this.punchBufferTime;
+    }
     const canPunch = this.player.isGrounded && !this.player.isCrouching;
     const duration = this.character.punchDuration;
 
     if (!canPunch) {
       this.punchTimeLeft = 0;
-    } else if (attack && this.punchTimeLeft <= duration * 0.35) {
+      this.punchBufferLeft = 0;
+      this.comboTimeLeft = 0;
+      this.character.resetPunchCombo();
+    } else if (this.punchBufferLeft > 0 && this.punchTimeLeft <= duration * 0.35) {
       this.character.startPunch();
       this.punchTimeLeft = duration;
+      this.punchBufferLeft = 0;
+      this.comboTimeLeft = duration + this.comboGraceTime;
     } else {
       this.punchTimeLeft = Math.max(0, this.punchTimeLeft - dt);
+      this.punchBufferLeft = Math.max(0, this.punchBufferLeft - dt);
+      if (this.comboTimeLeft > 0) {
+        this.comboTimeLeft -= dt;
+        if (this.comboTimeLeft <= 0) {
+          this.character.resetPunchCombo();
+        }
+      }
     }
 
     this.player.isPunching = this.punchTimeLeft > 0;

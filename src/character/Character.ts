@@ -41,7 +41,14 @@ export class Character {
   private runAction: THREE.AnimationAction | null = null;
   private runBackwardsAction: THREE.AnimationAction | null = null;
   private punchAction: THREE.AnimationAction | null = null;
-  private punchRequested = false;
+  /** Punch playback speed multiplier (higher = snappier). */
+  private readonly punchTimeScale = 1.6;
+  /** Fraction of the clip's leg / hips rotation kept (lower = feet stay planted). */
+  private readonly punchLegMotion = 0.1;
+  private readonly punchHipsMotion = 0.6;
+  private punchLeftAction: THREE.AnimationAction | null = null;
+  private pendingPunchAction: THREE.AnimationAction | null = null;
+  private nextPunchIsLeft = false;
 
   private currentAction: THREE.AnimationAction | null = null;
   private jumpAnimationStarted = false;
@@ -270,6 +277,9 @@ export class Character {
     this.runAction = null;
     this.runBackwardsAction = null;
     this.punchAction = null;
+    this.punchLeftAction = null;
+    this.pendingPunchAction = null;
+    this.nextPunchIsLeft = false;
 
     this.currentAction = null;
 
@@ -473,6 +483,60 @@ export class Character {
         action.setLoop(THREE.LoopOnce, 1);
 
         action.clampWhenFinished = true;
+
+        // Keep the feet planted: legs stay close to the first-frame stance
+        // and the hips twist less, so spamming doesn't look like a treadmill.
+        const q0 = new THREE.Quaternion();
+        const q = new THREE.Quaternion();
+        const out = new THREE.Quaternion();
+        for (const track of action.getClip().tracks) {
+          if (!track.name.endsWith(".quaternion")) {
+            continue;
+          }
+          const bone = track.name.split(".")[0];
+          const keep = /(UpLeg|Leg|Foot|Toe)/.test(bone)
+            ? this.punchLegMotion
+            : bone === "Hips"
+              ? this.punchHipsMotion
+              : 1;
+          if (keep === 1) {
+            continue;
+          }
+          const v = track.values;
+          q0.fromArray(v, 0);
+          for (let i = 4; i < v.length; i += 4) {
+            q.fromArray(v, i);
+            out.slerpQuaternions(q0, q, keep).toArray(v, i);
+          }
+        }
+
+        // Pin hips X/Y translation (forward Z motion is kept).
+        for (const track of action.getClip().tracks) {
+          if (track.name.endsWith(".position")) {
+            const v = track.values;
+            for (let i = 3; i < v.length; i += 3) {
+              // X: no lateral drift. Y: no hips dip, since the legs are
+              // held near-straight and would sink into the floor.
+              v[i] = v[0];
+              v[i + 1] = v[1];
+            }
+          }
+        }
+
+        // No dedicated left-hand clip exists, so mirror the right hook.
+        const leftAction = this.animator.createAction(
+          this.mirrorClip(action.getClip(), "PunchLeft"),
+        );
+        if (leftAction) {
+          leftAction.setLoop(THREE.LoopOnce, 1);
+          leftAction.clampWhenFinished = true;
+          this.punchLeftAction = leftAction;
+        }
+
+        action.timeScale = this.punchTimeScale;
+        if (this.punchLeftAction) {
+          this.punchLeftAction.timeScale = this.punchTimeScale;
+        }
       },
     );
 
@@ -896,35 +960,87 @@ export class Character {
   }
 
   public get punchDuration(): number {
-    return this.punchAction?.getClip().duration ?? 0;
+    return (this.punchAction?.getClip().duration ?? 0) / this.punchTimeScale;
   }
 
   /**
-   * Queues a punch. The next update in the "punch" state restarts the clip,
-   * so back-to-back punches replay it from the start.
+   * Queues a punch, alternating right/left hand. The next update in the
+   * "punch" state plays it from the start.
    */
   public startPunch(): void {
-    this.punchRequested = true;
+    const useLeft = this.nextPunchIsLeft && this.punchLeftAction !== null;
+
+    this.pendingPunchAction = useLeft ? this.punchLeftAction : this.punchAction;
+    this.nextPunchIsLeft = !this.nextPunchIsLeft;
+  }
+
+  /**
+   * Call when the punch spam stops so the next punch starts with the right hand.
+   */
+  public resetPunchCombo(): void {
+    this.nextPunchIsLeft = false;
   }
 
   private playPunch(): void {
-    if (!this.punchAction) {
+    const requested = this.pendingPunchAction;
+    this.pendingPunchAction = null;
+
+    const target =
+      requested ??
+      (this.currentAction === this.punchLeftAction
+        ? this.punchLeftAction
+        : this.punchAction);
+
+    if (!target) {
       return;
     }
 
-    if (this.currentAction !== this.punchAction) {
-      this.punchRequested = false;
-
-      this.switchAnimation(this.punchAction);
+    if (this.currentAction !== target) {
+      this.switchAnimation(target);
 
       return;
     }
 
-    if (this.punchRequested) {
-      this.punchRequested = false;
-
-      this.punchAction.reset().play();
+    if (requested) {
+      target.reset().play();
     }
+  }
+
+  /**
+   * Mirrors a clip across the character's sagittal plane: swaps Left/Right
+   * bone tracks and flips the rotation axes that mirror.
+   */
+  private mirrorClip(clip: THREE.AnimationClip, name: string): THREE.AnimationClip {
+    const swapSide = (bone: string): string =>
+      bone.replace(/Left|Right/, (side) => (side === "Left" ? "Right" : "Left"));
+
+    const tracks = clip.tracks.map((track) => {
+      const dot = track.name.lastIndexOf(".");
+      const bone = track.name.slice(0, dot);
+      const property = track.name.slice(dot);
+      const values = Array.from(track.values);
+
+      if (property === ".quaternion") {
+        for (let i = 0; i < values.length; i += 4) {
+          values[i + 1] = -values[i + 1];
+          values[i + 2] = -values[i + 2];
+        }
+      }
+      // Positions are copied as-is: negating X would shift the hips off
+      // their rest offset (X is already pinned constant in the source clip).
+
+      return new (track.constructor as new (
+        name: string,
+        times: ArrayLike<number>,
+        values: ArrayLike<number>,
+      ) => THREE.KeyframeTrack)(
+        swapSide(bone) + property,
+        Array.from(track.times),
+        values,
+      );
+    });
+
+    return new THREE.AnimationClip(name, clip.duration, tracks);
   }
 
   /**
