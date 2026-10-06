@@ -69,6 +69,12 @@ export class InputManager {
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
+    // F4 / F6 are dev keys (combat debug, dummy guard); keep the browser from
+    // using them for its own shortcuts.
+    if (event.code === "F4" || event.code === "F6" || event.code === "F7" || event.code === "F8" || event.code === "F9") {
+      event.preventDefault();
+    }
+
     const wasHeld = this.keys.has(event.code);
     this.keys.add(event.code);
 

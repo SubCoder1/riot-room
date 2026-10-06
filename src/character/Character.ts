@@ -65,6 +65,17 @@ export class Character {
   private blockUpperMix = 0;
   private hipsRestInGroup: THREE.Quaternion | null = null;
   private crouchRestBlend = 0;
+  /**
+   * The body is turned this many radians (positive = left) away from the look
+   * direction, e.g. 45 degrees while running diagonally. The head (and, while
+   * aiming, the spine) turns back so the character still looks at the crosshair.
+   */
+  private bodyYawOffset = 0;
+  private upperBodyFollowsLook = false;
+  /** 0..1: how much of the extra crouch depth is applied (eases with the stance). */
+  private deepCrouchMix = 0;
+  /** How much lower than the authored crouch the hips sit, in metres. */
+  private readonly extraCrouchDepth = 0.16;
   private flyingPunchRequested = false;
   private flyingPunchLight = false;
   private flyingPunchLightAction: THREE.AnimationAction | null = null;
@@ -85,6 +96,11 @@ export class Character {
   private headRestInGroup: THREE.Quaternion | null = null;
   private readonly aimSaved = new Map<THREE.Object3D, THREE.Quaternion>();
   private aimBones: Record<string, THREE.Object3D | null> | null = null;
+  private lastPunchLeft = false;
+  private reachHand: "left" | "right" = "right";
+  private reachAmount = 0;
+  /** Short recoil layered on the upper body when this character is hit. */
+  private readonly hitRecoil = { strength: 0, time: 0, duration: 0.4 };
   private punchLeftAction: THREE.AnimationAction | null = null;
   private pendingPunchAction: THREE.AnimationAction | null = null;
   private nextPunchIsLeft = false;
@@ -239,11 +255,17 @@ export class Character {
 
     this.lastMovementState = movementState;
 
+    this.applyDeeperCrouch(dt);
+
     this.stabilizeBlockPose(dt);
 
     this.applyLowPunchCrouch(dt);
 
     this.applyPunchAim(dt);
+
+    this.applyHitRecoil(dt);
+
+    this.applyPunchReach();
 
     /**
      * Select animation.
@@ -1073,8 +1095,15 @@ export class Character {
    * Queues a punch, alternating right/left hand. The next update in the
    * "punch" state plays it from the start.
    */
+  /** True if the most recent combo punch was thrown with the left hand. */
+  public get lastPunchWasLeft(): boolean {
+    return this.lastPunchLeft;
+  }
+
   public startPunch(): void {
     const useLeft = this.nextPunchIsLeft && this.punchLeftAction !== null;
+
+    this.lastPunchLeft = useLeft;
 
     this.pendingPunchAction = useLeft ? this.punchLeftAction : this.punchAction;
     this.nextPunchIsLeft = !this.nextPunchIsLeft;
@@ -1219,6 +1248,11 @@ export class Character {
     this.overlayAction.setEffectiveWeight(mix / (1 - mix));
   }
 
+  public setBodyYawOffset(offset: number, upperBodyFollowsLook: boolean): void {
+    this.bodyYawOffset = offset;
+    this.upperBodyFollowsLook = upperBodyFollowsLook;
+  }
+
   /**
    * Tells the character where the crosshair points (camera pitch, radians,
    * positive = up) and whether a punch is in progress.
@@ -1233,6 +1267,141 @@ export class Character {
     this.aimPitch = pitch;
     this.aimActive = active;
     this.aimAirborne = airborne;
+  }
+
+  /**
+   * Sinks the hips a further `extraCrouchDepth` below the authored crouch and
+   * re-solves both legs (two-bone IK) so the feet stay exactly where the
+   * animation put them: a deeper squat without any foot sliding.
+   */
+  private applyDeeperCrouch(dt: number): void {
+    const target = this.lastMovementState.startsWith("crouch") ? 1 : 0;
+    const step = dt / 0.2;
+
+    this.deepCrouchMix +=
+      Math.sign(target - this.deepCrouchMix) *
+      Math.min(step, Math.abs(target - this.deepCrouchMix));
+
+    if (this.deepCrouchMix <= 0.001) {
+      return;
+    }
+
+    const hips = this.group.getObjectByName("Hips");
+
+    if (!hips) {
+      return;
+    }
+
+    const legs = (["Left", "Right"] as const).map((side) => ({
+      upper: this.group.getObjectByName(`${side}UpLeg`),
+      knee: this.group.getObjectByName(`${side}Leg`),
+      foot: this.group.getObjectByName(`${side}Foot`),
+    }));
+
+    if (legs.some((leg) => !leg.upper || !leg.knee || !leg.foot)) {
+      return;
+    }
+
+    this.group.updateMatrixWorld(true);
+
+    // Where the animation wants the feet (position and orientation).
+    const footTargets = legs.map((leg) => ({
+      position: leg.foot!.getWorldPosition(new THREE.Vector3()),
+      quaternion: leg.foot!.getWorldQuaternion(new THREE.Quaternion()),
+      kneePosition: leg.knee!.getWorldPosition(new THREE.Vector3()),
+    }));
+
+    if (!this.aimSavedPositions.has(hips)) {
+      this.aimSavedPositions.set(hips, hips.position.clone());
+    }
+
+    hips.position.y -= this.extraCrouchDepth * this.deepCrouchMix;
+    hips.updateMatrixWorld(true);
+
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    const rotateTo = (bone: THREE.Object3D, delta: THREE.Quaternion): void => {
+      this.saveForRestore(bone);
+
+      bone.parent?.getWorldQuaternion(parentQuat);
+      bone.getWorldQuaternion(worldQuat);
+      bone.quaternion.copy(
+        parentQuat.invert().multiply(delta.clone().multiply(worldQuat)),
+      );
+      bone.updateMatrixWorld(true);
+    };
+
+    legs.forEach((leg, index) => {
+      const upper = leg.upper!;
+      const knee = leg.knee!;
+      const foot = leg.foot!;
+      const goal = footTargets[index];
+
+      const hip = upper.getWorldPosition(new THREE.Vector3());
+      const kneePos = knee.getWorldPosition(new THREE.Vector3());
+      const anklePos = foot.getWorldPosition(new THREE.Vector3());
+
+      const thigh = kneePos.distanceTo(hip);
+      const shin = anklePos.distanceTo(kneePos);
+
+      const toFoot = goal.position.clone().sub(hip);
+      const distance = THREE.MathUtils.clamp(
+        toFoot.length(),
+        Math.abs(thigh - shin) + 0.01,
+        thigh + shin - 0.005,
+      );
+
+      toFoot.normalize();
+
+      // The knee keeps bending the way the animation bent it.
+      const bend = goal.kneePosition.clone().sub(hip);
+
+      bend.addScaledVector(toFoot, -bend.dot(toFoot));
+
+      if (bend.lengthSq() < 1e-6) {
+        bend.set(0, 0, 1).applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()));
+        bend.addScaledVector(toFoot, -bend.dot(toFoot));
+      }
+
+      bend.normalize();
+
+      const along = (thigh * thigh - shin * shin + distance * distance) / (2 * distance);
+      const height = Math.sqrt(Math.max(0, thigh * thigh - along * along));
+
+      const newKnee = hip
+        .clone()
+        .addScaledVector(toFoot, along)
+        .addScaledVector(bend, height);
+      const newAnkle = hip.clone().addScaledVector(toFoot, distance);
+
+      rotateTo(
+        upper,
+        new THREE.Quaternion().setFromUnitVectors(
+          kneePos.clone().sub(hip).normalize(),
+          newKnee.clone().sub(hip).normalize(),
+        ),
+      );
+
+      const kneeNow = knee.getWorldPosition(new THREE.Vector3());
+      const ankleNow = foot.getWorldPosition(new THREE.Vector3());
+
+      rotateTo(
+        knee,
+        new THREE.Quaternion().setFromUnitVectors(
+          ankleNow.clone().sub(kneeNow).normalize(),
+          newAnkle.clone().sub(newKnee).normalize(),
+        ),
+      );
+
+      // Keep the foot flat the way the animation had it.
+      const footNow = foot.getWorldQuaternion(new THREE.Quaternion());
+
+      rotateTo(
+        foot,
+        goal.quaternion.clone().multiply(footNow.invert()),
+      );
+    });
   }
 
   /** Hips orientation (group frame) of the crouch clip's first frame. */
@@ -1525,9 +1694,11 @@ export class Character {
         .multiply(bones.Head!.getWorldQuaternion(new THREE.Quaternion()));
     }
 
+    const up = new THREE.Vector3(0, 1, 0);
     const axis = this.aimAxisLocal
       .clone()
-      .applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()));
+      .applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()))
+      .applyAxisAngle(up, -this.bodyYawOffset);
 
     const parentQuat = new THREE.Quaternion();
     const worldQuat = new THREE.Quaternion();
@@ -1535,6 +1706,47 @@ export class Character {
     // Neck and head always follow the look direction; the spine (and with it
     // the arms) joins in while punching.
     const m = this.aimMix;
+
+    // Running diagonally turns the body toward the direction of travel. Turn
+    // the upper body (and neck) back toward the crosshair: a little in third
+    // person, completely while aiming/punching, and completely in first person
+    // so the arms stay in front of the camera.
+    if (Math.abs(this.bodyYawOffset) > 1e-3) {
+      const spineShare = this.upperBodyFollowsLook
+        ? 1
+        : 0.45 + 0.55 * m;
+
+      const counter: Array<[string, number]> = [
+        ["Spine", 0.3 * spineShare],
+        ["Spine1", 0.35 * spineShare],
+        ["Spine2", 0.35 * spineShare],
+        ["Neck", 0.4 * (1 - spineShare)],
+      ];
+
+      for (const [name, share] of counter) {
+        const bone = bones[name];
+
+        if (!bone || !bone.parent || share <= 0) {
+          continue;
+        }
+
+        this.saveForRestore(bone);
+
+        bone.parent.getWorldQuaternion(parentQuat);
+        bone.getWorldQuaternion(worldQuat);
+
+        bone.quaternion.copy(
+          parentQuat
+            .invert()
+            .multiply(
+              new THREE.Quaternion()
+                .setFromAxisAngle(up, -this.bodyYawOffset * share)
+                .multiply(worldQuat),
+            ),
+        );
+        bone.updateMatrixWorld(true);
+      }
+    }
     const weights: Array<[string, number]> = [
       ["Spine", 0.2 * m],
       ["Spine1", 0.25 * m],
@@ -1581,6 +1793,8 @@ export class Character {
 
       const target = groupQuat
         .clone()
+        // Face the crosshair, not the direction the body is running.
+        .multiply(new THREE.Quaternion().setFromAxisAngle(up, -this.bodyYawOffset))
         .multiply(
           new THREE.Quaternion().setFromAxisAngle(this.aimAxisLocal, headPitch),
         )
@@ -1661,6 +1875,263 @@ export class Character {
 
     if (this.currentAction !== this.flyLandAction) {
       this.switchAnimation(this.flyLandAction);
+    }
+  }
+
+  /**
+   * How far the striking arm is straightened (0 = animation as authored,
+   * 1 = fully extended). Driven by the attack's timing so the arm reaches out
+   * as the hitbox becomes active.
+   */
+  public setPunchReach(hand: "left" | "right", amount: number): void {
+    this.reachHand = hand;
+    this.reachAmount = amount;
+  }
+
+  private applyPunchReach(): void {
+    if (this.reachAmount <= 0.001) {
+      return;
+    }
+
+    const side = this.reachHand === "left" ? "Left" : "Right";
+    const upper = this.group.getObjectByName(side + "Arm");
+    const fore = this.group.getObjectByName(side + "ForeArm");
+    const hand = this.group.getObjectByName(side + "Hand");
+
+    if (!upper || !fore || !hand) {
+      return;
+    }
+
+    // Turn first, so the arm is straightened from its final position.
+    this.turnTowardCrosshair(side === "Right" ? 1 : -1);
+
+    this.group.updateMatrixWorld(true);
+
+    const upperPos = upper.getWorldPosition(new THREE.Vector3());
+    const forePos = fore.getWorldPosition(new THREE.Vector3());
+    const handPos = hand.getWorldPosition(new THREE.Vector3());
+
+    const upperDir = forePos.clone().sub(upperPos).normalize();
+    const foreDir = handPos.clone().sub(forePos).normalize();
+
+    // Swing the forearm toward the upper arm's line: a straight, longer arm.
+    const wanted = foreDir.clone().lerp(upperDir, this.reachAmount).normalize();
+
+    const delta = new THREE.Quaternion().setFromUnitVectors(foreDir, wanted);
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    this.saveForRestore(fore);
+
+    fore.parent?.getWorldQuaternion(parentQuat);
+    fore.getWorldQuaternion(worldQuat);
+    fore.quaternion.copy(
+      parentQuat.invert().multiply(delta.multiply(worldQuat)),
+    );
+    fore.updateMatrixWorld(true);
+
+    this.alignFistToAim(upper, hand);
+  }
+
+  /**
+   * Raises or lowers the striking arm from the shoulder so the fist ends up on
+   * the crosshair line (a touch above it), not at chest height below it.
+   */
+  private alignFistToAim(
+    upper: THREE.Object3D,
+    hand: THREE.Object3D,
+  ): void {
+    const head = this.group.getObjectByName("Head");
+
+    if (!head) {
+      return;
+    }
+
+    const groupQuat = this.group.getWorldQuaternion(new THREE.Quaternion());
+    const forward = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(groupQuat)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.bodyYawOffset);
+
+    forward.y = 0;
+    forward.normalize();
+
+    const pitch = THREE.MathUtils.clamp(this.aimPitch, -1.2, 1.2);
+    const aim = forward
+      .multiplyScalar(Math.cos(pitch))
+      .add(new THREE.Vector3(0, Math.sin(pitch), 0));
+
+    const eye = head
+      .getWorldPosition(new THREE.Vector3())
+      .add(new THREE.Vector3(0, -0.08, 0));
+
+    this.group.updateMatrixWorld(true);
+
+    const shoulder = upper.getWorldPosition(new THREE.Vector3());
+    const fist = hand.getWorldPosition(new THREE.Vector3());
+
+    // The point on the crosshair line at the fist's depth, a little above it.
+    const depth = Math.max(0.3, fist.clone().sub(eye).dot(aim));
+    const target = eye
+      .clone()
+      .addScaledVector(aim, depth)
+      .add(new THREE.Vector3(0, 0.04, 0));
+
+    const current = fist.clone().sub(shoulder).normalize();
+    const wanted = target.sub(shoulder).normalize();
+
+    const angle = current.angleTo(wanted);
+
+    if (angle < 1e-3) {
+      return;
+    }
+
+    // Never swing the arm more than ~40 degrees, whatever the geometry says.
+    const k = Math.min(1, 0.7 / angle) * Math.min(1, this.reachAmount);
+    const rotation = new THREE.Quaternion()
+      .setFromUnitVectors(current, wanted)
+      .slerp(new THREE.Quaternion(), 1 - k);
+
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    this.saveForRestore(upper);
+
+    upper.parent?.getWorldQuaternion(parentQuat);
+    upper.getWorldQuaternion(worldQuat);
+    upper.quaternion.copy(
+      parentQuat.invert().multiply(rotation.multiply(worldQuat)),
+    );
+    upper.updateMatrixWorld(true);
+  }
+
+  /**
+   * The striking shoulder sits ~20 cm off the crosshair line, so a straight
+   * punch lands beside it. Turning the spine a few degrees toward the strike
+   * side (right hand = turn left, left hand = turn right) brings the fist onto
+   * the crosshair, and the head counter-turns to keep looking ahead.
+   */
+  private turnTowardCrosshair(side: 1 | -1): void {
+    const total = side * 0.17 * this.reachAmount;
+    const lean = 0.1 * this.reachAmount;
+    const up = new THREE.Vector3(0, 1, 0);
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    // A little forward lean at the strike pushes the shoulder out: more reach.
+    const rightAxis = this.aimAxisLocal
+      ? this.aimAxisLocal
+          .clone()
+          .applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()))
+      : null;
+    const leanWeights: Record<string, number> = {
+      Spine: 0.3,
+      Spine1: 0.35,
+      Spine2: 0.35,
+    };
+
+    const weights: Array<[string, number]> = [
+      ["Spine", 0.3 * total],
+      ["Spine1", 0.35 * total],
+      ["Spine2", 0.35 * total],
+      ["Neck", -0.3 * total],
+      ["Head", -0.35 * total],
+    ];
+
+    for (const [name, angle] of weights) {
+      const bone = this.group.getObjectByName(name);
+
+      if (!bone || !bone.parent) {
+        continue;
+      }
+
+      this.saveForRestore(bone);
+
+      bone.parent.getWorldQuaternion(parentQuat);
+      bone.getWorldQuaternion(worldQuat);
+
+      const delta = new THREE.Quaternion().setFromAxisAngle(up, angle);
+
+      if (rightAxis && leanWeights[name] !== undefined) {
+        delta.multiply(
+          new THREE.Quaternion().setFromAxisAngle(
+            rightAxis,
+            -lean * leanWeights[name],
+          ),
+        );
+      }
+
+      bone.quaternion.copy(parentQuat.invert().multiply(delta.multiply(worldQuat)));
+      bone.updateMatrixWorld(true);
+    }
+  }
+
+  /**
+   * Flinch from a hit: the upper body snaps back and eases out. `strength` is
+   * roughly 0.4 (light) to 1.3 (heavy). A proper hit animation can replace this
+   * later without changing the callers.
+   */
+  public playHitReaction(strength: number): void {
+    this.hitRecoil.strength = strength;
+    this.hitRecoil.time = 0;
+  }
+
+  private applyHitRecoil(dt: number): void {
+    const recoil = this.hitRecoil;
+
+    if (recoil.strength <= 0 || !this.aimAxisLocal) {
+      return;
+    }
+
+    recoil.time += dt;
+
+    const t = recoil.time / recoil.duration;
+
+    if (t >= 1) {
+      recoil.strength = 0;
+
+      return;
+    }
+
+    // Quick snap back, then a slower return.
+    const envelope = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+    const angle = -recoil.strength * 0.45 * envelope;
+
+    const groupQuat = this.group.getWorldQuaternion(new THREE.Quaternion());
+    const axis = this.aimAxisLocal.clone().applyQuaternion(groupQuat);
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    this.group.updateMatrixWorld(true);
+
+    const weights: Array<[string, number]> = [
+      ["Spine", 0.25],
+      ["Spine1", 0.3],
+      ["Spine2", 0.25],
+      ["Neck", 0.1],
+      ["Head", 0.1],
+    ];
+
+    for (const [name, weight] of weights) {
+      const bone = this.group.getObjectByName(name);
+
+      if (!bone || !bone.parent) {
+        continue;
+      }
+
+      this.saveForRestore(bone);
+
+      bone.parent.getWorldQuaternion(parentQuat);
+      bone.getWorldQuaternion(worldQuat);
+
+      const delta = new THREE.Quaternion().setFromAxisAngle(
+        axis,
+        angle * weight,
+      );
+
+      bone.quaternion.copy(
+        parentQuat.invert().multiply(delta.multiply(worldQuat)),
+      );
+      bone.updateMatrixWorld(true);
     }
   }
 

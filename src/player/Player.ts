@@ -71,7 +71,7 @@ export class Player {
   /**
    * Jump strength.
    */
-  private readonly jumpForce = 7.2;
+  private readonly jumpForce = 5.8;
 
   /**
    * Gravity strength.

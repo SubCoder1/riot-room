@@ -7,6 +7,12 @@ import { Arena } from "../world/Arena";
 import { Character } from "../character/Character";
 import type { CharacterMovementState } from "../character/Character";
 import { CHARACTER_ASSET_PATH } from "../character/CharacterConfig";
+import { CharacterRig } from "../combat/CharacterRig";
+import { CombatDebug } from "../combat/CombatDebug";
+import { logCombatEvent } from "../combat/CombatLog";
+import { CombatSystem } from "../combat/CombatSystem";
+import { PlayerCombatant } from "../combat/PlayerCombatant";
+import { TrainingDummy } from "../combat/TrainingDummy";
 
 export class Game {
   // ============================================================
@@ -30,6 +36,13 @@ export class Game {
   private flyLandDuration = 0;
   /** Walking (not sprinting) jump punch: lighter punch and landing. */
   private flyPunchLight = false;
+  /**
+   * Heavy attacks need a build-up: you must have been sprinting forward for this
+   * long. Starting a sprint (or standing still) and attacking gives the light
+   * version instead.
+   */
+  private sprintBuildTime = 0;
+  private readonly heavyBuildUpSeconds = 0.6;
   /** Heavy running punch in progress (first click while sprinting forward). */
   private runPunchTimeLeft = 0;
   /** An early click is remembered this long so fast spamming isn't dropped. */
@@ -39,6 +52,24 @@ export class Game {
   private comboTimeLeft = 0;
   private readonly comboGraceTime = 0.25;
   private readonly character: Character;
+
+  // ============================================================
+  // COMBAT (hit detection, damage, training dummy)
+  // ============================================================
+
+  private readonly combat = new CombatSystem();
+  private readonly combatDebug = new CombatDebug();
+  private readonly dummy: TrainingDummy;
+  private readonly playerRig: CharacterRig;
+
+  /** F4 toggles the combat debug overlay, F6 toggles the dummy's guard. */
+  private previousF4 = false;
+  private previousF6 = false;
+  private previousF7 = false;
+  private previousF8 = false;
+  private previousF9 = false;
+  /** Body turn (radians, + = left) toward the direction of travel while moving diagonally. */
+  private bodyYawOffset = 0;
 
   private lastFrameTime: number;
 
@@ -146,6 +177,33 @@ export class Game {
     this.character = new Character();
 
     // ----------------------------------------------------------
+    // Combat: player combatant, training dummy, debug overlay
+    // ----------------------------------------------------------
+
+    this.playerRig = new CharacterRig(this.character.group);
+
+    this.combat.register(
+      new PlayerCombatant(
+        this.playerRig,
+        () => this.player.yaw,
+        () => this.player.isBlocking,
+        () => this.getAimDirection(),
+        () => this.getPlayerFeet(),
+        () => this.player.isCrouching,
+        () => this.player.pitch,
+      ),
+    );
+
+    this.dummy = new TrainingDummy(
+      this.combat.events,
+      new THREE.Vector3(0, 0, 4),
+      9.3,
+    );
+
+    this.combat.register(this.dummy);
+    this.combat.events.subscribe(logCombatEvent);
+
+    // ----------------------------------------------------------
     // Frame timing
     // ----------------------------------------------------------
 
@@ -174,6 +232,10 @@ export class Game {
     //
 
     this.renderer.scene.add(this.character.group);
+    this.renderer.scene.add(this.dummy.root);
+    this.renderer.scene.add(this.combatDebug.group);
+
+    void this.dummy.load();
 
     // ----------------------------------------------------------
     // Load character
@@ -279,6 +341,8 @@ export class Game {
 
     this.player.update(dt, this.input);
 
+    this.resolveDummyCollision();
+
     // ----------------------------------------------------------
     // CHARACTER ANIMATION
     // ----------------------------------------------------------
@@ -292,6 +356,25 @@ export class Game {
     //
 
     const movementState = this.getCharacterMovementState();
+
+    // Turn the body toward the direction of travel on forward diagonals; the
+    // head keeps pointing at the crosshair.
+    const sideInput =
+      (this.input.isPressed("KeyA") ? 1 : 0) -
+      (this.input.isPressed("KeyD") ? 1 : 0);
+    const diagonalForward =
+      sideInput !== 0 &&
+      this.input.isPressed("KeyW") &&
+      !this.input.isPressed("KeyS") &&
+      (movementState === "walk" ||
+        movementState === "run" ||
+        movementState === "runPunch");
+
+    this.bodyYawOffset +=
+      ((diagonalForward ? sideInput * (Math.PI / 4) : 0) - this.bodyYawOffset) *
+      (1 - Math.exp(-10 * dt));
+
+    this.character.setBodyYawOffset(this.bodyYawOffset, !this.isThirdPerson);
 
     this.character.setAim(
       this.player.pitch,
@@ -332,6 +415,12 @@ export class Game {
     // ----------------------------------------------------------
 
     this.updateCharacterTransform();
+
+    // ----------------------------------------------------------
+    // Combat (after animation, so hitboxes follow the posed skeleton)
+    // ----------------------------------------------------------
+
+    this.updateCombat(dt);
 
     // ----------------------------------------------------------
     // Camera
@@ -401,12 +490,24 @@ export class Game {
     const sprintingForward =
       this.player.isSprinting && this.input.isPressed("KeyW");
 
+    // Build-up for heavy attacks: time spent sprinting forward on the ground.
+    // It holds while airborne (so a sprint jump keeps its build-up) and drops
+    // as soon as the sprint stops.
+    if (grounded) {
+      this.sprintBuildTime = sprintingForward
+        ? this.sprintBuildTime + dt
+        : 0;
+    }
+
+    const builtUp = this.sprintBuildTime >= this.heavyBuildUpSeconds;
+
     // Sprint-jump -> one flying punch on the first click in the air; every
     // other click while airborne is ignored.
     if (this.wasGrounded && !grounded) {
       // Sprint-jump = heavy; jumping while walking/strafing = light version.
       this.jumpPunchReady = sprintingForward || this.isMovementInputActive();
-      this.flyPunchLight = !sprintingForward;
+      // Heavy only with a built-up sprint; otherwise the light version.
+      this.flyPunchLight = !(sprintingForward && builtUp);
       this.flyPunchUsed = false;
     }
     this.wasGrounded = grounded;
@@ -438,12 +539,18 @@ export class Game {
         this.flyPunchUsed = true;
         this.flyPunchActive = true;
         this.character.startFlyingPunch(this.flyPunchLight);
+        this.combat.startAttack(
+          "player",
+          this.flyPunchLight ? "flying-light-punch" : "flying-heavy-punch",
+          "right",
+        );
       }
       this.punchBufferLeft = 0;
     } else {
       if (this.flyPunchActive) {
         // Landed: spamming now continues with the normal combo (left hook first).
         this.flyPunchActive = false;
+        this.combat.cancelAttack("player");
         this.character.setFlyLandLight(this.flyPunchLight);
         this.flyLandDuration = this.character.flyLandDuration;
         this.flyLandTimeLeft = this.flyLandDuration;
@@ -473,7 +580,19 @@ export class Game {
       this.runPunchTimeLeft = 0;
     }
 
+    // A cancelled punch (jump, crouch, sprint released) can no longer hit.
+    if (
+      this.runPunchTimeLeft <= 0 &&
+      this.combat.getAttackId("player") === "heavy-run-punch"
+    ) {
+      this.combat.cancelAttack("player");
+    }
+
     if (!canPunch) {
+      if (!this.flyPunchActive) {
+        this.combat.cancelAttack("player");
+      }
+
       this.punchTimeLeft = 0;
       this.punchBufferLeft = 0;
       this.comboTimeLeft = 0;
@@ -483,6 +602,7 @@ export class Game {
     } else if (
       this.punchBufferLeft > 0 &&
       sprintingForward &&
+      builtUp &&
       runDuration > 0 &&
       this.punchTimeLeft <= 0 &&
       this.runPunchTimeLeft <= 0 &&
@@ -490,6 +610,7 @@ export class Game {
     ) {
       // First click of a sprint: one heavy right-hand punch, then keep running.
       this.character.startRunPunch();
+      this.combat.startAttack("player", "heavy-run-punch", "right");
       this.runPunchTimeLeft = runDuration;
       this.punchBufferLeft = 0;
       this.comboTimeLeft = runDuration + this.comboGraceTime;
@@ -500,6 +621,11 @@ export class Game {
     ) {
       // Clicks after the heavy punch has finished: normal alternating combo.
       this.character.startPunch();
+      this.combat.startAttack(
+        "player",
+        "light-punch",
+        this.character.lastPunchWasLeft ? "left" : "right",
+      );
       this.punchTimeLeft = duration;
       this.runPunchTimeLeft = 0;
       this.punchBufferLeft = 0;
@@ -640,7 +766,14 @@ export class Game {
      * --------------------------------------------------------
      */
 
-    if (this.input.isPressed("KeyA")) {
+    // Diagonal movement (W/S together with A/D) uses the walk/run animations,
+    // with the body turned toward the direction of travel; only pure sideways
+    // movement plays a strafe.
+    const straightAhead =
+      (this.input.isPressed("KeyW") ? 1 : 0) -
+      (this.input.isPressed("KeyS") ? 1 : 0);
+
+    if (straightAhead === 0 && this.input.isPressed("KeyA")) {
       return "strafeLeft";
     }
 
@@ -650,7 +783,7 @@ export class Game {
      * --------------------------------------------------------
      */
 
-    if (this.input.isPressed("KeyD")) {
+    if (straightAhead === 0 && this.input.isPressed("KeyD")) {
       return "strafeRight";
     }
 
@@ -693,6 +826,175 @@ export class Game {
       this.input.isPressed("KeyS") ||
       this.input.isPressed("KeyD")
     );
+  }
+
+  // ============================================================
+  // COMBAT
+  // ============================================================
+
+  private updateCombat(dt: number): void {
+    const f4 = this.input.isPressed("F4");
+    const f6 = this.input.isPressed("F6");
+
+    if (f4 && !this.previousF4) {
+      this.combatDebug.toggle();
+    }
+
+    if (f6 && !this.previousF6) {
+      this.dummy.blockHeld = !this.dummy.blockHeld;
+    }
+
+    // F7: make the dummy turn to face you (off = it keeps its facing, so you
+    // can attack it from the side and from behind).
+    const f7 = this.input.isPressed("F7");
+
+    if (f7 && !this.previousF7) {
+      this.dummy.trackPlayer = !this.dummy.trackPlayer;
+    }
+
+    this.previousF7 = f7;
+
+    // F8: crouch the dummy (a crouched guard also protects the legs).
+    const f8 = this.input.isPressed("F8");
+
+    if (f8 && !this.previousF8) {
+      this.dummy.crouched = !this.dummy.crouched;
+    }
+
+    this.previousF8 = f8;
+
+    // F9: the dummy looks up (its guard aims up with it).
+    const f9 = this.input.isPressed("F9");
+
+    if (f9 && !this.previousF9) {
+      this.dummy.lookUp = !this.dummy.lookUp;
+    }
+
+    this.previousF9 = f9;
+
+    this.previousF4 = f4;
+    this.previousF6 = f6;
+
+    this.characterFeet.set(
+      this.player.position.x,
+      this.player.position.y - this.player.eyeHeight,
+      this.player.position.z,
+    );
+
+    this.dummy.update(dt, this.characterFeet);
+    this.playerRig.refresh();
+
+    this.updatePunchReach();
+
+    this.combat.update(dt);
+    this.combatDebug.update(this.combat);
+  }
+
+  /**
+   * Straighten the striking arm as the attack goes live (eases in over the
+   * last part of the startup, holds through the active window, relaxes during
+   * recovery).
+   */
+  private updatePunchReach(): void {
+    const attack = this.combat.getAttack("player");
+
+    if (!attack) {
+      this.character.setPunchReach("right", 0);
+
+      return;
+    }
+
+    const { startup, active, recovery } = attack.definition;
+    const t = attack.elapsed;
+    const smooth = (x: number): number => {
+      const c = THREE.MathUtils.clamp(x, 0, 1);
+
+      return c * c * (3 - 2 * c);
+    };
+
+    // The arm stays as authored while the punch is being loaded (bent, drawn
+    // back) and only straightens/aims during the last part of the startup.
+    const amount =
+      t < startup
+        ? smooth((t - startup * 0.6) / (startup * 0.4))
+        : t < startup + active
+          ? 1
+          : 1 - smooth((t - startup - active) / recovery);
+
+    this.character.setPunchReach(attack.hand, amount);
+  }
+
+  private readonly aimDirection = new THREE.Vector3();
+  private readonly playerFeet = new THREE.Vector3();
+
+  private getPlayerFeet(): THREE.Vector3 {
+    return this.playerFeet.set(
+      this.player.position.x,
+      this.player.position.y - this.player.eyeHeight,
+      this.player.position.z,
+    );
+  }
+  private readonly pitchLimitEuler = new THREE.Euler();
+  private readonly pitchLimitGroupQuat = new THREE.Quaternion();
+
+  /**
+   * The head pitches with your look direction, which swings an eye point fixed
+   * in the head frame down toward the chest when you look straight down (and
+   * the camera ends up inside the body). The camera therefore only follows a
+   * few degrees of that pitch; yaw and roll still follow the head.
+   */
+  private limitHeadPitch(headQuat: THREE.Quaternion): void {
+    const limit = 0.3;
+
+    this.character.group.getWorldQuaternion(this.pitchLimitGroupQuat);
+
+    // Head orientation in the character's own frame; x is pitch there.
+    headQuat.premultiply(this.pitchLimitGroupQuat.clone().invert());
+    this.pitchLimitEuler.setFromQuaternion(headQuat, "YXZ");
+    this.pitchLimitEuler.x = THREE.MathUtils.clamp(
+      this.pitchLimitEuler.x,
+      -limit,
+      limit,
+    );
+    headQuat.setFromEuler(this.pitchLimitEuler);
+    headQuat.premultiply(this.pitchLimitGroupQuat);
+  }
+
+  /** Unit vector from the camera through the crosshair. */
+  private getAimDirection(): THREE.Vector3 {
+    const { yaw, pitch } = this.player;
+    const horizontal = Math.cos(pitch);
+
+    return this.aimDirection.set(
+      -Math.sin(yaw) * horizontal,
+      Math.sin(pitch),
+      -Math.cos(yaw) * horizontal,
+    );
+  }
+
+  /** The dummy is solid: the player can't walk through it. */
+  private resolveDummyCollision(): void {
+    const dummyPosition = this.dummy.getPosition();
+    const minimumDistance = 0.55;
+
+    const dx = this.player.position.x - dummyPosition.x;
+    const dz = this.player.position.z - dummyPosition.z;
+    const distance = Math.hypot(dx, dz);
+
+    if (distance >= minimumDistance) {
+      return;
+    }
+
+    if (distance < 1e-4) {
+      this.player.position.z += minimumDistance;
+
+      return;
+    }
+
+    const push = (minimumDistance - distance) / distance;
+
+    this.player.position.x += dx * push;
+    this.player.position.z += dz * push;
   }
 
   // ============================================================
@@ -751,7 +1053,10 @@ export class Game {
      *
      * Only rotate around Y.
      */
-    this.character.setTransform(this.characterFeet, this.player.yaw + Math.PI);
+    this.character.setTransform(
+      this.characterFeet,
+      this.player.yaw + Math.PI + this.bodyYawOffset,
+    );
   }
 
   // ============================================================
@@ -794,6 +1099,7 @@ export class Game {
 
       head.getWorldPosition(this.headWorldPosition);
       head.getWorldQuaternion(this.cameraHeadQuat);
+      this.limitHeadPitch(this.cameraHeadQuat);
 
       // Eye point: slightly forward of and below the head bone. It is stored
       // in the head's own frame, so however the head leans, twists or pitches
@@ -838,6 +1144,13 @@ export class Game {
       this.firstPersonCameraPosition.addScaledVector(
         this.playerForward,
         0.05 * THREE.MathUtils.clamp(this.player.pitch / 1.0, 0, 1),
+      );
+
+      // Looking down tips the head forward and the forehead sweeps toward the
+      // camera, so move the eye out a little as the pitch increases.
+      this.firstPersonCameraPosition.addScaledVector(
+        this.playerForward,
+        0.1 * THREE.MathUtils.clamp(-Math.sin(this.player.pitch), 0, 1),
       );
     } else {
       // Fallback: Polyfork normally always has a Head bone.
