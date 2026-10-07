@@ -186,6 +186,8 @@ export class Character {
       return false;
     }
 
+    this.neverCullBody();
+
     this.animator.setModel(this.model.group, this.model.animations);
 
     this.model.group.visible = true;
@@ -193,6 +195,21 @@ export class Character {
     await this.loadAnimations();
 
     return true;
+  }
+
+  /**
+   * A skinned mesh is culled by a bounding sphere measured in its rest pose. In
+   * first person the camera sits ahead of the torso, so the shirt's sphere ends
+   * up behind it and the whole shirt is skipped, sleeves included, while the
+   * punching arm (part of the larger body mesh) still draws, bare. The
+   * character is always close to the camera, so never cull it.
+   */
+  private neverCullBody(): void {
+    this.model.group.traverse((object) => {
+      if (object instanceof THREE.SkinnedMesh) {
+        object.frustumCulled = false;
+      }
+    });
   }
 
   public get isLoaded(): boolean {
@@ -1751,9 +1768,9 @@ export class Character {
       }
     }
     const weights: Array<[string, number]> = [
-      ["Spine", 0.2 * m],
-      ["Spine1", 0.25 * m],
-      ["Spine2", 0.25 * m],
+      ["Spine", 0.35 * m],
+      ["Spine1", 0.4 * m],
+      ["Spine2", 0.4 * m],
       ["Neck", 0.25 * (1 - m) + 0.1 * m],
       ["Head", 0.5 * (1 - m) + 0.2 * m],
     ];
@@ -1926,14 +1943,22 @@ export class Character {
       }
 
       // Swing the upper arm to the new elbow, then the forearm to the new wrist.
-      this.rotateBoneBetween(upper, elbow.sub(shoulder), pose.elbow.clone().sub(shoulder));
+      this.rotateBoneBetween(
+        upper,
+        elbow.sub(shoulder),
+        pose.elbow.clone().sub(shoulder),
+      );
 
       this.group.updateMatrixWorld(true);
 
       const elbowNow = fore.getWorldPosition(new THREE.Vector3());
       const wristNow = hand.getWorldPosition(new THREE.Vector3());
 
-      this.rotateBoneBetween(fore, wristNow.sub(elbowNow), pose.wrist.clone().sub(pose.elbow));
+      this.rotateBoneBetween(
+        fore,
+        wristNow.sub(elbowNow),
+        pose.wrist.clone().sub(pose.elbow),
+      );
       this.group.updateMatrixWorld(true);
     }
   }
@@ -1959,9 +1984,14 @@ export class Character {
 
     bone.parent?.getWorldQuaternion(parentQuat);
     bone.getWorldQuaternion(worldQuat);
-    bone.quaternion.copy(parentQuat.invert().multiply(delta.multiply(worldQuat)));
+    bone.quaternion.copy(
+      parentQuat.invert().multiply(delta.multiply(worldQuat)),
+    );
     bone.updateMatrixWorld(true);
   }
+
+  /** Camera position in first person, so punches are aimed from the real eye. */
+  public aimEye: THREE.Vector3 | null = null;
 
   public setPunchReach(hand: "left" | "right", amount: number): void {
     this.reachHand = hand;
@@ -2037,21 +2067,29 @@ export class Character {
       .multiplyScalar(Math.cos(pitch))
       .add(new THREE.Vector3(0, Math.sin(pitch), 0));
 
-    const eye = head
-      .getWorldPosition(new THREE.Vector3())
-      .add(new THREE.Vector3(0, -0.08, 0));
+    // The real camera position when there is one (first person): the head
+    // swings as it looks up and down, so a fixed offset from it drifts.
+    const eye =
+      this.aimEye?.clone() ??
+      head
+        .getWorldPosition(new THREE.Vector3())
+        .add(new THREE.Vector3(0, -0.08, 0));
 
     this.group.updateMatrixWorld(true);
 
     const shoulder = upper.getWorldPosition(new THREE.Vector3());
-    const fist = hand.getWorldPosition(new THREE.Vector3());
-
-    // The point on the crosshair line at the fist's depth, a little above it.
-    const depth = Math.max(0.3, fist.clone().sub(eye).dot(aim));
-    const target = eye
+    const wrist = hand.getWorldPosition(new THREE.Vector3());
+    const forearmDirection = wrist
       .clone()
-      .addScaledVector(aim, depth)
-      .add(new THREE.Vector3(0, 0.04, 0));
+      .sub((hand.parent ?? hand).getWorldPosition(new THREE.Vector3()))
+      .normalize();
+
+    // What you see is the knuckles, a little beyond the wrist bone.
+    const fist = wrist.clone().addScaledVector(forearmDirection, 0.09);
+
+    // The point on the crosshair line at the fist's depth.
+    const depth = Math.max(0.3, fist.clone().sub(eye).dot(aim));
+    const target = eye.clone().addScaledVector(aim, depth);
 
     const current = fist.clone().sub(shoulder).normalize();
     const wanted = target.sub(shoulder).normalize();

@@ -215,7 +215,14 @@ export class Game {
 
     // Knockback can't push the dummy through cover, platforms or walls.
     this.dummy.constrain = (fromX, fromZ, toX, toZ) =>
-      this.collision.moveHorizontal(fromX, fromZ, toX - fromX, toZ - fromZ, 0, 0.4);
+      this.collision.moveHorizontal(
+        fromX,
+        fromZ,
+        toX - fromX,
+        toZ - fromZ,
+        0,
+        0.4,
+      );
 
     this.combat.register(this.dummy);
 
@@ -1302,6 +1309,7 @@ export class Game {
 
     this.keepCameraOutOfScenery(this.firstPersonCameraPosition);
     this.renderer.camera.position.copy(this.firstPersonCameraPosition);
+    this.character.aimEye = this.firstPersonCameraPosition;
 
     // ----------------------------------------------------------
     // Apply FPS look
@@ -1353,6 +1361,8 @@ export class Game {
   // ============================================================
 
   private updateThirdPersonCamera(): void {
+    this.character.aimEye = null;
+
     // ----------------------------------------------------------
     // Character feet
     // ----------------------------------------------------------
