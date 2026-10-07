@@ -222,6 +222,55 @@ describe("Player on the arena", () => {
     expect(p.player.position.x).toBeCloseTo(landed, 5);
   });
 
+  it("a jump pressed just after running off a ledge still works (coyote time)", () => {
+    const x = (walkway.minX + walkway.maxX) / 2;
+    const p = spawnPlayer(x, walkway.height, walkway.maxZ - 0.6, SOUTH);
+
+    p.input.keys.add("KeyW");
+
+    // Walk until the feet leave the edge, then wait a moment and jump.
+    let guard = 0;
+
+    while (p.player.isGrounded && guard++ < 120) p.step(1 / 60);
+
+    expect(p.player.isGrounded).toBe(false);
+    p.step(0.06);
+
+    const before = p.player.velocity.y;
+
+    p.input.jumpQueued = true;
+    p.step(1 / 60);
+    expect(p.player.velocity.y).toBeGreaterThan(before + 3);
+  });
+
+  it("a jump pressed just before landing is remembered and happens on touchdown", () => {
+    const p = spawnPlayer(-17.5, 0, -9);
+
+    p.input.jumpQueued = true;
+    p.step(0.1);
+
+    let pressed = false;
+    let landed = false;
+    let jumpedAgain = false;
+
+    for (let k = 0; k < 240; k++) {
+      // Falling and almost down: press now, a moment too early.
+      if (!pressed && p.player.velocity.y < 0 && p.feet() < 0.25) {
+        p.input.jumpQueued = true;
+        pressed = true;
+      }
+
+      p.step(1 / 60);
+
+      if (pressed && p.player.isGrounded) landed = true;
+      if (pressed && p.player.velocity.y > 3) jumpedAgain = true;
+    }
+
+    expect(pressed).toBe(true);
+    expect(jumpedAgain).toBe(true);
+    expect(landed || jumpedAgain).toBe(true);
+  });
+
   it("can jump and lands back on the same spot", () => {
     const p = spawnPlayer(-17.5, 0, -9);
 

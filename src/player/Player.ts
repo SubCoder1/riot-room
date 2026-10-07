@@ -78,6 +78,16 @@ export class Player {
    */
   private readonly jumpForce = 5.8;
 
+  /** How long (s) an early jump press is remembered, waiting for the ground. */
+  private readonly jumpBufferTime = 0.12;
+
+  /** How long (s) after leaving the ground a jump is still allowed. */
+  private readonly coyoteTime = 0.12;
+
+  private jumpBufferLeft = 0;
+
+  private coyoteLeft = 0;
+
   /** How fast (m/s per second) airborne velocity can be steered by the keys. */
   private readonly airControl = 30;
 
@@ -105,6 +115,8 @@ export class Player {
   public teleport(x: number, feetY: number, z: number): void {
     this.position.set(x, feetY + this.eyeHeight, z);
     this.velocity.set(0, 0, 0);
+    this.jumpBufferLeft = 0;
+    this.coyoteLeft = 0;
     this.grounded = true;
   }
 
@@ -283,10 +295,24 @@ export class Player {
      * consumeJump() guarantees that holding Space
      * does not repeatedly create jump requests.
      */
-    if (input.consumeJump() && this.grounded) {
+    // Forgiving timing: a press just before landing still jumps (buffer), and a
+    // press just after running off a ledge still jumps (coyote time).
+    if (input.consumeJump()) {
+      this.jumpBufferLeft = this.jumpBufferTime;
+    } else {
+      this.jumpBufferLeft = Math.max(0, this.jumpBufferLeft - dt);
+    }
+
+    this.coyoteLeft = this.grounded
+      ? this.coyoteTime
+      : Math.max(0, this.coyoteLeft - dt);
+
+    if (this.jumpBufferLeft > 0 && (this.grounded || this.coyoteLeft > 0)) {
       this.velocity.y = this.jumpForce;
 
       this.grounded = false;
+      this.jumpBufferLeft = 0;
+      this.coyoteLeft = 0;
     }
 
     /**
