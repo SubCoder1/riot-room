@@ -1,7 +1,7 @@
 import type { PlayerUtilities, UtilityType } from "./PlayerUtilities";
 
 /** How long the wheel stays up after the last scroll (seconds). */
-export const WHEEL_VISIBLE_SECONDS = 1.5;
+export const WHEEL_VISIBLE_SECONDS = 0.7;
 
 /**
  * The weapon wheel's behaviour, with no drawing and no input devices.

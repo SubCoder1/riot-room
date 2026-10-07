@@ -329,3 +329,156 @@ describe("RockStance", () => {
     expect(stance.consumeRelease()).toBe(false);
   });
 });
+
+describe("RockStance with a Molotov", () => {
+  let stance: RockStance;
+
+  const molotov: RockInput = { ...base, kind: "molotov", count: 2 };
+
+  const run = (seconds: number, input: Partial<RockInput> = {}): void => {
+    for (let t = 0; t < seconds; t += DT) {
+      stance.update(DT, { ...molotov, ...input });
+    }
+  };
+
+  beforeEach(() => {
+    stance = new RockStance();
+  });
+
+  it("takes it out, lights it, then holds it lit, all in well under a second", () => {
+    stance.update(DT, molotov);
+    expect(stance.state).toBe("ROCK_EQUIPPING");
+    expect(stance.heldKind).toBe("molotov");
+    expect(stance.lit).toBe(false);
+
+    // Brought up to be lit.
+    run(ROCK_TIMING.equipMolotov * 0.5);
+    expect(stance.rockVisible).toBe(true);
+    expect(stance.lit).toBe(false);
+    expect(stance.pose.light).toBeGreaterThan(0.5);
+
+    run(ROCK_TIMING.equipMolotov * 0.35);
+    expect(stance.lit).toBe(true);
+
+    run(0.3);
+    expect(stance.state).toBe("ROCK_EQUIPPED");
+    expect(stance.lit).toBe(true);
+    expect(stance.rockVisible).toBe(true);
+    expect(ROCK_TIMING.equipMolotov).toBeGreaterThanOrEqual(0.4);
+    expect(ROCK_TIMING.equipMolotov).toBeLessThanOrEqual(0.7);
+  });
+
+  it("with none left it cannot be equipped or aimed", () => {
+    run(1, { count: 0, aimHeld: true });
+
+    expect(stance.state).toBe("NORMAL");
+    expect(stance.isAiming).toBe(false);
+  });
+
+  it("aims and throws like the rock (same states, same release)", () => {
+    run(ROCK_TIMING.equipMolotov + 0.1);
+    run(0.1, { aimHeld: true });
+    expect(stance.state).toBe("ROCK_AIMING");
+    expect(stance.canPunch).toBe(false);
+    expect(stance.canBlock).toBe(false);
+
+    stance.update(DT, { ...molotov, aimHeld: true, throwPressed: true });
+    expect(stance.state).toBe("ROCK_THROWING");
+    expect(stance.consumedClick).toBe(true);
+
+    let releases = 0;
+
+    for (let t = 0; t < ROCK_TIMING.throw + 0.05; t += DT) {
+      stance.update(DT, { ...molotov, count: 1, aimHeld: true });
+
+      if (stance.consumeRelease()) releases++;
+    }
+
+    expect(releases).toBe(1);
+  });
+
+  it("the flame is gone after the throw leaves the hand", () => {
+    run(ROCK_TIMING.equipMolotov + 0.1);
+    stance.update(DT, { ...molotov, throwPressed: true });
+    expect(stance.lit).toBe(true);
+
+    let litAfterRelease = false;
+
+    for (let t = 0; t < ROCK_TIMING.throw; t += DT) {
+      stance.update(DT, { ...molotov, count: 1 });
+
+      if (stance.consumeRelease()) {
+        litAfterRelease = stance.lit;
+      }
+    }
+
+    expect(litAfterRelease).toBe(false);
+  });
+
+  it("the last one thrown returns to the normal state with no put-away", () => {
+    run(ROCK_TIMING.equipMolotov + 0.1);
+    stance.update(DT, { ...molotov, count: 1, throwPressed: true });
+    run(ROCK_TIMING.throw + 0.1, {
+      selected: false,
+      count: 0,
+      heldCount: 0,
+    });
+
+    expect(stance.state).toBe("NORMAL");
+    expect(stance.rockVisible).toBe(false);
+  });
+
+  it("switching away puts it away without lighting anything", () => {
+    run(ROCK_TIMING.equipMolotov + 0.1);
+
+    stance.update(DT, { ...molotov, selected: false });
+    expect(stance.state).toBe("ROCK_UNEQUIPPING");
+    expect(stance.lit).toBe(false);
+
+    run(ROCK_TIMING.unequip + 0.1, { selected: false });
+    expect(stance.state).toBe("NORMAL");
+    expect(stance.rockVisible).toBe(false);
+  });
+
+  it("going from rocks straight to a Molotov puts the rock away, then equips the bottle", () => {
+    const rock: RockInput = { ...base, kind: "rock" };
+
+    for (let t = 0; t < ROCK_TIMING.equip + 0.1; t += DT) {
+      stance.update(DT, rock);
+    }
+
+    expect(stance.heldKind).toBe("rock");
+
+    stance.update(DT, molotov);
+    expect(stance.state).toBe("ROCK_UNEQUIPPING");
+
+    let sawNormalOrEquip = false;
+
+    for (let t = 0; t < ROCK_TIMING.unequip + 0.1; t += DT) {
+      stance.update(DT, molotov);
+
+      if (stance.state === "ROCK_EQUIPPING") {
+        sawNormalOrEquip = true;
+        expect(stance.heldKind).toBe("molotov");
+        break;
+      }
+    }
+
+    expect(sawNormalOrEquip).toBe(true);
+
+    run(ROCK_TIMING.equipMolotov + 0.1);
+    expect(stance.state).toBe("ROCK_EQUIPPED");
+    expect(stance.heldKind).toBe("molotov");
+    expect(stance.lit).toBe(true);
+  });
+
+  it("a rock is never lit", () => {
+    const rock: RockInput = { ...base, kind: "rock" };
+
+    for (let t = 0; t < 1; t += DT) {
+      stance.update(DT, rock);
+    }
+
+    expect(stance.lit).toBe(false);
+  });
+});

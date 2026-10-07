@@ -424,6 +424,40 @@ export class CombatSystem {
   }
 
   /**
+   * Damage from the environment (a fire zone), through the same health, hit
+   * event and reaction pipeline as a punch. It has no guard: standing behind a
+   * block does nothing against it. Returns null if the target is gone or dead.
+   */
+  public applyHazardDamage(input: {
+    sourceId: DamageSourceId;
+    attackerId: string;
+    targetId: string;
+    hurtbox: HurtboxId;
+    damage: number;
+  }): HitInfo | null {
+    const attacker = this.combatants.find((c) => c.id === input.attackerId);
+    const target = this.combatants.find((c) => c.id === input.targetId);
+
+    if (!attacker || !target || target.isDead()) {
+      return null;
+    }
+
+    const hit: HitInfo = {
+      attackId: input.sourceId,
+      attackerId: attacker.id,
+      hurtbox: input.hurtbox,
+      damage: Math.max(0, Math.round(input.damage)),
+      knockback: 0,
+      knockbackDirection: new THREE.Vector3(0, 0, 1),
+      hitstun: 0,
+    };
+
+    this.applyDamage(attacker, target, hit, input.sourceId);
+
+    return hit;
+  }
+
+  /**
    * A projectile has reached a body part. This is where the result is decided,
    * so it is the one place a server would run it: the shooter only says "I
    * threw", never "I hit".

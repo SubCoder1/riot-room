@@ -234,9 +234,9 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
     expect(utilities.selected).toBe("SMOKE");
   });
 
-  it("the wheel stays up for a second or two after the last scroll, then vanishes", () => {
-    expect(WHEEL_VISIBLE_SECONDS).toBeGreaterThanOrEqual(1);
-    expect(WHEEL_VISIBLE_SECONDS).toBeLessThanOrEqual(2);
+  it("the wheel stays up briefly after the last scroll, then vanishes", () => {
+    expect(WHEEL_VISIBLE_SECONDS).toBeGreaterThanOrEqual(0.5);
+    expect(WHEEL_VISIBLE_SECONDS).toBeLessThanOrEqual(1);
 
     wheel.scroll(1);
     wheel.update(WHEEL_VISIBLE_SECONDS - 0.1);
@@ -247,15 +247,17 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
   });
 
   it("scrolling again restarts the timer, and the selection stays when it closes", () => {
+    const most = WHEEL_VISIBLE_SECONDS * 0.7;
+
     wheel.scroll(1); // Rocks
-    wheel.update(1);
+    wheel.update(most);
     wheel.scroll(1); // Molotov
-    wheel.update(1);
+    wheel.update(most);
 
     expect(wheel.isOpen).toBe(true);
     expect(utilities.selected).toBe("MOLOTOV");
 
-    wheel.update(1);
+    wheel.update(most);
     expect(wheel.isOpen).toBe(false);
     expect(utilities.selected).toBe("MOLOTOV");
   });

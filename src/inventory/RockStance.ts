@@ -22,6 +22,8 @@ export type RockState =
 /** Seconds. The animations are deliberately tiny. */
 export const ROCK_TIMING = {
   equip: 0.32,
+  /** The Molotov takes a little longer: out of the pocket, then lit. */
+  equipMolotov: 0.7,
   unequip: 0.28,
   throw: 0.3,
 } as const;
@@ -30,14 +32,31 @@ export const ROCK_TIMING = {
 const RELEASE_AT = 0.45;
 /** Where in the equip the rock appears (the hand is at the pocket). */
 const EQUIP_ROCK_AT = 0.45;
+const EQUIP_MOLOTOV_AT = 0.25;
+/** Where in the Molotov equip the hand is up in the lighting position, and lit. */
+const LIGHT_FROM = 0.22;
+const LIT_AT = 0.74;
+/** The lighter flame is in the left hand from here, until just after the rag catches. */
+const LIGHTER_FROM = 0.34;
+const LIGHTER_UNTIL = 0.84;
 /** Where in the put-away the rock vanishes (the hand is at the pocket). */
 const UNEQUIP_ROCK_GONE_AT = 0.6;
 
+/** What the hand holds: the rock and the Molotov share every state and the throw. */
+export type HeldKind = "rock" | "molotov";
+
 export interface RockInput {
-  /** ROCKS is the selected slot. */
+  /** A throwable (ROCKS or MOLOTOV) is the selected slot. */
   selected: boolean;
-  /** Rocks left in the inventory. */
+  /** How many of the selected throwable are left in the inventory. */
   count: number;
+  /** Which throwable is selected (the rock if not given). */
+  kind?: HeldKind;
+  /**
+   * How many of the throwable currently in the hand are left (the same as
+   * `count` if not given). Decides the put-away after a throw.
+   */
+  heldCount?: number;
   /** The aim button (right click) is held. */
   aimHeld: boolean;
   /** The throw button (left click) was pressed this frame. */
@@ -50,11 +69,13 @@ export interface RockInput {
 }
 
 /**
- * Where the throwing hand goes, as weights of five key positions (they sum to
+ * Where the throwing hand goes, as weights of six key positions (they sum to
  * 1) and how much the pose overrides the normal animation (0 = none).
  */
 export interface RockPose {
   pocket: number;
+  /** Up near the chest: where a Molotov is lit. */
+  light: number;
   ready: number;
   aim: number;
   windup: number;
@@ -62,10 +83,11 @@ export interface RockPose {
   weight: number;
 }
 
-type KeyName = "pocket" | "ready" | "aim" | "windup" | "release";
+type KeyName = "pocket" | "light" | "ready" | "aim" | "windup" | "release";
 
 const KEYS: readonly KeyName[] = [
   "pocket",
+  "light",
   "ready",
   "aim",
   "windup",
@@ -79,10 +101,12 @@ export class RockStance {
 
   private released = false;
   private releaseQueued = false;
+  private held: HeldKind = "rock";
   private clickUsed = false;
 
   private readonly mix: Record<KeyName, number> = {
     pocket: 1,
+    light: 0,
     ready: 0,
     aim: 0,
     windup: 0,
@@ -94,12 +118,17 @@ export class RockStance {
     this.clickUsed = false;
     this.elapsed += dt;
 
-    const wants = input.selected && input.count > 0;
+    const kind = input.kind ?? "rock";
+    const wantsAny = input.selected && input.count > 0;
+    // Wanting the same thing that is already in the hand. Another kind means
+    // the one in the hand is put away first, then the new one comes out.
+    const wants = wantsAny && (this.state === "NORMAL" || kind === this.held);
+    const heldCount = input.heldCount ?? input.count;
 
     // Time-driven transitions.
     switch (this.state) {
       case "ROCK_EQUIPPING":
-        if (this.elapsed >= ROCK_TIMING.equip) {
+        if (this.elapsed >= this.equipTime) {
           this.enter("ROCK_EQUIPPED");
         }
 
@@ -124,7 +153,7 @@ export class RockStance {
           this.enter(
             wants
               ? "ROCK_EQUIPPING"
-              : input.count > 0
+              : heldCount > 0
                 ? "ROCK_UNEQUIPPING"
                 : "NORMAL",
           );
@@ -141,7 +170,8 @@ export class RockStance {
     for (let pass = 0; pass < 2; pass++) {
       switch (this.state) {
         case "NORMAL":
-          if (wants) {
+          if (wantsAny) {
+            this.held = kind;
             this.enter("ROCK_EQUIPPING");
           }
 
@@ -227,13 +257,50 @@ export class RockStance {
     return !this.canPunch;
   }
 
-  /** Whether a rock is shown in the hand. */
+  /** What is in the hand (or was last): the rock or the Molotov. */
+  public get heldKind(): HeldKind {
+    return this.held;
+  }
+
+  /** The left hand has a small flame up to the rag (the Molotov is being lit). */
+  public get lighting(): boolean {
+    return (
+      this.held === "molotov" &&
+      this.state === "ROCK_EQUIPPING" &&
+      this.progress >= LIGHTER_FROM &&
+      this.progress < LIGHTER_UNTIL
+    );
+  }
+
+  /** The Molotov is lit: from its ignition in the equip until it is thrown or put away. */
+  public get lit(): boolean {
+    if (this.held !== "molotov") {
+      return false;
+    }
+
+    switch (this.state) {
+      case "ROCK_EQUIPPING":
+        return this.progress >= LIT_AT;
+      case "ROCK_EQUIPPED":
+      case "ROCK_AIMING":
+        return true;
+      case "ROCK_THROWING":
+        return !this.released;
+      default:
+        return false;
+    }
+  }
+
+  /** Whether the held item (rock or Molotov) is shown in the hand. */
   public get rockVisible(): boolean {
     const progress = this.progress;
 
     switch (this.state) {
       case "ROCK_EQUIPPING":
-        return progress >= EQUIP_ROCK_AT;
+        return (
+          progress >=
+          (this.held === "molotov" ? EQUIP_MOLOTOV_AT : EQUIP_ROCK_AT)
+        );
       case "ROCK_EQUIPPED":
       case "ROCK_AIMING":
         return true;
@@ -252,6 +319,7 @@ export class RockStance {
 
     return {
       pocket: this.mix.pocket / total,
+      light: this.mix.light / total,
       ready: this.mix.ready / total,
       aim: this.mix.aim / total,
       windup: this.mix.windup / total,
@@ -267,10 +335,16 @@ export class RockStance {
     this.overall = 0;
   }
 
+  private get equipTime(): number {
+    return this.held === "molotov"
+      ? ROCK_TIMING.equipMolotov
+      : ROCK_TIMING.equip;
+  }
+
   private get progress(): number {
     const length =
       this.state === "ROCK_EQUIPPING"
-        ? ROCK_TIMING.equip
+        ? this.equipTime
         : this.state === "ROCK_UNEQUIPPING"
           ? ROCK_TIMING.unequip
           : this.state === "ROCK_THROWING"
@@ -301,7 +375,18 @@ export class RockStance {
         break;
 
       case "ROCK_EQUIPPING":
-        key = progress < 0.35 ? "pocket" : "ready";
+        if (this.held === "molotov") {
+          // Out of the pocket, up to be lit, then ready to throw.
+          key =
+            progress < LIGHT_FROM
+              ? "pocket"
+              : progress < LIT_AT
+                ? "light"
+                : "ready";
+        } else {
+          key = progress < 0.35 ? "pocket" : "ready";
+        }
+
         rate = 16;
 
         break;

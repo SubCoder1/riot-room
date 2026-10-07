@@ -59,6 +59,15 @@ export type CombatEvent =
       targetName: string;
       multiplier: number;
     }
+  | {
+      type: "fire-started";
+      zoneId: number;
+      ownerId: string;
+      x: number;
+      y: number;
+      z: number;
+    }
+  | { type: "fire-ended"; zoneId: number }
   | { type: "died"; targetId: string; targetName: string }
   | { type: "respawned"; targetId: string; targetName: string };
 

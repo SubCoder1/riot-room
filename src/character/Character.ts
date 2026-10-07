@@ -6,7 +6,7 @@ import { CharacterAnimator } from "./CharacterAnimator";
 import { limitArmReach, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
 import { RockArm } from "./RockArm";
-import type { RockPose } from "../inventory/RockStance";
+import type { HeldKind, RockPose } from "../inventory/RockStance";
 
 export type CharacterMovementState =
   | "idle"
@@ -2021,9 +2021,14 @@ export class Character {
    * shown in the hand. Works for any character, so other players can show the
    * same pose from what they report.
    */
-  public setRock(pose: RockPose | null, holdingRock: boolean): void {
+  public setRock(
+    pose: RockPose | null,
+    held: HeldKind | null,
+    lit = false,
+    lighting = false,
+  ): void {
     this.rockPose = pose;
-    this.rockArm.setHeld(holdingRock);
+    this.rockArm.setHeld(held, lit, lighting);
   }
 
   /** Where a thrown rock leaves the hand. False if the model is not ready. */

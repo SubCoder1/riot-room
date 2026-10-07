@@ -44,7 +44,7 @@ Open the URL Vite prints, then **click the game canvas** to capture the mouse (p
 
 ### Weapon wheel
 
-Scroll the **mouse wheel** at any time (standing, running, punching, blocking) and a small weapon wheel appears in the middle of the screen while the next (scroll down) or previous (scroll up) slot is **equipped in the same moment**. Keep scrolling to keep stepping. About a second and a half after the last scroll the wheel fades away by itself and your choice stays. It never blocks anything: you can keep punching, blocking and moving while it is up. The wheel is a screen overlay, so it works the same in first and third person.
+Scroll the **mouse wheel** at any time (standing, running, punching, blocking) and a small weapon wheel appears in the middle of the screen while the next (scroll down) or previous (scroll up) slot is **equipped in the same moment**. Keep scrolling to keep stepping. About 0.7 seconds after the last scroll the wheel fades away by itself and your choice stays. It never blocks anything: you can keep punching, blocking and moving while it is up. The wheel is a screen overlay, so it works the same in first and third person.
 
 | Slot | Quantity | Note |
 | --- | --- | --- |
@@ -160,6 +160,28 @@ Guarding a rock uses the same directional guard as melee, measured against the t
 Rocks stop at cover, walls and the floor (one thrown at the sky keeps flying and comes down; `ROCK_MAX_RANGE` is only a safety limit), and at most `ROCK_MAX_ACTIVE` fly at once (the oldest is dropped).
 
 **Multiplayer-ready.** The thrower only reports "I threw from here, this way". Whether the rock hits, which body part, the guard and the damage are decided in `ProjectileSystem` and `CombatSystem.resolveProjectileHit`, which only use the `Combatant` interface and have no rendering or input code, so a server can run them. Nothing is networked yet (the game has no multiplayer), so only the local throw is wired up.
+
+### Molotov
+
+Pick **Molotov** on the weapon wheel. You start with none (×0), so it can't be equipped until you have one: a pickup is just `utilities.add("MOLOTOV", 1)`. It uses the rock's states, aim line and throw, so the controls are the same: the hand goes to the pocket, the bottle comes up to be lit (a small flame appears), and it is ready. **Hold right click** to aim (the dashed line shows where it lands), then **left click** to throw it. A plain left click is a quick throw. The bottle is spent when it leaves the hand, never when you start aiming; at ×0 you drop back to Fists. Switching away puts it back in the pocket without a flame.
+
+It flies like the rock (straight for a few metres, then an arc, `MOLOTOV_PROFILE`) and breaks on the first thing it meets: the floor, a platform, a wall or a body. On a wall the fire drops to the surface below, so it never floats in mid-air.
+
+**The fire** is an area-denial zone, not an explosion:
+
+| | Value (all in [src/combat/MolotovConfig.ts](src/combat/MolotovConfig.ts)) |
+| --- | --- |
+| Radius | Spreads from 0.5 m to `MOLOTOV_MAX_RADIUS` (3 m) over `MOLOTOV_SPREAD_TIME` (0.8 s) |
+| Duration | `MOLOTOV_DURATION` (7 s) at full size, counted from when it has fully spread |
+| Ending | It shrinks and fades over `MOLOTOV_FIRE_FADE_TIME` (0.8 s), then is removed |
+| Damage | A tick every `MOLOTOV_TICK_INTERVAL` (0.5 s) for `MOLOTOV_DAMAGE_PER_TICK` (7), growing up to `MOLOTOV_MAX_RAMP` (1.8x) after `MOLOTOV_RAMP_SECONDS` (3 s) of continuous burning, never above `MOLOTOV_MAX_OVERLAP_DAMAGE` (14) |
+| Fires at once | At most `MOLOTOV_MAX_ZONES` (8); the oldest goes out first |
+
+Walking through costs about 17 points; standing in it takes about 63 after 3 seconds and kills a full-health character in about 4.5 seconds. The damage goes through the normal health bar and damage numbers (one per tick, so no spam), and holding **F gives no protection**: you have to leave the fire. Overlapping fires never add ticks: a player takes at most one tick per interval. Anyone inside the radius burns, the thrower included.
+
+**One radius.** The flames, the ground glow and the damage all use `fireRadius(age)` ([src/combat/FireZones.ts](src/combat/FireZones.ts)). The visible edge is uneven (flames fall short of it in places, with gaps and flicker), but nothing is ever drawn beyond the radius that burns you. The fire is drawn with a fixed pool of instanced meshes (a glow disc, 40 flames, 10 embers per fire), not a particle system.
+
+**Multiplayer-ready.** The thrower only reports the throw. Where the bottle breaks, creating the fire, the damage ticks and the expiry are all decided in `ProjectileSystem` and `FireSystem` (no rendering or input), which emit `fire-started` and `fire-ended` events with the position, so a server can run them and clients only draw the zones. Nothing is networked yet.
 
 ### Hit detection, damage and knockback
 

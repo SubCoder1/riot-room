@@ -18,16 +18,30 @@ import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
 import { ProjectileSystem } from "../combat/Projectiles";
 import { ROCK_CONFIG } from "../combat/RockConfig";
-import { traceRockPath, type RockWorld } from "../combat/RockFlight";
+import { FireSystem } from "../combat/FireZones";
+import {
+  MOLOTOV_PROFILE,
+  ROCK_PROFILE,
+  traceRockPath,
+  type RockWorld,
+} from "../combat/RockFlight";
 import { createCapsule, segmentCapsuleEntry } from "../combat/Shapes";
 import { TrainingDummy } from "../combat/TrainingDummy";
 import { WorldHealthBars } from "../ui/WorldHealthBars";
 import { PlayerUtilities } from "../inventory/PlayerUtilities";
-import { RockStance } from "../inventory/RockStance";
+import { RockStance, type HeldKind } from "../inventory/RockStance";
+import type { UtilityType } from "../inventory/PlayerUtilities";
 import { WeaponWheel } from "../inventory/WeaponWheel";
+import { FireZoneView } from "../vfx/FireZoneView";
 import { RockAimPreview } from "../vfx/RockAimPreview";
 import { RockProjectileView } from "../vfx/RockProjectileView";
 import { WeaponWheelView } from "../ui/WeaponWheelView";
+
+/** The inventory slot behind each throwable. */
+const THROWABLE_TYPE: Record<HeldKind, UtilityType> = {
+  rock: "ROCKS",
+  molotov: "MOLOTOV",
+};
 
 export class Game {
   // ============================================================
@@ -112,8 +126,12 @@ export class Game {
         to.y,
         to.z,
       ),
+    // Fires and landed bottles come to rest on real surfaces, not in mid-air.
+    surfaceY: (x, z, fromY) => this.collision.groundHeight(x, z, fromY),
   };
   private readonly projectiles: ProjectileSystem;
+  private readonly fires: FireSystem;
+  private readonly fireView = new FireZoneView();
   private readonly rockView: RockProjectileView;
   private readonly rockPreview = new RockAimPreview();
   private crosshair: HTMLElement | null = null;
@@ -256,8 +274,16 @@ export class Game {
 
     this.combat.register(this.playerCombatant);
 
+    // TEMP (testing): one Molotov to start with. Remove once pickups exist.
+    this.utilities.add("MOLOTOV", 1);
+
     this.projectiles = new ProjectileSystem(this.combat, this.rockWorld);
     this.rockView = new RockProjectileView(this.projectiles);
+    this.fires = new FireSystem(this.combat, this.rockWorld);
+    // A Molotov that breaks starts a fire where it landed.
+    this.projectiles.onBurst = (rock, point) => {
+      this.fires.ignite(rock.ownerId, point);
+    };
 
     this.dummy = new TrainingDummy(
       this.combat.events,
@@ -339,6 +365,7 @@ export class Game {
     this.renderer.scene.add(this.dummy.root);
     this.renderer.scene.add(this.combatDebug.group);
     this.renderer.scene.add(this.rockView.group);
+    this.renderer.scene.add(this.fireView.group);
     this.renderer.scene.add(this.rockPreview.group);
     this.renderer.scene.add(this.arenaDebug.group);
 
@@ -500,7 +527,12 @@ export class Game {
         this.player.isGrounded,
     );
 
-    this.character.setRock(this.rockStance.pose, this.rockStance.rockVisible);
+    this.character.setRock(
+      this.rockStance.pose,
+      this.rockStance.rockVisible ? this.rockStance.heldKind : null,
+      this.rockStance.lit,
+      this.rockStance.lighting,
+    );
 
     this.character.update(
       dt,
@@ -621,6 +653,17 @@ export class Game {
     this.weaponWheelView.render();
   }
 
+  /** The selected slot as something to throw, or null (fists, smoke). */
+  private selectedThrowable(): HeldKind | null {
+    const selected = this.utilities.selected;
+
+    return selected === "ROCKS"
+      ? "rock"
+      : selected === "MOLOTOV"
+        ? "molotov"
+        : null;
+  }
+
   /** Guard is the F key, and is off while a rock is being aimed or thrown. */
   private isBlockHeld(): boolean {
     return this.input.isPressed("KeyF") && this.rockStance.canBlock;
@@ -639,9 +682,14 @@ export class Game {
       this.flyLandTimeLeft > 0 ||
       this.player.isBlocking;
 
+    const kind = this.selectedThrowable();
+    const heldType = THROWABLE_TYPE[this.rockStance.heldKind];
+
     this.rockStance.update(dt, {
-      selected: this.utilities.selected === "ROCKS",
-      count: this.utilities.quantityOf("ROCKS") ?? 0,
+      selected: kind !== null,
+      kind: kind ?? "rock",
+      count: kind ? (this.utilities.quantityOf(THROWABLE_TYPE[kind]) ?? 0) : 0,
+      heldCount: this.utilities.quantityOf(heldType) ?? 0,
       aimHeld: this.input.isMouseDown(2),
       throwPressed: click,
       armBusy,
@@ -700,15 +748,23 @@ export class Game {
   private updateRocks(): void {
     // The throw: the rock leaves the hand at the release point of the animation.
     if (this.rockStance.consumeRelease() && this.computeThrow()) {
-      if (this.utilities.remove("ROCKS")) {
-        this.projectiles.throwRock(
+      const kind = this.rockStance.heldKind;
+      const type = THROWABLE_TYPE[kind];
+
+      // Spent when it actually leaves the hand, never when aiming starts.
+      if (this.utilities.remove(type)) {
+        this.projectiles.throwProjectile(
+          kind,
           this.playerCombatant.id,
           this.throwOrigin,
           this.throwDirection,
         );
 
-        // Out of rocks: back to fists.
-        if ((this.utilities.quantityOf("ROCKS") ?? 0) <= 0) {
+        // Out of them: back to fists.
+        if (
+          (this.utilities.quantityOf(type) ?? 0) <= 0 &&
+          this.utilities.selected === type
+        ) {
           this.utilities.select("FISTS");
         }
       }
@@ -722,6 +778,7 @@ export class Game {
         this.rockWorld,
         this.rockPreview.path,
         1,
+        this.rockStance.heldKind === "molotov" ? MOLOTOV_PROFILE : ROCK_PROFILE,
       );
       this.rockPreview.show(this.renderer.camera);
     } else if (this.rockPreview.isVisible) {
@@ -741,6 +798,7 @@ export class Game {
     }
 
     this.rockView.update();
+    this.fireView.update(this.fires.zones, performance.now() / 1000);
   }
 
   private updatePunchState(dt: number): void {
@@ -1157,6 +1215,7 @@ export class Game {
 
     this.combat.update(dt);
     this.projectiles.update(dt);
+    this.fires.update(dt);
     this.combatDebug.update(this.combat);
   }
 
@@ -1299,6 +1358,7 @@ export class Game {
 
     this.combat.cancelAttack("player");
     this.projectiles.clear();
+    this.fires.clear();
     this.rockStance.reset();
     this.playerCombatant.health.reset();
 

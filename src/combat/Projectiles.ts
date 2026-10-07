@@ -4,6 +4,8 @@ import type { CombatSystem } from "./CombatSystem";
 import { createCapsule, segmentCapsuleEntry } from "./Shapes";
 import { ROCK_CONFIG, rockDamageFor } from "./RockConfig";
 import {
+  MOLOTOV_PROFILE,
+  ROCK_PROFILE,
   launchRock,
   rockImpactInStep,
   stepRock,
@@ -12,8 +14,12 @@ import {
   type RockWorld,
 } from "./RockFlight";
 
+/** What is flying: a rock (hurts what it hits) or a Molotov (bursts into fire). */
+export type ThrowableKind = "rock" | "molotov";
+
 export interface RockProjectile extends RockBody {
   readonly id: number;
+  readonly kind: ThrowableKind;
   readonly ownerId: string;
   /** Path length so far, metres. */
   travelled: number;
@@ -45,6 +51,13 @@ export class ProjectileSystem {
   private readonly combat: CombatSystem;
   private readonly world: RockWorld;
 
+  /**
+   * Called where a Molotov broke (on scenery, the floor or a body). The fire
+   * system lives behind this, so projectiles do not know about fire.
+   */
+  public onBurst:
+    ((rock: RockProjectile, point: THREE.Vector3) => void) | null = null;
+
   constructor(combat: CombatSystem, world: RockWorld) {
     this.combat = combat;
     this.world = world;
@@ -60,6 +73,15 @@ export class ProjectileSystem {
     origin: THREE.Vector3,
     direction: THREE.Vector3,
   ): RockProjectile {
+    return this.throwProjectile("rock", ownerId, origin, direction);
+  }
+
+  public throwProjectile(
+    kind: ThrowableKind,
+    ownerId: string,
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+  ): RockProjectile {
     // A full sky drops the oldest rock rather than refusing the throw.
     while (this.rocks.length >= ROCK_CONFIG.ROCK_MAX_ACTIVE) {
       this.rocks.shift();
@@ -67,6 +89,7 @@ export class ProjectileSystem {
 
     const rock: RockProjectile = {
       id: this.nextId++,
+      kind,
       ownerId,
       position: new THREE.Vector3(),
       velocity: new THREE.Vector3(),
@@ -74,7 +97,12 @@ export class ProjectileSystem {
       carry: 0,
     };
 
-    launchRock(rock, origin, direction.clone().normalize());
+    launchRock(
+      rock,
+      origin,
+      direction.clone().normalize(),
+      kind === "molotov" ? MOLOTOV_PROFILE : ROCK_PROFILE,
+    );
     this.rocks.push(rock);
 
     return rock;
@@ -114,6 +142,13 @@ export class ProjectileSystem {
 
     const struck = this.firstBodyHit(rock, wall);
 
+    if (struck && rock.kind === "molotov") {
+      // A bottle breaks on whatever it meets, a body included.
+      this.onBurst?.(rock, rock.position);
+
+      return false;
+    }
+
     if (struck) {
       this.combat.resolveProjectileHit({
         sourceId: "rock-throw",
@@ -131,10 +166,14 @@ export class ProjectileSystem {
     }
 
     if (wall < 1) {
+      if (rock.kind === "molotov") {
+        this.onBurst?.(rock, this.impact.point);
+      }
+
       return false;
     }
 
-    return rock.travelled < ROCK_CONFIG.ROCK_MAX_RANGE;
+    return rock.travelled < (rock.profile ?? ROCK_PROFILE).maxRange;
   }
 
   /**
@@ -164,7 +203,8 @@ export class ProjectileSystem {
         // The rock is a small sphere: fatten the body part by its radius.
         this.reach.start.copy(this.shape.start);
         this.reach.end.copy(this.shape.end);
-        this.reach.radius = this.shape.radius + ROCK_CONFIG.ROCK_RADIUS;
+        this.reach.radius =
+          this.shape.radius + (rock.profile ?? ROCK_PROFILE).radius;
 
         const entry = segmentCapsuleEntry(
           this.before,

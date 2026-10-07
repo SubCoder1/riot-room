@@ -23,7 +23,7 @@ export type AttackId =
  * damage pipeline use this, so projectiles share the same health, guard and
  * damage-number code as melee.
  */
-export type DamageSourceId = AttackId | "rock-throw";
+export type DamageSourceId = AttackId | "rock-throw" | "molotov-fire";
 
 export type AttackCategory = "light" | "heavy" | "aerial";
 

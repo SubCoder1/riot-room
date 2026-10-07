@@ -1,6 +1,18 @@
 import * as THREE from "three";
 
-import type { RockPose } from "../inventory/RockStance";
+import type { HeldKind, RockPose } from "../inventory/RockStance";
+import {
+  BOTTLE_SCALE,
+  createBottle,
+  createFlame,
+  flickerScale,
+  createBottleParts,
+  createRockGeometry,
+  createRockMaterial,
+  disposeBottleParts,
+  flickerFlame,
+  type BottleParts,
+} from "../vfx/ThrowableMeshes";
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -30,7 +42,17 @@ export class RockArm {
   /** Set by the character: first person keeps the loaded hand in view. */
   public firstPerson = false;
 
-  private mesh: THREE.Mesh | null = null;
+  /** Parented to the hand; holds the rock and the bottle, one shown at a time. */
+  private holder: THREE.Group | null = null;
+  private rock: THREE.Mesh | null = null;
+  private bottle: THREE.Group | null = null;
+  private bottleParts: BottleParts | null = null;
+  /** A small flame at the left hand's fingers: the lighter that lights the rag. */
+  private lighter: THREE.Group | null = null;
+  private lighterHolder: THREE.Group | null = null;
+  private litAt = 0;
+  private wasLit = false;
+  private readonly handQuat = new THREE.Quaternion();
 
   private readonly shoulder = new THREE.Vector3();
   private readonly leftShoulder = new THREE.Vector3();
@@ -70,17 +92,50 @@ export class RockArm {
     this.rotateBoneBetween = rotateBoneBetween;
   }
 
-  /** Shows or hides the rock in the hand (created on first use). */
-  public setHeld(visible: boolean): void {
-    if (!visible && !this.mesh) {
+  /**
+   * Shows what is in the hand: the rock, the Molotov (lit or not), or nothing.
+   * Created on first use.
+   */
+  public setHeld(kind: HeldKind | null, lit = false, lighting = false): void {
+    if (!kind && !this.holder) {
       return;
     }
 
-    const mesh = this.ensureMesh();
+    const holder = this.ensureHolder();
 
-    if (mesh) {
-      mesh.visible = visible;
+    if (!holder || !this.rock || !this.bottle) {
+      return;
     }
+
+    this.updateLighter(lighting && kind === "molotov");
+
+    holder.visible = kind !== null;
+    this.rock.visible = kind === "rock";
+    this.bottle.visible = kind === "molotov";
+
+    if (kind !== "molotov") {
+      this.wasLit = false;
+
+      return;
+    }
+
+    const now = performance.now() / 1000;
+
+    if (lit && !this.wasLit) {
+      this.litAt = now;
+    }
+
+    this.wasLit = lit;
+
+    // The bottle stays upright in the world whatever the hand does.
+    const hand = holder.parent;
+
+    if (hand) {
+      hand.getWorldQuaternion(this.handQuat).invert();
+      this.bottle.quaternion.copy(this.handQuat);
+    }
+
+    flickerFlame(this.bottle, now, lit, now - this.litAt);
   }
 
   /**
@@ -149,6 +204,23 @@ export class RockArm {
       .addScaledVector(UP, -0.85)
       .addScaledVector(frame.forward, -0.2);
     this.solve("Right", this.goal, pose.weight, this.pole);
+
+    // Lighting a Molotov: the left hand comes across with a small flame to the rag.
+    const lighting = pose.light * pose.weight;
+    const flame = this.bottle?.getObjectByName("flame");
+
+    if (lighting > 0.002 && flame) {
+      flame.getWorldPosition(this.goal);
+      this.goal
+        .addScaledVector(frame.right, -0.1)
+        .addScaledVector(UP, -0.07)
+        .addScaledVector(frame.forward, -0.02);
+      this.pole
+        .copy(frame.right)
+        .multiplyScalar(-0.5)
+        .addScaledVector(UP, -0.85);
+      this.solve("Left", this.goal, lighting, this.pole);
+    }
 
     // The free arm points at the target while the throwing arm is loaded.
     const pointing = (pose.aim + pose.windup + pose.release) * pose.weight;
@@ -271,6 +343,14 @@ export class RockArm {
       .addScaledVector(forward, 0.04);
     out.addScaledVector(this.key, pose.pocket);
 
+    // Lighting a Molotov: up near the chest, in front of the body.
+    this.key
+      .copy(shoulder)
+      .addScaledVector(forward, this.firstPerson ? 0.5 : 0.34)
+      .addScaledVector(UP, this.firstPerson ? -0.14 : 0)
+      .addScaledVector(right, this.firstPerson ? 0.02 : -0.1);
+    out.addScaledVector(this.key, pose.light);
+
     // Held ready, low in front of the chest.
     this.key
       .copy(shoulder)
@@ -285,8 +365,8 @@ export class RockArm {
     this.key
       .copy(shoulder)
       .addScaledVector(forward, this.firstPerson ? 0.55 : -0.05)
-      .addScaledVector(UP, this.firstPerson ? -0.05 : 0.12)
-      .addScaledVector(right, this.firstPerson ? 0.2 : 0.26);
+      .addScaledVector(UP, this.firstPerson ? -0.02 : 0.12)
+      .addScaledVector(right, this.firstPerson ? 0.1 : 0.26);
     out.addScaledVector(this.key, pose.aim);
 
     // Wind-up: all the way back.
@@ -308,9 +388,71 @@ export class RockArm {
     return out;
   }
 
-  private ensureMesh(): THREE.Mesh | null {
-    if (this.mesh) {
-      return this.mesh;
+  /** Shows the lighter flame on the left hand while a Molotov is being lit. */
+  private updateLighter(show: boolean): void {
+    if (!show && !this.lighter) {
+      return;
+    }
+
+    if (!this.lighter && !this.createLighter()) {
+      return;
+    }
+
+    if (!this.lighter || !this.lighterHolder || !this.lighterHolder.parent) {
+      return;
+    }
+
+    this.lighter.visible = show;
+
+    if (show) {
+      const time = performance.now() / 1000;
+
+      // Upright in the world, whatever the hand does.
+      this.lighterHolder.parent.getWorldQuaternion(this.handQuat).invert();
+      this.lighterHolder.quaternion.copy(this.handQuat);
+      this.lighter.scale.copy(flickerScale(time));
+    }
+  }
+
+  private createLighter(): boolean {
+    const hand = this.root.getObjectByName("LeftHand");
+    const fore = this.root.getObjectByName("LeftForeArm");
+
+    if (!hand || !fore || !this.bottleParts) {
+      return false;
+    }
+
+    this.root.updateMatrixWorld(true);
+
+    const holder = new THREE.Group();
+    const flame = createFlame(this.bottleParts, 0.014, 0.05);
+
+    holder.add(flame);
+
+    // At the fingertips: a point just past the wrist, in the hand's own space.
+    const wrist = hand.getWorldPosition(new THREE.Vector3());
+    const elbow = fore.getWorldPosition(new THREE.Vector3());
+    const beyond = wrist
+      .clone()
+      .add(wrist.clone().sub(elbow).normalize().multiplyScalar(HELD_OFFSET));
+
+    holder.position.copy(hand.worldToLocal(beyond));
+
+    const scale = hand.getWorldScale(new THREE.Vector3());
+
+    holder.scale.set(1 / scale.x, 1 / scale.y, 1 / scale.z);
+
+    hand.add(holder);
+    this.lighterHolder = holder;
+    this.lighter = flame;
+    flame.visible = false;
+
+    return true;
+  }
+
+  private ensureHolder(): THREE.Group | null {
+    if (this.holder) {
+      return this.holder;
     }
 
     const hand = this.root.getObjectByName("RightHand");
@@ -322,34 +464,23 @@ export class RockArm {
 
     this.root.updateMatrixWorld(true);
 
-    const geometry = new THREE.IcosahedronGeometry(ROCK_RADIUS, 1);
-    const position = geometry.getAttribute("position");
+    const holder = new THREE.Group();
 
-    // A lumpy rock rather than a ball (stable: depends on the vertex only).
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i);
-      const y = position.getY(i);
-      const z = position.getZ(i);
-      const bump =
-        1 + 0.18 * Math.sin(x * 97 + y * 53) * Math.cos(z * 71 + x * 29);
+    holder.name = "HeldItem";
 
-      position.setXYZ(i, x * bump * 1.1, y * bump * 0.85, z * bump);
-    }
-
-    geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({
-        color: 0x8d8b84,
-        roughness: 0.95,
-        metalness: 0,
-        flatShading: true,
-      }),
+    this.rock = new THREE.Mesh(
+      createRockGeometry(ROCK_RADIUS),
+      createRockMaterial(),
     );
+    this.rock.frustumCulled = false;
 
-    mesh.name = "HeldRock";
-    mesh.frustumCulled = false;
+    this.bottleParts = createBottleParts();
+    this.bottle = createBottle(this.bottleParts);
+    this.bottle.visible = false;
+    // A little smaller in the hand than in flight, so it never fills the view.
+    this.bottle.scale.setScalar(BOTTLE_SCALE * 0.7);
+
+    holder.add(this.rock, this.bottle);
 
     // Parent it to the hand: it follows every animation. The offset is worked
     // out once, in the hand's own space, from a point just past the wrist.
@@ -359,27 +490,38 @@ export class RockArm {
       .clone()
       .add(wrist.clone().sub(elbow).normalize().multiplyScalar(HELD_OFFSET));
 
-    mesh.position.copy(hand.worldToLocal(beyond));
+    holder.position.copy(hand.worldToLocal(beyond));
 
     // Undo the bone's scale (the skeleton may not be in metres).
     const scale = hand.getWorldScale(new THREE.Vector3());
 
-    mesh.scale.set(1 / scale.x, 1 / scale.y, 1 / scale.z);
+    holder.scale.set(1 / scale.x, 1 / scale.y, 1 / scale.z);
 
-    hand.add(mesh);
-    this.mesh = mesh;
+    hand.add(holder);
+    this.holder = holder;
 
-    return mesh;
+    return holder;
   }
 
   public dispose(): void {
-    if (!this.mesh) {
+    if (!this.holder) {
       return;
     }
 
-    this.mesh.removeFromParent();
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.Material).dispose();
-    this.mesh = null;
+    this.holder.removeFromParent();
+    this.lighterHolder?.removeFromParent();
+    this.lighterHolder = null;
+    this.lighter = null;
+    this.rock?.geometry.dispose();
+    (this.rock?.material as THREE.Material | undefined)?.dispose();
+
+    if (this.bottleParts) {
+      disposeBottleParts(this.bottleParts);
+    }
+
+    this.holder = null;
+    this.rock = null;
+    this.bottle = null;
+    this.bottleParts = null;
   }
 }

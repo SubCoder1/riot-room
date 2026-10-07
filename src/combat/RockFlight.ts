@@ -1,6 +1,35 @@
 import * as THREE from "three";
 
+import { MOLOTOV_CONFIG } from "./MolotovConfig";
 import { ROCK_CONFIG } from "./RockConfig";
+
+/** What a throwable's flight is made of: the rock and the Molotov share one model. */
+export interface FlightProfile {
+  speed: number;
+  gravity: number;
+  gravityStart: number;
+  gravityRamp: number;
+  maxRange: number;
+  radius: number;
+}
+
+export const ROCK_PROFILE: FlightProfile = {
+  speed: ROCK_CONFIG.ROCK_THROW_SPEED,
+  gravity: ROCK_CONFIG.ROCK_GRAVITY,
+  gravityStart: ROCK_CONFIG.ROCK_GRAVITY_START,
+  gravityRamp: ROCK_CONFIG.ROCK_GRAVITY_RAMP,
+  maxRange: ROCK_CONFIG.ROCK_MAX_RANGE,
+  radius: ROCK_CONFIG.ROCK_RADIUS,
+};
+
+export const MOLOTOV_PROFILE: FlightProfile = {
+  speed: MOLOTOV_CONFIG.MOLOTOV_THROW_SPEED,
+  gravity: MOLOTOV_CONFIG.MOLOTOV_GRAVITY,
+  gravityStart: MOLOTOV_CONFIG.MOLOTOV_GRAVITY_START,
+  gravityRamp: MOLOTOV_CONFIG.MOLOTOV_GRAVITY_RAMP,
+  maxRange: MOLOTOV_CONFIG.MOLOTOV_MAX_RANGE,
+  radius: MOLOTOV_CONFIG.MOLOTOV_RADIUS,
+};
 
 /** What the flight needs to know about the level. */
 export interface RockWorld {
@@ -9,6 +38,12 @@ export interface RockWorld {
    * otherwise how far it gets before the first solid.
    */
   clearFraction(from: THREE.Vector3, to: THREE.Vector3): number;
+  /**
+   * Height of the surface a thing at (x, z), currently at height `fromY`,
+   * would come to rest on (the floor, a platform, a ramp). Used to put a fire
+   * on a real surface; without it the floor (0) is assumed.
+   */
+  surfaceY?(x: number, z: number, fromY: number): number;
 }
 
 export interface RockBody {
@@ -16,6 +51,8 @@ export interface RockBody {
   velocity: THREE.Vector3;
   /** Path length so far, metres (gravity depends on it). */
   travelled: number;
+  /** Which flight model this body follows (the rock by default). */
+  profile?: FlightProfile;
 }
 
 /** Sets a rock flying from `origin` along the unit vector `direction`. */
@@ -23,10 +60,12 @@ export function launchRock(
   body: RockBody,
   origin: THREE.Vector3,
   direction: THREE.Vector3,
+  profile: FlightProfile = ROCK_PROFILE,
 ): void {
   body.position.copy(origin);
   body.travelled = 0;
-  body.velocity.copy(direction).multiplyScalar(ROCK_CONFIG.ROCK_THROW_SPEED);
+  body.profile = profile;
+  body.velocity.copy(direction).multiplyScalar(profile.speed);
 }
 
 /**
@@ -35,13 +74,12 @@ export function launchRock(
  */
 export function stepRock(body: RockBody, dt: number): void {
   // Flies straight at first; gravity builds up steadily after ROCK_GRAVITY_START metres.
-  const set =
-    (body.travelled - ROCK_CONFIG.ROCK_GRAVITY_START) /
-    ROCK_CONFIG.ROCK_GRAVITY_RAMP;
+  const profile = body.profile ?? ROCK_PROFILE;
+  const set = (body.travelled - profile.gravityStart) / profile.gravityRamp;
   const ease = Math.min(Math.max(set, 0), 1);
 
   // Semi-implicit Euler: gravity first, then move.
-  body.velocity.y -= ROCK_CONFIG.ROCK_GRAVITY * ease * dt;
+  body.velocity.y -= profile.gravity * ease * dt;
   body.position.addScaledVector(body.velocity, dt);
   body.travelled += body.velocity.length() * dt;
 }
@@ -70,7 +108,7 @@ export function rockImpactInStep(
 
   let fraction = world.clearFraction(from, body.position);
 
-  const floorY = FLOOR + ROCK_CONFIG.ROCK_RADIUS;
+  const floorY = FLOOR + (body.profile ?? ROCK_PROFILE).radius;
 
   if (body.position.y <= floorY) {
     const drop = before.y - body.position.y;
@@ -124,8 +162,9 @@ export function traceRockPath(
   world: RockWorld,
   path: RockPath,
   sampleEvery = 3,
+  profile: FlightProfile = ROCK_PROFILE,
 ): void {
-  launchRock(traceBody, origin, direction);
+  launchRock(traceBody, origin, direction, profile);
 
   path.count = 0;
   path.hitSomething = false;
@@ -134,7 +173,7 @@ export function traceRockPath(
   let step = 0;
 
   while (
-    traceBody.travelled < ROCK_CONFIG.ROCK_MAX_RANGE &&
+    traceBody.travelled < profile.maxRange &&
     path.count < path.points.length
   ) {
     traceBefore.copy(traceBody.position);
