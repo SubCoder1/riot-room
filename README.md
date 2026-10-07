@@ -120,6 +120,16 @@ Blocking is **directional and positional**, not a shield on all sides:
 - A blocked hit only nudges the defender.
 - Health can't go below 0, and a dead fighter can't be hit again.
 
+### Enemy health bars and damage numbers
+
+Enemies within about 16 m show a solid red health bar above their head. It is a plain rectangle (no outline, gloss or background), left aligned: as health drops it gets shorter from the right. It is anchored to the head in the 3D world and follows the enemy, but it is always the same size on screen. Beyond the distance limit it simply isn't shown. It is also hidden behind cover, when the enemy is behind you, and when the enemy is dead.
+
+- **Damage numbers:** when you land a hit, the real damage (`-10`, `-25`...) pops in beside the enemy's body, floats up toward the bar with a slight sideways drift, shrinks and fades, and is removed after about 0.9 s. Each hit gets its own number, started on a randomly chosen side, so quick combos don't stack. They are large and outlined: yellow for light attacks, red for heavy ones (a flying punch takes the colour of its light or heavy version), and bigger for heavy hits, flying hits and a killing blow (always red).
+- **Blocked hits** show no number and don't touch the bar; a small `BLOCKED` tag appears under it.
+- The bar reads each combatant's health every frame, so the UI is never the source of truth. Damage, hit detection and health are unchanged. The old floating label above the dummy is now shown only with `F4`.
+
+The look is in [src/style.css](src/style.css) (`.enemy-hp`), the logic in [src/ui/WorldHealthBars.ts](src/ui/WorldHealthBars.ts) (distance limit `MAX_DISTANCE`, bar width `BAR_WIDTH`).
+
 All attack numbers (damage, timing, knockback, reach, blockability) live in [src/combat/AttackDefinitions.ts](src/combat/AttackDefinitions.ts). Guard rules live in [src/combat/CombatConfig.ts](src/combat/CombatConfig.ts).
 
 ---
@@ -219,6 +229,7 @@ src/
   character/              Character model, animations, procedural aim/IK layers
   combat/                 Combat system, attack definitions, guard rules, dummy, debug view
   rendering/Renderer.ts   Three.js renderer, scene and camera
+  ui/                     Enemy health bar (reads combat events; changes no gameplay)
   world/                  Arena layout, meshes, collision, spawn system, debug overlay
 public/assets/            Character model and animation .glb files
 tests/combat/             Automated combat tests (Vitest)

@@ -67,8 +67,17 @@ export type CombatListener = (event: CombatEvent) => void;
 export class CombatEventBus {
   private readonly listeners: CombatListener[] = [];
 
-  public subscribe(listener: CombatListener): void {
+  /** Returns a function that removes the listener again. */
+  public subscribe(listener: CombatListener): () => void {
     this.listeners.push(listener);
+
+    return () => {
+      const at = this.listeners.indexOf(listener);
+
+      if (at >= 0) {
+        this.listeners.splice(at, 1);
+      }
+    };
   }
 
   public emit(event: CombatEvent): void {

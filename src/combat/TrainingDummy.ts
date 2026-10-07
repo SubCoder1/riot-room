@@ -103,6 +103,11 @@ export class TrainingDummy implements Combatant {
     events.subscribe((event) => this.showResult(event));
   }
 
+  /** The floating HP label is a debugging aid; the HUD shows health in play. */
+  public setLabelVisible(visible: boolean): void {
+    this.label.sprite.visible = visible;
+  }
+
   /** Puts the outcome of the last attack on the label, so tests don't need the console. */
   private showResult(event: CombatEvent): void {
     if (!("targetId" in event) || event.targetId !== this.id) {

@@ -18,6 +18,7 @@ import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
 import { createCapsule, segmentCapsuleEntry } from "../combat/Shapes";
 import { TrainingDummy } from "../combat/TrainingDummy";
+import { WorldHealthBars } from "../ui/WorldHealthBars";
 
 export class Game {
   // ============================================================
@@ -76,6 +77,9 @@ export class Game {
 
   /** F4 toggles the combat debug overlay, F6 toggles the dummy's guard. */
   private previousF4 = false;
+
+  /** Health bars above enemies' heads and floating damage numbers. */
+  private readonly enemyHealthBars: WorldHealthBars;
   private previousF6 = false;
   private previousF7 = false;
   private previousF8 = false;
@@ -226,9 +230,22 @@ export class Game {
 
     this.combat.register(this.dummy);
 
+    this.enemyHealthBars = new WorldHealthBars(
+      document.body,
+      this.combat.events,
+      () => this.combat.getCombatants(),
+      this.playerCombatant.id,
+    );
+
+    // The old floating dev label is only for debugging now (F4).
+    this.dummy.setLabelVisible(false);
+
     // Cover, pillars and platforms stop punches.
     this.combat.lineOfSight = (from, to) =>
       !this.collision.segmentBlocked(from.x, from.y, from.z, to.x, to.y, to.z);
+
+    // Bars hide behind cover like anything else.
+    this.enemyHealthBars.lineOfSight = this.combat.lineOfSight;
 
     // Arms and fists stop at cover and walls instead of sinking into them.
     this.character.armProbe = (from, to) => this.armClearFraction(from, to);
@@ -461,6 +478,9 @@ export class Game {
     // ----------------------------------------------------------
 
     this.updateCamera();
+
+    // Health bars and damage numbers follow the heads, from the final camera.
+    this.enemyHealthBars.update(dt, this.renderer.camera);
 
     // ----------------------------------------------------------
     // Render
@@ -871,6 +891,7 @@ export class Game {
     if (f4 && !this.previousF4) {
       this.combatDebug.toggle();
       this.arenaDebug.toggle();
+      this.dummy.setLabelVisible(this.combatDebug.isEnabled);
     }
 
     if (f6 && !this.previousF6) {

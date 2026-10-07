@@ -41,3 +41,96 @@ canvas {
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
 }
+
+/* ------------------------------------------------------------------
+   Enemy health bars and damage numbers. Each bar is projected from the
+   enemy's head every frame (see src/ui/WorldHealthBars.ts), so it follows the
+   enemy and keeps one size on screen at any distance.
+   ------------------------------------------------------------------ */
+
+.enemy-hp-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  z-index: 9;
+  font-family: "Segoe UI", Inter, sans-serif;
+}
+
+/* A plain solid red bar: no frame, gloss, glow or background. Its box is
+   BAR_WIDTH wide and the fill is left aligned, so it shortens from the right. */
+.enemy-hp {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160px;
+  will-change: transform;
+}
+
+.enemy-hp__fill {
+  height: 7px;
+  background: #e5262a;
+  /* A short ease so a hit reads as a quick shrink, not a jump. */
+  transition: width 120ms ease-out;
+}
+
+.enemy-hp__tag {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 3px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: #bae6fd;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* A damage number: placed, scaled and faded by script each frame.
+   Colour follows the attack's weight (light = yellow, heavy = red); size
+   follows the kind of hit. */
+.enemy-hp__number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-weight: 900;
+  font-size: 52px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: #ffd91a;
+  /* A dark outline keeps it readable on any background. */
+  -webkit-text-stroke: 4px rgba(20, 8, 4, 0.9);
+  paint-order: stroke fill;
+  text-shadow:
+    0 4px 0 rgba(20, 8, 4, 0.55),
+    0 0 18px rgba(255, 210, 30, 0.7);
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.enemy-hp__number[data-weight="heavy"] {
+  color: #ff2d2d;
+  text-shadow:
+    0 4px 0 rgba(20, 4, 8, 0.55),
+    0 0 18px rgba(255, 40, 40, 0.7);
+}
+
+.enemy-hp__number[data-kind="heavy"] {
+  font-size: 66px;
+}
+
+.enemy-hp__number[data-kind="flying"] {
+  font-size: 60px;
+}
+
+/* A killing blow is the biggest and always red. */
+.enemy-hp__number[data-kind="ko"] {
+  font-size: 80px;
+  color: #ff1a2e;
+  text-shadow:
+    0 4px 0 rgba(20, 4, 8, 0.55),
+    0 0 26px rgba(255, 20, 40, 0.9);
+}
