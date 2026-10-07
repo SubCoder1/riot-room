@@ -8,6 +8,7 @@ import {
 } from "./ArenaLayout";
 import { ARENA_ROUTES } from "./ArenaRoutes";
 import { MIN_SPAWN_DISTANCE, SPAWN_CLEARANCE } from "./SpawnSystem";
+import { UI_FONT_FAMILY } from "../fonts";
 
 function labelSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement("canvas");
@@ -21,7 +22,7 @@ function labelSprite(text: string, color: string): THREE.Sprite {
     context.fillStyle = "rgba(0, 0, 0, 0.6)";
     context.fillRect(0, 0, 128, 64);
     context.fillStyle = color;
-    context.font = "bold 40px sans-serif";
+    context.font = `48px ${UI_FONT_FAMILY}`;
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(text, 64, 34);

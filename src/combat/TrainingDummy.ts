@@ -14,6 +14,7 @@ import {
   type HurtboxId,
 } from "./Combatant";
 import type { CapsuleShape } from "./Shapes";
+import { UI_FONT_FAMILY } from "../fonts";
 
 const KNOCKBACK_DECAY = 6;
 const RESPAWN_DELAY = 2.5;
@@ -398,12 +399,12 @@ class HpLabel {
     context.fillRect(8, 8, 496, 216);
     context.textAlign = "center";
     context.fillStyle = "#ffffff";
-    context.font = "bold 44px sans-serif";
+    context.font = `52px ${UI_FONT_FAMILY}`;
     context.fillText(name, 256, 56);
     context.fillStyle = dead ? "#f87171" : "#86efac";
     context.fillText(second, 256, 106);
     context.fillStyle = "#fde68a";
-    context.font = "bold 22px sans-serif";
+    context.font = `26px ${UI_FONT_FAMILY}`;
 
     // "REASON - detail" is drawn on two lines so nothing runs off the label.
     const [headline, detail] = note.split(" - ");
@@ -411,7 +412,7 @@ class HpLabel {
     context.fillText(headline.slice(0, 40), 256, 150);
 
     if (detail) {
-      context.font = "bold 20px sans-serif";
+      context.font = `24px ${UI_FONT_FAMILY}`;
       context.fillText(detail.slice(0, 50), 256, 186);
     }
 

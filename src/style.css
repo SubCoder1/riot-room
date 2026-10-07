@@ -1,3 +1,8 @@
+:root {
+  /* The one font for all text; see src/fonts.ts. */
+  --font-ui: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+}
+
 html,
 body,
 #app {
@@ -9,7 +14,7 @@ body,
 body {
   overflow: hidden;
   background: #090d15;
-  font-family: Inter, "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
 }
 
 #app {
@@ -55,7 +60,7 @@ canvas {
   pointer-events: none;
   user-select: none;
   z-index: 9;
-  font-family: "Segoe UI", Inter, sans-serif;
+  font-family: var(--font-ui);
 }
 
 /* A plain solid red bar: no frame, gloss, glow or background. Its box is
@@ -82,8 +87,8 @@ canvas {
   right: 0;
   margin-top: 3px;
   text-align: center;
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 400;
   letter-spacing: 0.22em;
   color: #bae6fd;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);

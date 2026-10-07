@@ -1,4 +1,6 @@
+import "@fontsource/bebas-neue/400.css";
 import "./style.css";
+import { loadUiFont } from "./fonts";
 import { Game } from "./game/Game";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -15,4 +17,6 @@ if (!shell) {
   throw new Error("Game shell element not found.");
 }
 
-new Game(shell);
+// Start once the font is ready, so text drawn onto canvases (the in-world
+// labels) uses it from the first frame.
+void loadUiFont().then(() => new Game(shell));
