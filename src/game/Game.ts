@@ -16,9 +16,18 @@ import { CombatDebug } from "../combat/CombatDebug";
 import { logCombatEvent } from "../combat/CombatLog";
 import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
+import { ProjectileSystem } from "../combat/Projectiles";
+import { ROCK_CONFIG } from "../combat/RockConfig";
+import { traceRockPath, type RockWorld } from "../combat/RockFlight";
 import { createCapsule, segmentCapsuleEntry } from "../combat/Shapes";
 import { TrainingDummy } from "../combat/TrainingDummy";
 import { WorldHealthBars } from "../ui/WorldHealthBars";
+import { PlayerUtilities } from "../inventory/PlayerUtilities";
+import { RockStance } from "../inventory/RockStance";
+import { WeaponWheel } from "../inventory/WeaponWheel";
+import { RockAimPreview } from "../vfx/RockAimPreview";
+import { RockProjectileView } from "../vfx/RockProjectileView";
+import { WeaponWheelView } from "../ui/WeaponWheelView";
 
 export class Game {
   // ============================================================

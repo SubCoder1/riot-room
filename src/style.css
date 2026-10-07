@@ -101,41 +101,151 @@ canvas {
   position: absolute;
   left: 0;
   top: 0;
-  font-weight: 900;
-  font-size: 52px;
+  font-weight: 400;
+  font-size: 64px;
   line-height: 1;
   letter-spacing: 0.02em;
   color: #ffd91a;
-  /* A dark outline keeps it readable on any background. */
-  -webkit-text-stroke: 4px rgba(20, 8, 4, 0.9);
-  paint-order: stroke fill;
-  text-shadow:
-    0 4px 0 rgba(20, 8, 4, 0.55),
-    0 0 18px rgba(255, 210, 30, 0.7);
+  /* Plain colour, no outline or glow; a faint shadow keeps it readable. */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
   will-change: transform, opacity;
 }
 
 .enemy-hp__number[data-weight="heavy"] {
   color: #ff2d2d;
-  text-shadow:
-    0 4px 0 rgba(20, 4, 8, 0.55),
-    0 0 18px rgba(255, 40, 40, 0.7);
 }
 
 .enemy-hp__number[data-kind="heavy"] {
-  font-size: 66px;
+  font-size: 80px;
 }
 
 .enemy-hp__number[data-kind="flying"] {
-  font-size: 60px;
+  font-size: 74px;
 }
 
 /* A killing blow is the biggest and always red. */
 .enemy-hp__number[data-kind="ko"] {
-  font-size: 80px;
+  font-size: 98px;
   color: #ff1a2e;
-  text-shadow:
-    0 4px 0 rgba(20, 4, 8, 0.55),
-    0 0 26px rgba(255, 20, 40, 0.9);
+}
+
+/* ------------------------------------------------------------------
+   Weapon wheel: a screen-space overlay shown while TAB is held. Dark,
+   translucent and minimal; the highlighted slot is only lightly lit.
+   ------------------------------------------------------------------ */
+
+.weapon-wheel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(390px, 78vmin);
+  height: min(390px, 78vmin);
+  transform: translate(-50%, -50%) scale(0.92);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+  z-index: 20;
+  /* A very short fade and grow, then hidden for good once it is gone. */
+  transition:
+    opacity 130ms ease-out,
+    transform 130ms ease-out,
+    visibility 0s linear 130ms;
+}
+
+.weapon-wheel[data-open="true"] {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 130ms ease-out,
+    transform 130ms ease-out,
+    visibility 0s;
+}
+
+.weapon-wheel svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  font-family: var(--font-ui);
+}
+
+.ww-disc {
+  fill: rgba(8, 12, 22, 0.78);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1;
+}
+
+.ww-sector {
+  fill: transparent;
+}
+
+.ww-sector.is-selected {
+  fill: rgba(255, 255, 255, 0.13);
+}
+
+.ww-divider {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 0.8;
+}
+
+.ww-hub {
+  fill: rgba(6, 9, 18, 0.9);
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+}
+
+.ww-icon {
+  fill: none;
+  stroke: #aeb7c9;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Icons are drawn on a 32 x 32 grid; this makes them a bit larger. */
+  transform: scale(1.3);
+}
+
+.ww-slot.is-selected .ww-icon {
+  stroke: #ffffff;
+}
+
+.ww-name {
+  fill: #98a2b6;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-anchor: middle;
+}
+
+.ww-qty {
+  fill: #dde3ee;
+  font-size: 14px;
+  font-weight: 400;
+  text-anchor: middle;
+}
+
+.ww-slot.is-selected .ww-name {
+  fill: #e8edf5;
+}
+
+/* A slot with none left stays visible but quiet. */
+.ww-slot[data-empty="true"] {
+  opacity: 0.6;
+}
+
+.ww-center-name {
+  fill: #ffffff;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-anchor: middle;
+}
+
+.ww-center-qty {
+  fill: #cfd6e4;
+  font-size: 19px;
+  font-weight: 400;
+  text-anchor: middle;
 }

@@ -5,6 +5,8 @@ export class InputManager {
   private jumpQueued: boolean;
   private attackQueued: boolean;
   private readonly mouseButtons = new Set<number>();
+  /** Scroll distance (pixels) not yet turned into whole wheel steps. */
+  private wheelAccumulated = 0;
   public pointerLocked: boolean;
   private readonly canvas: HTMLCanvasElement;
 
@@ -27,6 +29,8 @@ export class InputManager {
     this.canvas.addEventListener("mousedown", this.handleMouseDown);
     window.addEventListener("mouseup", this.handleMouseUp);
     this.canvas.addEventListener("contextmenu", this.handleContextMenu);
+    window.addEventListener("wheel", this.handleWheel, { passive: false });
+    window.addEventListener("blur", this.handleBlur);
 
     this.canvas.addEventListener("click", () => {
       if (!this.pointerLocked) {
@@ -56,6 +60,19 @@ export class InputManager {
     return shouldAttack;
   }
 
+  /**
+   * Whole mouse-wheel steps since the last call (positive = scrolled down /
+   * toward you, negative = up). One notch of a wheel is one step; a trackpad's
+   * many small scrolls add up to steps. Call it every frame so none are missed.
+   */
+  public consumeWheelSteps(): number {
+    const steps = Math.trunc(this.wheelAccumulated / WHEEL_STEP);
+
+    this.wheelAccumulated -= steps * WHEEL_STEP;
+
+    return steps;
+  }
+
   public dispose(): void {
     window.removeEventListener("keydown", this.handleKeyDown);
     window.removeEventListener("keyup", this.handleKeyUp);
@@ -66,6 +83,8 @@ export class InputManager {
     document.removeEventListener("mousemove", this.handleMouseMove);
     window.removeEventListener("mouseup", this.handleMouseUp);
     this.canvas.removeEventListener("contextmenu", this.handleContextMenu);
+    window.removeEventListener("wheel", this.handleWheel);
+    window.removeEventListener("blur", this.handleBlur);
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -92,6 +111,27 @@ export class InputManager {
 
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
     this.keys.delete(event.code);
+  };
+
+  // Switching away from the page would otherwise leave keys "held" (a key
+  // released while another window had focus is never seen as released).
+  private readonly handleBlur = (): void => {
+    this.keys.clear();
+    this.mouseButtons.clear();
+  };
+
+  private readonly handleWheel = (event: WheelEvent): void => {
+    if (!this.pointerLocked) {
+      return;
+    }
+
+    // The wheel is for the game while playing: never scroll the page with it.
+    event.preventDefault();
+
+    // Normalise to pixels (lines and pages are used by some browsers).
+    const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? 400 : 1;
+
+    this.wheelAccumulated += event.deltaY * unit;
   };
 
   private readonly handlePointerLockChange = (): void => {
@@ -126,11 +166,14 @@ export class InputManager {
     this.mouseButtons.delete(event.button);
   };
 
-  // Right click is the block button; don't open the browser context menu.
+  // Right click is the rock-aim button; never open the browser context menu.
   private readonly handleContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
   };
 }
+
+/** Pixels of scrolling that make one wheel step (one notch of a mouse wheel). */
+const WHEEL_STEP = 100;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
