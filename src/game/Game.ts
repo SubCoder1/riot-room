@@ -89,6 +89,42 @@ export class Game {
 
   /** Health bars above enemies' heads and floating damage numbers. */
   private readonly enemyHealthBars: WorldHealthBars;
+
+  /** This player's utilities and what they have selected (not shared). */
+  private readonly utilities = new PlayerUtilities();
+
+  /** The hold-TAB weapon wheel and its drawing. */
+  private readonly weaponWheel = new WeaponWheel(this.utilities);
+  private readonly weaponWheelView: WeaponWheelView;
+
+  // ============================================================
+  // ROCKS (equip, aim with right click, throw with left click)
+  // ============================================================
+
+  private readonly rockStance = new RockStance();
+  private readonly rockWorld: RockWorld = {
+    clearFraction: (from, to) =>
+      this.collision.segmentClearFraction(
+        from.x,
+        from.y,
+        from.z,
+        to.x,
+        to.y,
+        to.z,
+      ),
+  };
+  private readonly projectiles: ProjectileSystem;
+  private readonly rockView: RockProjectileView;
+  private readonly rockPreview = new RockAimPreview();
+  private crosshair: HTMLElement | null = null;
+  /** The left click of this frame, if the rock stance did not use it. */
+  private punchClick = false;
+  private readonly throwOrigin = new THREE.Vector3();
+  private readonly throwDirection = new THREE.Vector3();
+  private readonly throwCameraDirection = new THREE.Vector3();
+  private readonly throwTarget = new THREE.Vector3();
+  private readonly throwProbe = new THREE.Vector3();
+
   private previousF6 = false;
   private previousF7 = false;
   private previousF8 = false;
@@ -220,6 +256,9 @@ export class Game {
 
     this.combat.register(this.playerCombatant);
 
+    this.projectiles = new ProjectileSystem(this.combat, this.rockWorld);
+    this.rockView = new RockProjectileView(this.projectiles);
+
     this.dummy = new TrainingDummy(
       this.combat.events,
       new THREE.Vector3(0, 0, 4),
@@ -255,6 +294,12 @@ export class Game {
 
     // Bars hide behind cover like anything else.
     this.enemyHealthBars.lineOfSight = this.combat.lineOfSight;
+
+    this.weaponWheelView = new WeaponWheelView(
+      document.body,
+      this.utilities,
+      this.weaponWheel,
+    );
 
     // Arms and fists stop at cover and walls instead of sinking into them.
     this.character.armProbe = (from, to) => this.armClearFraction(from, to);
@@ -293,6 +338,8 @@ export class Game {
     this.renderer.scene.add(this.character.group);
     this.renderer.scene.add(this.dummy.root);
     this.renderer.scene.add(this.combatDebug.group);
+    this.renderer.scene.add(this.rockView.group);
+    this.renderer.scene.add(this.rockPreview.group);
     this.renderer.scene.add(this.arenaDebug.group);
 
     void this.dummy.load();
@@ -385,7 +432,12 @@ export class Game {
 
     this.updateCrouchState();
 
-    // Holding right click guards. Sprinting wins only when it changes the
+    // The weapon wheel and the rock stance come first: whether the player is
+    // aiming a rock decides if they can guard or punch this frame.
+    this.updateWeaponWheel(dt);
+    this.updateRockStance(dt);
+
+    // Holding F guards. Sprinting wins only when it changes the
     // animation to a run: Shift + W / S while standing. Fast strafing keeps the
     // guard, and Shift does nothing special while crouched.
     const sprintRequested =
@@ -395,7 +447,7 @@ export class Game {
       !this.player.isCrouching;
 
     this.player.isBlocking =
-      this.input.isMouseDown(2) && this.player.isGrounded && !sprintRequested;
+      this.isBlockHeld() && this.player.isGrounded && !sprintRequested;
 
     this.updatePunchState(dt);
 
@@ -441,11 +493,14 @@ export class Game {
       this.punchTimeLeft > 0 ||
         this.runPunchTimeLeft > 0 ||
         this.flyPunchActive ||
-        this.player.isBlocking,
+        this.player.isBlocking ||
+        this.rockStance.pointsAtCrosshair,
       !this.player.isGrounded,
       (this.punchTimeLeft > 0 || this.runPunchTimeLeft > 0) &&
         this.player.isGrounded,
     );
+
+    this.character.setRock(this.rockStance.pose, this.rockStance.rockVisible);
 
     this.character.update(
       dt,
@@ -487,6 +542,9 @@ export class Game {
     // ----------------------------------------------------------
 
     this.updateCamera();
+
+    // Rocks: the throw (from the posed hand), the aim line, the rocks in flight.
+    this.updateRocks();
 
     // Health bars and damage numbers follow the heads, from the final camera.
     this.enemyHealthBars.update(dt, this.renderer.camera);
@@ -547,8 +605,147 @@ export class Game {
   //
   // ============================================================
 
+  // ============================================================
+  // WEAPON WHEEL
+  // ============================================================
+  //
+  // Scrolling the mouse wheel at any time brings it up and equips the next
+  // (or previous) slot at once; it fades out by itself a moment after the last
+  // scroll. It never blocks anything: punching, blocking and moving carry on.
+  //
+  // ============================================================
+
+  private updateWeaponWheel(dt: number): void {
+    this.weaponWheel.scroll(this.input.consumeWheelSteps());
+    this.weaponWheel.update(dt);
+    this.weaponWheelView.render();
+  }
+
+  /** Guard is the F key, and is off while a rock is being aimed or thrown. */
+  private isBlockHeld(): boolean {
+    return this.input.isPressed("KeyF") && this.rockStance.canBlock;
+  }
+
+  /**
+   * Rock states. Right click aims, left click while aiming throws (and is never
+   * also a punch), and switching away from ROCKS puts the rock back.
+   */
+  private updateRockStance(dt: number): void {
+    const click = this.input.consumeAttack();
+    const armBusy =
+      this.punchTimeLeft > 0 ||
+      this.runPunchTimeLeft > 0 ||
+      this.flyPunchActive ||
+      this.flyLandTimeLeft > 0 ||
+      this.player.isBlocking;
+
+    this.rockStance.update(dt, {
+      selected: this.utilities.selected === "ROCKS",
+      count: this.utilities.quantityOf("ROCKS") ?? 0,
+      aimHeld: this.input.isMouseDown(2),
+      throwPressed: click,
+      armBusy,
+    });
+
+    // The click goes to a punch only when the rocks did not take it and the
+    // player is not mid-aim.
+    this.punchClick =
+      click && !this.rockStance.consumedClick && this.rockStance.canPunch;
+  }
+
+  /**
+   * Where a rock would leave the hand and which way it would go: from the
+   * hand toward the crosshair line (so it heads for what you are looking at,
+   * not parallel to it). The preview and the real throw both use this.
+   */
+  private computeThrow(): boolean {
+    const camera = this.renderer.camera;
+    // The look direction and eye are the player's, not the camera's: the third
+    // person camera sits in front of the character, looking back at them.
+    const eye = this.player.position;
+    const aim = this.throwCameraDirection.copy(this.getAimDirection());
+
+    if (!this.character.getRockReleasePoint(this.throwOrigin)) {
+      return false;
+    }
+
+    // Never start inside the lens (first person): use a point just ahead of it.
+    if (
+      !this.isThirdPerson &&
+      this.throwOrigin.distanceTo(camera.position) < 0.35
+    ) {
+      this.throwOrigin.copy(camera.position).addScaledVector(aim, 0.35);
+    }
+
+    const converge = ROCK_CONFIG.ROCK_CONVERGE_DISTANCE;
+
+    this.throwProbe.copy(eye).addScaledVector(aim, converge);
+
+    const clear = this.rockWorld.clearFraction(eye, this.throwProbe);
+    const distance = THREE.MathUtils.clamp(clear * converge, 6, converge);
+
+    this.throwTarget.copy(eye).addScaledVector(aim, distance);
+
+    this.throwDirection.subVectors(this.throwTarget, this.throwOrigin);
+
+    if (this.throwDirection.lengthSq() < 1e-6) {
+      this.throwDirection.copy(aim);
+    }
+
+    this.throwDirection.normalize();
+
+    return true;
+  }
+
+  private updateRocks(): void {
+    // The throw: the rock leaves the hand at the release point of the animation.
+    if (this.rockStance.consumeRelease() && this.computeThrow()) {
+      if (this.utilities.remove("ROCKS")) {
+        this.projectiles.throwRock(
+          this.playerCombatant.id,
+          this.throwOrigin,
+          this.throwDirection,
+        );
+
+        // Out of rocks: back to fists.
+        if ((this.utilities.quantityOf("ROCKS") ?? 0) <= 0) {
+          this.utilities.select("FISTS");
+        }
+      }
+    }
+
+    // The aim line (local only), from the same numbers the throw uses.
+    if (this.rockStance.isAiming && this.computeThrow()) {
+      traceRockPath(
+        this.throwOrigin,
+        this.throwDirection,
+        this.rockWorld,
+        this.rockPreview.path,
+        1,
+      );
+      this.rockPreview.show(this.renderer.camera);
+    } else if (this.rockPreview.isVisible) {
+      this.rockPreview.hide();
+    }
+
+    // The crosshair gives way to the aim line while aiming a rock; a quick
+    // throw (no right click) keeps it, since that is what the rock follows.
+    const aimingRock =
+      this.rockStance.isAiming ||
+      (this.rockStance.state === "ROCK_THROWING" && this.input.isMouseDown(2));
+
+    this.crosshair ??= document.querySelector<HTMLElement>(".crosshair");
+
+    if (this.crosshair) {
+      this.crosshair.style.visibility = aimingRock ? "hidden" : "";
+    }
+
+    this.rockView.update();
+  }
+
   private updatePunchState(dt: number): void {
-    const attackClick = this.input.consumeAttack();
+    // The click was read in updateRockStance: a throw click is not a punch.
+    const attackClick = this.punchClick;
     const grounded = this.player.isGrounded;
     const sprintingForward =
       this.player.isSprinting && this.input.isPressed("KeyW");
@@ -790,9 +987,9 @@ export class Game {
      * --------------------------------------------------------
      */
 
-    // Idle block: hold right click while standing still.
+    // Idle block: hold F while standing still.
     if (
-      this.input.isMouseDown(2) &&
+      this.isBlockHeld() &&
       this.flyLandTimeLeft <= 0 &&
       this.punchTimeLeft <= 0 &&
       this.runPunchTimeLeft <= 0 &&
@@ -959,6 +1156,7 @@ export class Game {
     this.updatePunchReach();
 
     this.combat.update(dt);
+    this.projectiles.update(dt);
     this.combatDebug.update(this.combat);
   }
 
@@ -1100,6 +1298,8 @@ export class Game {
     const foe = spawns.dummy;
 
     this.combat.cancelAttack("player");
+    this.projectiles.clear();
+    this.rockStance.reset();
     this.playerCombatant.health.reset();
 
     this.player.teleport(own.x, own.y, own.z);

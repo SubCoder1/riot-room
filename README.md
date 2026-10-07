@@ -36,9 +36,29 @@ Open the URL Vite prints, then **click the game canvas** to capture the mouse (p
 | `Shift` + `W` / `S` | Sprint (run) forward / backward |
 | `Space` | Jump |
 | `C` (hold) | Crouch |
-| Left click | Punch |
-| Right click (hold) | Block |
+| Mouse wheel | Switch utility: opens the weapon wheel and equips the next / previous slot at once |
+| Left click | Punch; with Rocks equipped, throw a rock (quick throw, or aimed while right click is held) |
+| `F` (hold) | Block |
+| Right click (hold) | Aim a rock (only with Rocks equipped) |
 | `F3` | Toggle first person / third person camera |
+
+### Weapon wheel
+
+Scroll the **mouse wheel** at any time (standing, running, punching, blocking) and a small weapon wheel appears in the middle of the screen while the next (scroll down) or previous (scroll up) slot is **equipped in the same moment**. Keep scrolling to keep stepping. About a second and a half after the last scroll the wheel fades away by itself and your choice stays. It never blocks anything: you can keep punching, blocking and moving while it is up. The wheel is a screen overlay, so it works the same in first and third person.
+
+| Slot | Quantity | Note |
+| --- | --- | --- |
+| Rocks (top) | starts at 3 | |
+| Molotov (right) | starts at 0 | |
+| Smoke (left) | starts at 0 | |
+| Fists (bottom) | none | no utility: you use your fists (shown with a boxing glove) |
+
+- Scrolling steps ROCKS, MOLOTOV, SMOKE, FISTS and back to ROCKS one way, and the reverse the other way. A slot with none left can still be chosen; it simply shows ×0 and you keep your fists.
+- **Fists are the fallback.** Fists is the fourth slot, with a boxing-glove icon and no quantity. You use your fists when it is selected or when the selected utility has run out. You start on Fists. The punch, block and movement systems are untouched.
+- The centre shows the selected slot's name and quantity and updates with every scroll. Quantities are read from the inventory, so they stay current when it changes.
+- **This is only the selection and inventory foundation.** Nothing is thrown yet: choosing Rocks, Molotov or Smoke changes what is equipped, nothing more.
+
+Each player owns their own inventory and selection ([src/inventory/PlayerUtilities.ts](src/inventory/PlayerUtilities.ts)); there is no shared inventory. A pickup will simply call `add("ROCKS", 1)`, and the wheel will show the new quantity. A new utility is one more entry in `UTILITY_SLOTS` there (name, icon, starting quantity, position on the wheel). The scroll behaviour is in [src/inventory/WeaponWheel.ts](src/inventory/WeaponWheel.ts) and the drawing in [src/ui/WeaponWheelView.ts](src/ui/WeaponWheelView.ts).
 
 ### Developer keys
 
@@ -99,7 +119,7 @@ How they behave:
 
 ### Blocking
 
-Hold **right click** to guard. It works while idle, walking, strafing (including with `Shift`) and crouched. Sprinting (`Shift` + `W` / `S`) takes priority over blocking, and you can't block in the air.
+Hold **F** to guard. It works while idle, walking, strafing (including with `Shift`) and crouched. Sprinting (`Shift` + `W` / `S`) takes priority over blocking, and you can't block in the air.
 
 Blocking is **directional and positional**, not a shield on all sides:
 
@@ -111,6 +131,35 @@ Blocking is **directional and positional**, not a shield on all sides:
 - **Vertical aim:** the guard points where you look, so an attack from above (a jump attack) is only blocked if you are looking up toward it.
 - **Light attacks** that meet all of the above are fully blocked (0 damage).
 - **Heavy attacks cannot be blocked.** If the guard is correctly placed (right direction, height and part), the hit is reduced to 50%. Otherwise the full damage lands.
+
+### Rocks
+
+Pick **Rocks** on the weapon wheel (you start with 3) and the hand goes to the hip pocket and comes back up with a rock in it (a short equip, no long animation). The rock is a real 3D object in the hand, in first and third person.
+
+- **Quick throw:** with Rocks equipped, a plain **left click** throws straight along the crosshair, no aiming needed (the crosshair stays visible). After every throw, if you have more rocks, the hand reaches into the pocket for the next one.
+- **Aim:** hold **right click**. The crosshair gives way to a sharp dashed line showing where the rock will go, with a ring where it ends on scenery or the floor. It follows where you look, goes straight for the first few metres and then bends more and more in a smooth arc (`ROCK_GRAVITY_START`, `ROCK_GRAVITY_RAMP`, `ROCK_GRAVITY`). It is local only: nobody else sees it. The pose is a casual throwing stance: the free arm points at the target and the throwing hand is cocked back beside the shoulder.
+- **Throw:** press **left click while still holding right click**. The arm winds back a little and snaps forward, and the rock leaves the hand at the release. You don't have to let go of right click first. That click never also punches.
+- **Guard:** blocking is on **F** now (right click is only for aiming). Nothing about how blocking works changed.
+- **No rocks left:** the count on the wheel goes down by one per throw, can't go below zero, and at 0 you fall back to Fists and can't aim.
+- **Switching away:** the hand goes to the pocket, the rock disappears, then you are back to normal. Scrolling mid-aim cancels the aim cleanly, and a throw already started finishes first.
+- **States:** `NORMAL`, `ROCK_EQUIPPING`, `ROCK_EQUIPPED`, `ROCK_AIMING`, `ROCK_THROWING`, `ROCK_UNEQUIPPING` ([src/inventory/RockStance.ts](src/inventory/RockStance.ts)). While aiming or throwing you can't punch or guard, and a second throw can't start until the first is done. Releasing right click without throwing goes back to `ROCK_EQUIPPED`.
+
+**One physics for the preview and the rock.** The aim line and the thrown rock both step the same function ([src/combat/RockFlight.ts](src/combat/RockFlight.ts)) with the same fixed time step, so the rock follows the line (a test checks they agree point for point).
+
+**Damage uses the existing combat numbers** ([src/combat/RockConfig.ts](src/combat/RockConfig.ts) is the one place to tune all of it):
+
+| | Value |
+| --- | --- |
+| Body hit | The light jump punch's damage (15) |
+| Head hit | 85% of the heavy attack's damage (21), so it stays below a heavy attack |
+| Guarded hit | The damage above times `ROCK_BLOCK_DAMAGE_MULTIPLIER` (0.35), at least 1: never zero |
+| Knockback / stagger | `ROCK_KNOCKBACK`, `ROCK_HITSTUN` |
+
+Guarding a rock uses the same directional guard as melee, measured against the thrower: the guard cone, the vertical aim and the body parts the guard covers. A rock from the side, from behind, or aimed at a part the guard doesn't cover (for example the head over a level guard) does full damage. A guarded rock still lands for the reduced amount, shows that amount as its damage number and the `BLOCKED` tag, and staggers less.
+
+Rocks stop at cover, walls and the floor (one thrown at the sky keeps flying and comes down; `ROCK_MAX_RANGE` is only a safety limit), and at most `ROCK_MAX_ACTIVE` fly at once (the oldest is dropped).
+
+**Multiplayer-ready.** The thrower only reports "I threw from here, this way". Whether the rock hits, which body part, the guard and the damage are decided in `ProjectileSystem` and `CombatSystem.resolveProjectileHit`, which only use the `Combatant` interface and have no rendering or input code, so a server can run them. Nothing is networked yet (the game has no multiplayer), so only the local throw is wired up.
 
 ### Hit detection, damage and knockback
 
@@ -227,9 +276,11 @@ src/
   player/Player.ts        Movement, jump, gravity, crouch/sprint speeds, camera angles
   input/InputManager.ts   Keyboard, mouse, pointer lock
   character/              Character model, animations, procedural aim/IK layers
-  combat/                 Combat system, attack definitions, guard rules, dummy, debug view
+  combat/                 Combat system, attack definitions, guard rules, rock physics and projectiles, dummy, debug view
   rendering/Renderer.ts   Three.js renderer, scene and camera
-  ui/                     Enemy health bar (reads combat events; changes no gameplay)
+  ui/                     Enemy health bars, damage numbers and the weapon wheel drawing
+  inventory/              Per-player utilities (rocks, molotov, smoke), the weapon wheel's state and the rock stance
+  vfx/                    Rock aim line and rocks in flight
   world/                  Arena layout, meshes, collision, spawn system, debug overlay
 public/assets/            Character model and animation .glb files
 tests/combat/             Automated combat tests (Vitest)
@@ -253,3 +304,5 @@ The suite (Vitest, a few seconds) covers the real combat code (attack definition
 ## Tech
 
 Three.js 0.186, TypeScript 6, Vite 8, Vitest, ESLint and Prettier.
+
+- **Font:** all text (HUD, damage numbers, weapon wheel, in-world labels) uses Bebas Neue, bundled with the game through `@fontsource/bebas-neue` (SIL Open Font License), so it needs no network. It has a single weight, and it is set in one place ([src/fonts.ts](src/fonts.ts) and the `--font-ui` variable in [src/style.css](src/style.css)).
