@@ -5,6 +5,8 @@ import { CharacterModel } from "./CharacterModel";
 import { CharacterAnimator } from "./CharacterAnimator";
 import { limitArmReach, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
+import { RockArm } from "./RockArm";
+import type { RockPose } from "../inventory/RockStance";
 
 export type CharacterMovementState =
   | "idle"
@@ -97,6 +99,7 @@ export class Character {
   private headRestInGroup: THREE.Quaternion | null = null;
   private readonly aimSaved = new Map<THREE.Object3D, THREE.Quaternion>();
   private aimBones: Record<string, THREE.Object3D | null> | null = null;
+  private readonly pitchQuat = new THREE.Quaternion();
   private lastPunchLeft = false;
   private reachHand: "left" | "right" = "right";
   private reachAmount = 0;
@@ -285,6 +288,8 @@ export class Character {
 
     this.applyPunchReach();
 
+    this.applyRockPose();
+
     this.limitArmsToWorld();
 
     /**
@@ -379,6 +384,7 @@ export class Character {
    */
 
   public dispose(): void {
+    this.rockArmInstance?.dispose();
     this.idleAction = null;
     this.walkAction = null;
     this.walkBackwardsAction = null;
@@ -1992,6 +1998,124 @@ export class Character {
 
   /** Camera position in first person, so punches are aimed from the real eye. */
   public aimEye: THREE.Vector3 | null = null;
+
+  // ------------------------------------------------------------
+  // Rock in hand (the right hand's pocket / ready / aim / throw pose)
+  // ------------------------------------------------------------
+
+  private rockArmInstance: RockArm | null = null;
+
+  private get rockArm(): RockArm {
+    this.rockArmInstance ??= new RockArm(this.group, (bone, from, to) =>
+      this.rotateBoneBetween(bone, from, to),
+    );
+
+    return this.rockArmInstance;
+  }
+  private rockPose: RockPose | null = null;
+  private readonly rockForward = new THREE.Vector3();
+  private readonly rockAim = new THREE.Vector3();
+
+  /**
+   * Sets the rock pose for this frame (null = none) and whether a rock is
+   * shown in the hand. Works for any character, so other players can show the
+   * same pose from what they report.
+   */
+  public setRock(pose: RockPose | null, holdingRock: boolean): void {
+    this.rockPose = pose;
+    this.rockArm.setHeld(holdingRock);
+  }
+
+  /** Where a thrown rock leaves the hand. False if the model is not ready. */
+  public getRockReleasePoint(out: THREE.Vector3): boolean {
+    return this.rockArm.getReleasePoint(out);
+  }
+
+  private applyRockPose(): void {
+    if (!this.rockPose || this.rockPose.weight < 0.002) {
+      return;
+    }
+
+    // The way the player looks (flat), and the crosshair direction.
+    this.group.getWorldQuaternion(this.pitchQuat);
+    this.rockForward
+      .set(0, 0, 1)
+      .applyQuaternion(this.pitchQuat)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.bodyYawOffset);
+    this.rockForward.y = 0;
+    this.rockForward.normalize();
+
+    const pitch = THREE.MathUtils.clamp(this.aimPitch, -1.2, 1.2);
+
+    this.rockAim
+      .copy(this.rockForward)
+      .multiplyScalar(Math.cos(pitch))
+      .add(new THREE.Vector3(0, Math.sin(pitch), 0));
+
+    this.rockArm.firstPerson = this.upperBodyFollowsLook;
+    this.swingBodyForThrow(this.rockPose, this.rockForward);
+
+    this.rockArm.apply(this.rockPose, this.rockForward, this.rockAim);
+  }
+
+  /**
+   * Puts the body into the throw: the torso turns back toward the throwing
+   * side while loading, then whips through and leans into the release. The
+   * head turns back the same amount, so the view (and the crosshair) stays put.
+   */
+  private swingBodyForThrow(pose: RockPose, forward: THREE.Vector3): void {
+    const weight = pose.weight;
+    // + = turn left (the side of the free arm), - = turn right (toward the throwing arm).
+    const twist =
+      weight * (pose.aim * -0.4 + pose.windup * -1.0 + pose.release * 0.9);
+    // + = lean back, - = lean forward.
+    const lean =
+      weight * (pose.aim * 0.05 + pose.windup * 0.22 - pose.release * 0.42);
+
+    if (Math.abs(twist) < 1e-3 && Math.abs(lean) < 1e-3) {
+      return;
+    }
+
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+    const spine = ["Spine", "Spine1", "Spine2"].map((name) =>
+      this.group.getObjectByName(name),
+    );
+    const head = this.group.getObjectByName("Head");
+
+    if (spine.some((bone) => !bone) || !head) {
+      return;
+    }
+
+    for (const bone of spine) {
+      this.rotateAboutWorldAxis(bone as THREE.Object3D, up, twist / 3);
+      this.rotateAboutWorldAxis(bone as THREE.Object3D, right, lean / 3);
+    }
+
+    // Keep looking where the player looks.
+    this.rotateAboutWorldAxis(head, right, -lean);
+    this.rotateAboutWorldAxis(head, up, -twist);
+  }
+
+  /** Rotates a bone by `angle` about a world-space axis (undone next frame). */
+  private rotateAboutWorldAxis(
+    bone: THREE.Object3D,
+    axis: THREE.Vector3,
+    angle: number,
+  ): void {
+    const delta = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+    const parentQuat = new THREE.Quaternion();
+    const worldQuat = new THREE.Quaternion();
+
+    this.saveForRestore(bone);
+    bone.updateWorldMatrix(true, false);
+    bone.parent?.getWorldQuaternion(parentQuat);
+    bone.getWorldQuaternion(worldQuat);
+    bone.quaternion.copy(
+      parentQuat.invert().multiply(delta.multiply(worldQuat)),
+    );
+    bone.updateMatrixWorld(true);
+  }
 
   public setPunchReach(hand: "left" | "right", amount: number): void {
     this.reachHand = hand;
