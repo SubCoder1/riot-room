@@ -64,7 +64,7 @@ describe("Line of sight (segmentBlocked)", () => {
   });
 
   it("a line through a pillar is blocked, beside it is clear", () => {
-    const pillar = ARENA_LAYOUT.pillars[0];
+    const pillar = ARENA_LAYOUT.pillars.find((p) => p.id === "pillar-1")!;
 
     expect(
       world.segmentBlocked(
@@ -117,7 +117,7 @@ describe("Punches and cover", () => {
     ] as const) {
       const scene = sceneWithCover();
 
-      placeAcross(scene, "cover-block-4", "z");
+      placeAcross(scene, "cover-block-8", "z");
 
       expect(runAttack(scene, id)).toBe(0);
     }

@@ -10,7 +10,7 @@ const v = (x: number, y: number, z: number): THREE.Vector3 =>
   new THREE.Vector3(x, y, z);
 
 describe("segmentClearFraction", () => {
-  const block = ARENA_LAYOUT.covers.find((c) => c.id === "cover-block-3")!; // z 12.5..13.5, 2 m
+  const block = ARENA_LAYOUT.covers.find((c) => c.id === "cover-block-3")!; // 2 m tall
   const x = (block.minX + block.maxX) / 2;
 
   it("is 1 over open floor", () => {
@@ -18,21 +18,28 @@ describe("segmentClearFraction", () => {
   });
 
   it("stops just before a block's face", () => {
-    // From z = 12 (clear) toward z = 15 through the block (face at z = 12.5).
-    const fraction = world.segmentClearFraction(x, 1.2, 12, x, 1.2, 15);
-    const stopsAt = 12 + fraction * 3;
+    // From 0.5 m before the block's near face, 3 m straight through it.
+    const z0 = block.minZ - 0.5;
+    const fraction = world.segmentClearFraction(x, 1.2, z0, x, 1.2, z0 + 3);
+    const stopsAt = z0 + fraction * 3;
 
     expect(fraction).toBeLessThan(1);
-    expect(stopsAt).toBeGreaterThan(12.3);
-    expect(stopsAt).toBeLessThanOrEqual(12.5);
+    expect(stopsAt).toBeGreaterThan(block.minZ - 0.3);
+    expect(stopsAt).toBeLessThanOrEqual(block.minZ);
   });
 
   it("is 0 when the line starts inside scenery", () => {
-    expect(world.segmentClearFraction(x, 1.0, 13, x, 1.0, 15)).toBe(0);
+    const inside = (block.minZ + block.maxZ) / 2;
+
+    expect(world.segmentClearFraction(x, 1.0, inside, x, 1.0, inside + 2)).toBe(
+      0,
+    );
   });
 
   it("agrees with segmentBlocked", () => {
-    expect(world.segmentBlocked(x, 1.2, 12, x, 1.2, 15)).toBe(true);
+    expect(
+      world.segmentBlocked(x, 1.2, block.minZ - 0.5, x, 1.2, block.minZ + 2.5),
+    ).toBe(true);
     expect(world.segmentBlocked(-9, 1.3, 9, -3, 1.3, 9)).toBe(false);
   });
 });
@@ -88,15 +95,16 @@ describe("limitArmReach", () => {
   it("works with the real arena: a fist thrown at a block stops at its face", () => {
     const block = ARENA_LAYOUT.covers.find((c) => c.id === "cover-block-3")!;
     const x = (block.minX + block.maxX) / 2;
-    // Player 0.4 m from the block's near face (z = 12.5), arm straight at it.
-    const s = v(x, 1.25, 12.1);
-    const e = v(x + 0.05, 1.2, 12.4);
-    const w = v(x, 1.25, 12.72); // the fist is already inside the block (face at 12.5)
+    // Player 0.4 m from the block's near (north) face, arm straight at it.
+    const face = block.minZ;
+    const s = v(x, 1.25, face - 0.4);
+    const e = v(x + 0.05, 1.2, face - 0.1);
+    const w = v(x, 1.25, face + 0.22); // the fist is already inside the block
     const pose = limitArmReach(s, e, w, (a, b) =>
       world.segmentClearFraction(a.x, a.y, a.z, b.x, b.y, b.z),
     )!;
 
     expect(pose).not.toBeNull();
-    expect(pose.wrist.z).toBeLessThan(12.5);
+    expect(pose.wrist.z).toBeLessThan(face);
   });
 });

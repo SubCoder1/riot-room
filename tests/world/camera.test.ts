@@ -9,16 +9,14 @@ const keepOut = (x: number, y: number, z: number) =>
   world.pushOut(x, z, 0, 0.15, y - 0.05);
 
 describe("Camera stays out of scenery", () => {
-  const platform = ARENA_LAYOUT.platforms.find(
-    (p) => p.id === "center-platform",
-  )!; // 1.8 m
-  const block = ARENA_LAYOUT.covers.find((c) => c.id === "cover-block-3")!; // 2 m, z 12.5..13.5
+  const tower = ARENA_LAYOUT.platforms.find((p) => p.id === "east-tower")!; // 2.6 m
+  const block = ARENA_LAYOUT.covers.find((c) => c.id === "cover-block-3")!; // 2 m
 
-  it("a camera poking into a platform face is pushed back out", () => {
-    // 5 cm inside the west face (x = -5), at eye height 1.7 (below the 1.8 m top).
-    const out = keepOut(platform.minX + 0.05, 1.7, 0);
+  it("a camera poking into a tall platform's face is pushed back out", () => {
+    // 5 cm inside the tower's west face, at eye height 1.7 (below its top).
+    const out = keepOut(tower.minX + 0.05, 1.7, (tower.minZ + tower.maxZ) / 2);
 
-    expect(out.x).toBeLessThanOrEqual(platform.minX - 0.15 + 1e-6);
+    expect(out.x).toBeLessThanOrEqual(tower.minX - 0.15 + 1e-6);
   });
 
   it("a camera poking into a 2 m block is pushed out", () => {
@@ -29,13 +27,15 @@ describe("Camera stays out of scenery", () => {
   });
 
   it("a camera well clear of scenery is untouched", () => {
-    expect(keepOut(-9, 1.7, 9)).toEqual({ x: -9, z: 9 });
+    expect(keepOut(-9, 1.7, 3)).toEqual({ x: -9, z: 3 });
   });
 
   it("a camera above a platform (player standing on it) is left alone", () => {
-    const eye = platform.height + 1.7;
+    const eye = tower.height + 1.7;
+    const x = (tower.minX + tower.maxX) / 2;
+    const z = (tower.minZ + tower.maxZ) / 2;
 
-    expect(keepOut(0, eye, 0)).toEqual({ x: 0, z: 0 });
+    expect(keepOut(x, eye, z)).toEqual({ x, z });
   });
 
   it("a camera above a low wall is left alone", () => {
