@@ -4,10 +4,11 @@ import {
   ATTACKS,
   type AttackDefinition,
   type AttackId,
+  type DamageSourceId,
   type HitboxHand,
 } from "./AttackDefinitions";
 import { CombatEventBus, type AttackEndReason } from "./CombatEvents";
-import type { Combatant, HitInfo, Hurtbox } from "./Combatant";
+import type { Combatant, HitInfo, Hurtbox, HurtboxId } from "./Combatant";
 import {
   guardAlignment,
   guardDotThreshold,
@@ -388,16 +389,26 @@ export class CombatSystem {
       }
     }
 
+    this.applyDamage(attacker, target, hit, definition.id);
+  }
+
+  /** Damage, reaction and the hit / died events: shared by punches and projectiles. */
+  private applyDamage(
+    attacker: Combatant,
+    target: Combatant,
+    hit: HitInfo,
+    sourceId: DamageSourceId,
+  ): void {
     target.health.damage(hit.damage);
     target.onHit(hit);
 
     this.events.emit({
       type: "hit",
       attackerId: attacker.id,
-      attackId: definition.id,
+      attackId: sourceId,
       targetId: target.id,
       targetName: target.name,
-      hurtbox: hurtboxId,
+      hurtbox: hit.hurtbox,
       damage: hit.damage,
       knockback: hit.knockback,
       healthLeft: target.health.current,
@@ -410,5 +421,98 @@ export class CombatSystem {
         targetName: target.name,
       });
     }
+  }
+
+  /**
+   * A projectile has reached a body part. This is where the result is decided,
+   * so it is the one place a server would run it: the shooter only says "I
+   * threw", never "I hit".
+   *
+   * It uses the same directional guard as melee (the cone, the aim and the
+   * covered parts, measured against the thrower), but a guarded projectile is
+   * softened rather than stopped: the hit still lands, at `guardMultiplier`
+   * of the damage, never zero.
+   */
+  public resolveProjectileHit(input: {
+    sourceId: DamageSourceId;
+    attackerId: string;
+    targetId: string;
+    hurtbox: HurtboxId;
+    /** Damage for this body part before any guard. */
+    damage: number;
+    knockback: number;
+    hitstun: number;
+    /** Direction the projectile was travelling (flattened to horizontal here). */
+    direction: THREE.Vector3;
+    guardMultiplier: number;
+  }): HitInfo | null {
+    const attacker = this.combatants.find((c) => c.id === input.attackerId);
+    const target = this.combatants.find((c) => c.id === input.targetId);
+
+    if (!attacker || !target || target.isDead() || target === attacker) {
+      return null;
+    }
+
+    const direction = input.direction.clone().setY(0);
+
+    if (direction.lengthSq() < 1e-8) {
+      attacker.getFacing(direction);
+    }
+
+    const hit: HitInfo = {
+      attackId: input.sourceId,
+      attackerId: attacker.id,
+      hurtbox: input.hurtbox,
+      damage: Math.round(input.damage),
+      knockback: input.knockback,
+      knockbackDirection: direction.setY(0).normalize(),
+      hitstun: input.hitstun,
+    };
+
+    if (target.isBlocking()) {
+      const alignment = this.guardAlignment(attacker, target);
+      const insideCone = alignment >= guardDotThreshold();
+      const aimedAtAttacker = this.guardAimedAtAttacker(attacker, target);
+      const covered = target.getGuardedParts().includes(input.hurtbox);
+
+      if (insideCone && aimedAtAttacker && covered) {
+        hit.damage = Math.max(
+          1,
+          Math.round(hit.damage * input.guardMultiplier),
+        );
+        // A guarded hit shoves and staggers less.
+        hit.knockback *= 0.25;
+        hit.hitstun *= 0.25;
+
+        this.events.emit({
+          type: "guard-reduced",
+          attackerId: attacker.id,
+          attackId: input.sourceId,
+          targetId: target.id,
+          targetName: target.name,
+          multiplier: input.guardMultiplier,
+        });
+      } else {
+        this.events.emit({
+          type: "block-failed",
+          attackerId: attacker.id,
+          attackId: input.sourceId,
+          targetId: target.id,
+          targetName: target.name,
+          reason: !insideCone
+            ? alignment < 0
+              ? "rear"
+              : "outside-guard"
+            : !aimedAtAttacker
+              ? "vertical"
+              : "below-guard",
+          detail: this.verticalDetail(attacker, target),
+        });
+      }
+    }
+
+    this.applyDamage(attacker, target, hit, input.sourceId);
+
+    return hit;
   }
 }

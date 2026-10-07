@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 import type {
   AttackDefinition,
-  AttackId,
+  DamageSourceId,
   HitboxHand,
 } from "./AttackDefinitions";
 import type { CapsuleShape } from "./Shapes";
@@ -45,7 +45,7 @@ export interface Hurtbox {
 }
 
 export interface HitInfo {
-  attackId: AttackId;
+  attackId: DamageSourceId;
   attackerId: string;
   hurtbox: HurtboxId;
   damage: number;

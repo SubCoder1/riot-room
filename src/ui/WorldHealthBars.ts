@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import type { AttackId } from "../combat/AttackDefinitions";
+import type { DamageSourceId } from "../combat/AttackDefinitions";
 import type { Combatant } from "../combat/Combatant";
 import type { CombatEvent, CombatEventBus } from "../combat/CombatEvents";
 import { createCapsule } from "../combat/Shapes";
@@ -35,7 +35,7 @@ const MAX_NUMBERS = 24;
 
 export type HitKind = "light" | "heavy" | "flying";
 
-export function hitKindOf(attackId: AttackId): HitKind {
+export function hitKindOf(attackId: DamageSourceId): HitKind {
   if (attackId === "heavy-run-punch") return "heavy";
   if (attackId.startsWith("flying")) return "flying";
 
@@ -335,7 +335,11 @@ export class WorldHealthBars {
           event.healthLeft <= 0,
         );
       }
-    } else if (event.type === "blocked") {
+    } else if (
+      event.type === "blocked" ||
+      // A guarded rock still hurts, but the guard is shown like any block.
+      (event.type === "guard-reduced" && event.attackId === "rock-throw")
+    ) {
       const bar = this.barById(event.targetId);
 
       if (bar && event.attackerId === this.playerId) {
@@ -351,7 +355,7 @@ export class WorldHealthBars {
   private spawnNumber(
     bar: Bar,
     damage: number,
-    attackId: AttackId,
+    attackId: DamageSourceId,
     killed: boolean,
   ): void {
     // The oldest number makes room if too many are in flight.

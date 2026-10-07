@@ -18,6 +18,13 @@ export type AttackId =
   | "flying-light-punch"
   | "flying-heavy-punch";
 
+/**
+ * Anything that can deal damage: a punch, or a thrown rock. Hit events and the
+ * damage pipeline use this, so projectiles share the same health, guard and
+ * damage-number code as melee.
+ */
+export type DamageSourceId = AttackId | "rock-throw";
+
 export type AttackCategory = "light" | "heavy" | "aerial";
 
 export type HitboxHand = "right" | "left";

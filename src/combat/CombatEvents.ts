@@ -1,4 +1,4 @@
-import type { AttackId } from "./AttackDefinitions";
+import type { AttackId, DamageSourceId } from "./AttackDefinitions";
 
 /**
  * Everything meaningful that happens in combat is reported as an event. The
@@ -19,7 +19,7 @@ export type CombatEvent =
   | {
       type: "hit";
       attackerId: string;
-      attackId: AttackId;
+      attackId: DamageSourceId;
       targetId: string;
       targetName: string;
       hurtbox: string;
@@ -37,7 +37,7 @@ export type CombatEvent =
   | {
       type: "block-failed";
       attackerId: string;
-      attackId: AttackId;
+      attackId: DamageSourceId;
       targetId: string;
       targetName: string;
       reason: "outside-guard" | "rear" | "below-guard" | "vertical";
@@ -54,7 +54,7 @@ export type CombatEvent =
   | {
       type: "guard-reduced";
       attackerId: string;
-      attackId: AttackId;
+      attackId: DamageSourceId;
       targetId: string;
       targetName: string;
       multiplier: number;
