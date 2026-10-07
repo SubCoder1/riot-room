@@ -6,6 +6,7 @@ import {
   type ArenaLayout,
   type SpawnPoint,
 } from "./ArenaLayout";
+import { ARENA_ROUTES } from "./ArenaRoutes";
 import { MIN_SPAWN_DISTANCE, SPAWN_CLEARANCE } from "./SpawnSystem";
 
 function labelSprite(text: string, color: string): THREE.Sprite {
@@ -111,6 +112,54 @@ export class ArenaDebug {
     for (const point of layout.spawnPoints) {
       this.group.add(createSpawnPoint(point));
     }
+
+    // Contested resource sites (nothing spawns there yet): a dashed look-alike
+    // ring so they read differently from spawn points.
+    for (const resource of layout.resourceSites) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.4, 1.6, 40),
+        new THREE.MeshBasicMaterial({
+          color: 0x22d3ee,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+        }),
+      );
+
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(resource.x, 0.05, resource.z);
+      this.group.add(ring);
+
+      const tag = labelSprite(resource.label, "#67e8f9");
+
+      tag.position.set(resource.x, 1.6, resource.z);
+      this.group.add(tag);
+    }
+
+    // The five routes between the north-west and south-east lanes, as lines
+    // through their waypoints (the real path bends around cover).
+    const routeColours = [0xf87171, 0xfb923c, 0xa78bfa, 0xf472b6, 0x4ade80];
+
+    ARENA_ROUTES.forEach((route, index) => {
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(
+          route.waypoints.map(
+            ([x, z]) => new THREE.Vector3(x, 0.12 + index * 0.03, z),
+          ),
+        ),
+        new THREE.LineBasicMaterial({
+          color: routeColours[index % routeColours.length],
+        }),
+      );
+
+      this.group.add(line);
+
+      const [mx, mz] = route.waypoints[Math.floor(route.waypoints.length / 2)];
+      const tag = labelSprite(route.id, "#ffffff");
+
+      tag.position.set(mx, 0.8, mz);
+      this.group.add(tag);
+    });
 
     // Playable boundary.
     const h = ARENA_HALF;

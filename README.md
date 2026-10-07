@@ -44,7 +44,7 @@ Open the URL Vite prints, then **click the game canvas** to capture the mouse (p
 
 | Key | Action |
 | --- | --- |
-| `F4` | Show / hide the debug view: combat shapes and guard cone, plus the arena's spawn points (S1-S10) with safety rings, collision boxes, boundary and platform heights |
+| `F4` | Show / hide the debug view: combat shapes and guard cone, plus the arena's spawn points (S1-S11), resource sites, the five routes, collision boxes, boundary and platform heights |
 | `F6` | Dummy holds / drops its guard |
 | `F7` | Dummy turns to face you (off by default, so you can test side and rear hits) |
 | `F8` | Dummy crouches (a crouched guard also covers the legs) |
@@ -126,25 +126,50 @@ All attack numbers (damage, timing, knockback, reach, blockability) live in [src
 
 ## The arena
 
-A graybox **Free-For-All** arena, 40 m x 40 m with 4 m outer walls, built from basic Three.js geometry (no external assets). There are no teams: every fighter is an individual opponent.
+A graybox **Free-For-All** arena, 40 m x 40 m with 4 m outer walls, built from basic Three.js geometry (no external assets). There are no teams: every fighter is an individual opponent. It is designed around one rule: **every strong position has a weakness**, so no spot, route or platform wins on its own. A top view is in [map-top-view.png](map-top-view.png).
 
-| Feature | Details |
-| --- | --- |
-| Open floor | Kept clear in the middle for sprinting, flying punches and knockback |
-| Central platform | 10 x 10 m, 1.8 m high. Ramp on the south side, stairs on the north, open edges east and west |
-| Side platforms | Two 8 x 8 m platforms (west 1.2 m, east 1.5 m), deliberately not mirrored, each with a ramp and stairs |
-| Cover | 0.8 m low walls (can be hopped with a jump) and 2 m blocks (tall enough to hide behind and stop punches; must be walked around) |
-| Pillars | 2.2 m cylinders for breaking line of sight and going round the side |
+### Layout
 
-Movement on it: you can walk and sprint up ramps and stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, and jump onto the lowest cover. Walls and solid scenery stop you and let you slide along them. Platforms taller than your jump (about 0.93 m) can only be reached by the ramps and stairs.
+| Part | What it is | Its weakness |
+| --- | --- | --- |
+| Centre | Open floor around a 2 m monolith and a pinwheel of 0.8 m low walls. A place fights happen, not a hill to hold | Visible from far more of the arena than anywhere else |
+| Corner columns | Four columns (2.2 m radius, 2.4 m tall, too tall to climb) fill the corners | (They remove the camping spots: no two-wall pockets, no endless run round the edge) |
+| North walkway (2.0 m) | Long and narrow, a ramp at one end and stairs at the other | Exposed along its whole length; a hit can knock you off |
+| East tower (2.6 m) | Small, with one long open staircase, or a jump up from the 1.3 m step beside it | Open on three sides; the staircase is a long exposed approach |
+| West terrace (1.5 m) | A ramp, stairs and open drops; the lane behind it is open at both ends | Can be reached from every side |
+| 2 m blocks | Stop punches and block the view; must be walked around | A flanker can use the open side |
+| 0.8 m low walls | Can be hopped; a punch goes over them | Give no real cover |
+| Pillars | Single sight-breakers | Easy to circle |
+
+Only about 9% of the floor is high ground, and none of it is in the middle. Every high position has at least two ways up.
+
+### Routes
+
+Five routes cross the arena between the north-west and south-east lanes, and none is better at everything ([src/world/ArenaRoutes.ts](src/world/ArenaRoutes.ts), drawn in the debug view):
+
+| Route | Length | Trade-off |
+| --- | --- | --- |
+| **A** Open lane (east side) | 60 m | Fast and wide open, so heavy punches are easy to land |
+| **B** Covered route (west and south) | 66 m | Most hidden, but the longest ground route, which gives a chaser time to cut across |
+| **C** Elevated route (walkway, then the step) | 78 m | Best view, but narrow and the most exposed |
+| **D** Shortcut (straight across the middle) | 47 m | Shortest, but visible from everywhere and easy to intercept |
+| **E** Central route (through the pinwheel's gaps) | 56 m | Direct, with cover to dodge behind, but the most contested ground |
+
+### Movement on it
+
+You can walk and sprint up ramps and stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, and jump onto 0.8 m cover. Walls and solid scenery stop you and let you slide along them. Your body stays 0.5 m from scenery, so the camera and fists don't clip into it. Cover and walls also stop punches: a hit needs a clear line to the target, and fists stop at contact.
 
 ### Spawning
 
-There are 10 predefined spawn points (S1 to S10), spread around the arena on open floor, clear of walls, obstacles and platform edges. Each round every fighter is given one **unique** point chosen at random (the list is shuffled each time), preferring points at least 10 m apart and relaxing that when the arena is full. Nothing about a fighter decides where it starts, and a new round avoids repeating the previous assignment. Fighters start facing the centre.
+There are 11 predefined spawn points (S1 to S11) on open floor, clear of walls, obstacles and platform edges, and none within 8 m of the middle. Each round every fighter gets one **unique** point chosen at random (the list is shuffled each time), preferring points at least 10 m apart and relaxing that when the arena is full. Nothing about a fighter decides where it starts, and a new round avoids repeating the previous assignment. Spawns face a mix of directions, not all toward the centre, and two spawns that are close together cannot see each other, so the start is a search, not an instant fight.
 
 The game currently has one player and the training dummy, so it spawns both. `F10` starts a new round. The dummy still respawns by itself 2.5 s after dying (training behaviour); in a real Last Man Standing round the dead would stay out until the next round.
 
-The layout lives in [src/world/ArenaLayout.ts](src/world/ArenaLayout.ts) (one description used by the meshes, the collision and the spawn system), collision in [src/world/ArenaCollision.ts](src/world/ArenaCollision.ts) and spawn logic in [src/world/SpawnSystem.ts](src/world/SpawnSystem.ts).
+### Ready for later (not implemented)
+
+Three **resource sites** (R1 to R3) mark open, contestable ground for future pickups such as rock piles: each is visible from high ground, well away from every spawn, and never in a protected corner. The mix of open sightlines, 2 m cover and elevated positions is meant to suit future ranged attacks and throwables, but none exist yet.
+
+The layout lives in [src/world/ArenaLayout.ts](src/world/ArenaLayout.ts) (one description used by the meshes, the collision and the spawn system), collision in [src/world/ArenaCollision.ts](src/world/ArenaCollision.ts) and spawn logic in [src/world/SpawnSystem.ts](src/world/SpawnSystem.ts). Press `F4` to see spawn points, resource sites, the five routes, collision boxes and platform heights.
 
 ---
 
@@ -210,7 +235,7 @@ Combat logic (`CombatSystem`) has no rendering or input code. It talks to fighte
 npm test
 ```
 
-The suite (Vitest, under a second) covers the real combat code and the arena (layout, collision, ramps and stairs with the real `Player`, spawn assignment): attack definitions, directional blocking and guard rotation, light and heavy attacks against blocks, hit-once registration, attack timing, damage, health limits, death, respawn, knockback and the full hit pipeline. It deliberately doesn't test animations, camera or input, so those remain manual checks.
+The suite (Vitest, a few seconds) covers the real combat code (attack definitions, directional blocking and guard rotation, light and heavy attacks against blocks, hit-once registration, attack timing, damage, health limits, death, respawn, knockback and the full hit pipeline) and the arena: layout, collision, ramps and stairs walked by the real `Player`, spawn assignment, and the map's design rules (no pockets, no corridor over 10 m, a broken outer ring, five distinct routes with trade-offs, small and open high ground, spawns that are spread out and hidden from each other). It deliberately doesn't test animations, camera or input, so those remain manual checks.
 
 ---
 

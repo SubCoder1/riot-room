@@ -1069,11 +1069,11 @@ export class Game {
     this.input.yaw = own.yaw;
     this.input.pitch = -0.1;
 
-    // The dummy faces the arena centre (its facing convention is the opposite
-    // of the camera's).
+    // The dummy faces the way its spawn point faces (its yaw convention is the
+    // opposite of the camera's).
     this.dummy.startRound(
       new THREE.Vector3(foe.x, foe.y, foe.z),
-      Math.atan2(-foe.x, -foe.z),
+      foe.yaw + Math.PI,
     );
   }
 

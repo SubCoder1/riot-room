@@ -78,6 +78,9 @@ export class Player {
    */
   private readonly jumpForce = 5.8;
 
+  /** How fast (m/s per second) airborne velocity can be steered by the keys. */
+  private readonly airControl = 30;
+
   /**
    * Gravity strength.
    */
@@ -224,12 +227,36 @@ export class Player {
         speed *= this.punchSpeedFactor;
       }
 
+      const wantX = direction.x * speed;
+      const wantZ = direction.z * speed;
+
+      if (this.grounded) {
+        this.velocity.x = wantX;
+        this.velocity.z = wantZ;
+      } else {
+        // In the air the player can steer, but not stop on the spot.
+        const maxChange = this.airControl * dt;
+        const dx = wantX - this.velocity.x;
+        const dz = wantZ - this.velocity.z;
+        const gap = Math.hypot(dx, dz);
+        const scale = gap > maxChange ? maxChange / gap : 1;
+
+        this.velocity.x += dx * scale;
+        this.velocity.z += dz * scale;
+      }
+    } else if (this.grounded) {
+      this.velocity.x = 0;
+      this.velocity.z = 0;
+    }
+
+    // Airborne with no keys held: the jump carries on with its momentum.
+    if (this.velocity.x !== 0 || this.velocity.z !== 0) {
       if (this.world) {
         const moved = this.world.moveHorizontal(
           this.position.x,
           this.position.z,
-          direction.x * speed * dt,
-          direction.z * speed * dt,
+          this.velocity.x * dt,
+          this.velocity.z * dt,
           this.position.y - this.eyeHeight,
           PLAYER_RADIUS,
         );
@@ -237,9 +264,8 @@ export class Player {
         this.position.x = moved.x;
         this.position.z = moved.z;
       } else {
-        this.position.x += direction.x * speed * dt;
-
-        this.position.z += direction.z * speed * dt;
+        this.position.x += this.velocity.x * dt;
+        this.position.z += this.velocity.z * dt;
       }
     }
 

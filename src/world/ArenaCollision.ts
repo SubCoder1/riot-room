@@ -80,9 +80,25 @@ export class ArenaCollision {
     margin: number,
   ): number {
     if (solid.kind === "cylinder") {
-      return Math.hypot(x - solid.x, z - solid.z) <= solid.radius + margin
-        ? solid.height
-        : NO_SURFACE;
+      if (Math.hypot(x - solid.x, z - solid.z) <= solid.radius + margin) {
+        return solid.height;
+      }
+
+      // A column built into a corner also holds up the square corner beyond
+      // its circle, so standing on top never drops you through a gap by the walls.
+      const touchesWalls =
+        Math.abs(solid.x) + solid.radius >= ARENA_HALF - 0.1 &&
+        Math.abs(solid.z) + solid.radius >= ARENA_HALF - 0.1;
+
+      if (
+        touchesWalls &&
+        (x - solid.x) * Math.sign(solid.x) >= 0 &&
+        (z - solid.z) * Math.sign(solid.z) >= 0
+      ) {
+        return solid.height;
+      }
+
+      return NO_SURFACE;
     }
 
     if (
@@ -150,6 +166,27 @@ export class ArenaCollision {
       return { x: x + dx, z: z + dz };
     }
 
+    // Slide along the surface that was hit, so a diagonal run round a corner
+    // keeps going instead of stopping where both axes are blocked.
+    const normal = this.contactNormal(x + dx, z + dz, feetY, radius);
+
+    if (normal) {
+      const into = dx * normal.x + dz * normal.z;
+
+      if (into < 0) {
+        // A tangent step can land fractionally inside the contact distance,
+        // so also allow a small push outward along the normal.
+        for (const push of [0, 0.02, 0.05]) {
+          const sx = dx - into * normal.x + normal.x * push;
+          const sz = dz - into * normal.z + normal.z * push;
+
+          if (!this.isBlocked(x + sx, z + sz, feetY, radius)) {
+            return { x: x + sx, z: z + sz };
+          }
+        }
+      }
+    }
+
     if (dx !== 0 && !this.isBlocked(x + dx, z, feetY, radius)) {
       return { x: x + dx, z };
     }
@@ -159,6 +196,46 @@ export class ArenaCollision {
     }
 
     return { x, z };
+  }
+
+  /** Direction pointing away from the solid a blocked character at (x, z) is touching. */
+  private contactNormal(
+    x: number,
+    z: number,
+    feetY: number,
+    radius: number,
+  ): { x: number; z: number } | null {
+    let best: { x: number; z: number } | null = null;
+    let bestDistance = Infinity;
+
+    for (const solid of this.solids) {
+      if (this.solidHeight(solid, x, z, radius) <= feetY + STEP_UP + 1e-6) {
+        continue;
+      }
+
+      let nx: number;
+      let nz: number;
+
+      if (solid.kind === "cylinder") {
+        nx = x - solid.x;
+        nz = z - solid.z;
+      } else {
+        nx = x - Math.min(Math.max(x, solid.minX), solid.maxX);
+        nz = z - Math.min(Math.max(z, solid.minZ), solid.maxZ);
+      }
+
+      const length = Math.hypot(nx, nz);
+
+      // Inside the shape (no usable direction) or farther than another hit.
+      if (length < 1e-6 || length >= bestDistance) {
+        continue;
+      }
+
+      bestDistance = length;
+      best = { x: nx / length, z: nz / length };
+    }
+
+    return best;
   }
 
   /**
@@ -239,10 +316,31 @@ export class ArenaCollision {
 
     const limit = this.half - radius;
 
-    return {
-      x: Math.min(Math.max(px, -limit), limit),
-      z: Math.min(Math.max(pz, -limit), limit),
-    };
+    px = Math.min(Math.max(px, -limit), limit);
+    pz = Math.min(Math.max(pz, -limit), limit);
+
+    // Pushing away from a corner column can land in the sealed corner behind
+    // it, which is still inside the column's reach. If anything still holds
+    // the character, walk it toward the middle of the arena until it is free.
+    for (let n = 0; n < 40 && this.heldBySolid(px, pz, radius, topLimit); n++) {
+      const length = Math.hypot(px, pz) || 1;
+
+      px -= (px / length) * 0.25;
+      pz -= (pz / length) * 0.25;
+    }
+
+    return { x: px, z: pz };
+  }
+
+  private heldBySolid(
+    x: number,
+    z: number,
+    radius: number,
+    topLimit: number,
+  ): boolean {
+    return this.solids.some(
+      (solid) => this.solidHeight(solid, x, z, radius - 0.01) > topLimit,
+    );
   }
 
   /**
