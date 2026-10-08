@@ -157,7 +157,7 @@ Pick **Rocks** on the weapon wheel (you start with 3) and the hand goes to the h
 
 Guarding a rock uses the same directional guard as melee, measured against the thrower: the guard cone, the vertical aim and the body parts the guard covers. A rock from the side, from behind, or aimed at a part the guard doesn't cover (for example the head over a level guard) does full damage. A guarded rock still lands for the reduced amount, shows that amount as its damage number and the `BLOCKED` tag, and staggers less.
 
-Rocks stop at cover, walls and the floor (one thrown at the sky keeps flying and comes down; `ROCK_MAX_RANGE` is only a safety limit), and at most `ROCK_MAX_ACTIVE` fly at once (the oldest is dropped).
+A rock that hits cover, a wall or the floor bounces off (losing most of its speed), drops to the ground and settles, then vanishes after a moment; a bounced rock hurts nobody. One thrown at the sky keeps flying and comes down ( `ROCK_MAX_RANGE` is only a safety limit), and at most `ROCK_MAX_ACTIVE` fly at once (the oldest is dropped).
 
 **Multiplayer-ready.** The thrower only reports "I threw from here, this way". Whether the rock hits, which body part, the guard and the damage are decided in `ProjectileSystem` and `CombatSystem.resolveProjectileHit`, which only use the `Combatant` interface and have no rendering or input code, so a server can run them. Nothing is networked yet (the game has no multiplayer), so only the local throw is wired up.
 

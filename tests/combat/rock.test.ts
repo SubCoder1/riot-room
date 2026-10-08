@@ -384,3 +384,108 @@ describe("Rock projectiles", () => {
     expect(scene.projectiles.active).toHaveLength(0);
   });
 });
+
+describe("Rock bouncing off scenery", () => {
+  /** A solid wall across z = 6 (blocks anything moving past it). */
+  const wall: RockWorld = {
+    clearFraction: (from, to) =>
+      to.z > 6 && from.z <= 6 ? (6 - from.z) / (to.z - from.z) : 1,
+  };
+
+  it("bounces back off a wall and falls, instead of vanishing on contact", () => {
+    const scene = setup(wall);
+    const rock = scene.projectiles.throwRock(
+      "thrower",
+      new THREE.Vector3(5, 2, 0),
+      new THREE.Vector3(0, 0, 1),
+    );
+
+    for (let i = 0; i < 30 && rock.bounces === 0; i++) {
+      scene.projectiles.update(1 / 60);
+    }
+
+    expect(rock.bounces).toBe(1);
+    // Still there, heading back the way it came, slower, and not through the wall.
+    expect(scene.projectiles.active).toContain(rock);
+    expect(rock.velocity.z).toBeLessThan(0);
+    expect(Math.abs(rock.velocity.z)).toBeLessThan(
+      ROCK_CONFIG.ROCK_THROW_SPEED * 0.5,
+    );
+    expect(rock.position.z).toBeLessThanOrEqual(6);
+
+    // It then drops to the floor.
+    let lowest = rock.position.y;
+
+    for (let i = 0; i < 60; i++) {
+      scene.projectiles.update(1 / 60);
+      lowest = Math.min(lowest, rock.position.y);
+    }
+
+    expect(lowest).toBeLessThan(0.3);
+  });
+
+  it("vanishes after it has settled, within a couple of seconds", () => {
+    const scene = setup(wall);
+    const rock = scene.projectiles.throwRock(
+      "thrower",
+      new THREE.Vector3(5, 2, 0),
+      new THREE.Vector3(0, 0, 1),
+    );
+    let seconds = 0;
+
+    while (scene.projectiles.active.includes(rock) && seconds < 5) {
+      scene.projectiles.update(1 / 60);
+      seconds += 1 / 60;
+    }
+
+    expect(scene.projectiles.active).not.toContain(rock);
+    expect(seconds).toBeGreaterThan(0.2);
+    expect(seconds).toBeLessThanOrEqual(ROCK_CONFIG.ROCK_LINGER_SECONDS + 0.5);
+  });
+
+  it("a rock that has bounced hurts nobody", () => {
+    const scene = setup();
+    const rock = scene.projectiles.throwRock(
+      "thrower",
+      new THREE.Vector3(0, 1.3, 9),
+      new THREE.Vector3(0, -0.2, 1).normalize(),
+    );
+
+    // Pretend it already bounced, then put it straight into the target.
+    rock.bounces = 1;
+    rock.position.set(0, 1.2, 9.8);
+    rock.velocity.set(0, 0, 10);
+
+    for (let i = 0; i < 60; i++) {
+      scene.projectiles.update(1 / 60);
+    }
+
+    expect(scene.target.health.current).toBe(100);
+  });
+
+  it("hops off the floor and comes to rest, then vanishes", () => {
+    const scene = setup();
+    const rock = scene.projectiles.throwRock(
+      "thrower",
+      new THREE.Vector3(5, 1, 0),
+      new THREE.Vector3(0, -0.3, 1).normalize(),
+    );
+    let seconds = 0;
+    let hops = 0;
+    let lastBounces = 0;
+
+    while (scene.projectiles.active.includes(rock) && seconds < 5) {
+      scene.projectiles.update(1 / 60);
+      seconds += 1 / 60;
+
+      if (rock.bounces !== lastBounces) {
+        hops++;
+        lastBounces = rock.bounces;
+      }
+    }
+
+    expect(hops).toBeGreaterThanOrEqual(1);
+    expect(scene.projectiles.active).not.toContain(rock);
+    expect(rock.position.y).toBeLessThan(0.5);
+  });
+});

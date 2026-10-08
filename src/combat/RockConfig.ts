@@ -48,6 +48,20 @@ export const ROCK_CONFIG = {
    * the crosshair instead of travelling parallel to it.
    */
   ROCK_CONVERGE_DISTANCE: 30,
+
+  /**
+   * A rock that hits scenery bounces off, falls and settles, then vanishes.
+   * Share of the speed straight into the surface that is kept...
+   */
+  ROCK_BOUNCE_RESTITUTION: 0.35,
+  /** ...and share of the sliding speed that is lost on each bounce. */
+  ROCK_BOUNCE_FRICTION: 0.35,
+  /** Below this speed (m/s) after a bounce the rock has come to rest. */
+  ROCK_REST_SPEED: 1.2,
+  /** A resting rock is removed after this many seconds. */
+  ROCK_REST_SECONDS: 0.5,
+  /** However it tumbles, a bounced rock is removed after this many seconds. */
+  ROCK_LINGER_SECONDS: 2.0,
 } as const;
 
 /** Damage of a rock that reaches the given body part, before any guard. */

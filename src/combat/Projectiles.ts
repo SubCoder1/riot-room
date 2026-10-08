@@ -25,6 +25,12 @@ export interface RockProjectile extends RockBody {
   travelled: number;
   /** Time not yet consumed by fixed steps. */
   carry: number;
+  /** Times it has bounced off scenery (a bounced rock hurts nobody). */
+  bounces: number;
+  /** Seconds since its first bounce. */
+  settle: number;
+  /** Seconds it has been lying still. */
+  rest: number;
 }
 
 /**
@@ -41,6 +47,9 @@ export class ProjectileSystem {
 
   private readonly before = new THREE.Vector3();
   private readonly step = new THREE.Vector3();
+  private readonly normal = new THREE.Vector3();
+  private readonly probe = new THREE.Vector3();
+  private readonly tangent = new THREE.Vector3();
   private readonly impact: RockImpact = {
     point: new THREE.Vector3(),
     fraction: 0,
@@ -95,6 +104,9 @@ export class ProjectileSystem {
       velocity: new THREE.Vector3(),
       travelled: 0,
       carry: 0,
+      bounces: 0,
+      settle: 0,
+      rest: 0,
     };
 
     launchRock(
@@ -133,6 +145,21 @@ export class ProjectileSystem {
 
   /** One fixed step. False once the rock is spent (hit, landed or out of range). */
   private advance(rock: RockProjectile): boolean {
+    if (rock.bounces > 0) {
+      rock.settle += ROCK_CONFIG.ROCK_STEP;
+
+      if (rock.settle >= ROCK_CONFIG.ROCK_LINGER_SECONDS) {
+        return false;
+      }
+
+      // Lying still on the ground: just wait to vanish.
+      if (rock.rest > 0) {
+        rock.rest += ROCK_CONFIG.ROCK_STEP;
+
+        return rock.rest < ROCK_CONFIG.ROCK_REST_SECONDS;
+      }
+    }
+
     this.before.copy(rock.position);
     stepRock(rock, ROCK_CONFIG.ROCK_STEP);
 
@@ -140,7 +167,8 @@ export class ProjectileSystem {
       ? this.impact.fraction
       : 1;
 
-    const struck = this.firstBodyHit(rock, wall);
+    // A rock that has bounced is spent: it no longer hurts anyone.
+    const struck = rock.bounces > 0 ? null : this.firstBodyHit(rock, wall);
 
     if (struck && rock.kind === "molotov") {
       // A bottle breaks on whatever it meets, a body included.
@@ -168,12 +196,82 @@ export class ProjectileSystem {
     if (wall < 1) {
       if (rock.kind === "molotov") {
         this.onBurst?.(rock, this.impact.point);
+
+        return false;
       }
 
-      return false;
+      this.bounce(rock);
+
+      return true;
     }
 
     return rock.travelled < (rock.profile ?? ROCK_PROFILE).maxRange;
+  }
+
+  /**
+   * The rock hit scenery or the floor: work out which way the surface faces,
+   * bounce off it with less speed, and from then on let gravity bring it down.
+   */
+  private bounce(rock: RockProjectile): void {
+    const radius = (rock.profile ?? ROCK_PROFILE).radius;
+    const point = this.impact.point;
+    const delta = this.step.subVectors(rock.position, this.before);
+    const normal = this.normal.set(0, 0, 0);
+
+    // Which axis of the step was stopped: the surface faces back along it.
+    for (const axis of ["x", "y", "z"] as const) {
+      const move = delta[axis];
+
+      if (Math.abs(move) < 1e-9) {
+        continue;
+      }
+
+      this.probe.copy(point);
+      this.probe[axis] += move;
+
+      const blocked =
+        (axis === "y" && point.y + move <= radius) ||
+        this.world.clearFraction(point, this.probe) < 1;
+
+      if (blocked) {
+        normal[axis] = -Math.sign(move);
+      }
+    }
+
+    // A corner, or a graze: just come back the way it went.
+    if (normal.lengthSq() < 1e-9) {
+      normal.copy(rock.velocity).normalize().negate();
+    }
+
+    normal.normalize();
+
+    const into = rock.velocity.dot(normal);
+
+    if (into < 0) {
+      this.step.copy(normal).multiplyScalar(into);
+      this.tangent.copy(rock.velocity).sub(this.step);
+      rock.velocity
+        .copy(this.tangent)
+        .multiplyScalar(1 - ROCK_CONFIG.ROCK_BOUNCE_FRICTION)
+        .addScaledVector(this.step, -ROCK_CONFIG.ROCK_BOUNCE_RESTITUTION);
+    }
+
+    // Out of the surface, and under full gravity from here on.
+    rock.position.copy(point).addScaledVector(normal, radius + 0.01);
+    rock.travelled = Math.max(
+      rock.travelled,
+      ROCK_PROFILE.gravityStart + ROCK_PROFILE.gravityRamp,
+    );
+    rock.bounces++;
+
+    // On the floor and barely moving: it has come to rest.
+    if (
+      normal.y > 0.7 &&
+      rock.velocity.length() < ROCK_CONFIG.ROCK_REST_SPEED
+    ) {
+      rock.velocity.set(0, 0, 0);
+      rock.rest = ROCK_CONFIG.ROCK_STEP;
+    }
   }
 
   /**
