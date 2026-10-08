@@ -18,7 +18,7 @@ export class Renderer {
 
     this.scene.background = new THREE.Color(0x0b1020);
 
-    this.scene.fog = new THREE.Fog(0x0b1020, 35, 90);
+    this.scene.fog = new THREE.Fog(0x0b1020, 60, 150);
 
     // ----------------------------------------
     // SIZE
@@ -34,7 +34,7 @@ export class Renderer {
     // CAMERA
     // ----------------------------------------
 
-    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.01, 150);
+    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.01, 220);
 
     this.camera.position.set(0, 1.7, 0);
 

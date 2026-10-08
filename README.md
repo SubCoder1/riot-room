@@ -39,6 +39,7 @@ Open the URL Vite prints, then **click the game canvas** to capture the mouse (p
 | Mouse wheel | Switch utility: opens the weapon wheel and equips the next / previous slot at once |
 | Left click | Punch; with Rocks equipped, throw a rock (quick throw, or aimed while right click is held) |
 | `F` (hold) | Block |
+| `E` | Grab the ladder you are looking at when you are within about 1.8 m: standing, running or in mid-air after a jump. `E` on a ladder lets go; `Space` jumps off. On a ladder: `W` / `S` climb, `Space` jumps off backward. No punching, guarding or throwing while on a ladder. A ladder that climbs through a roof stops under a shut amber **hatch**: press `E` anywhere on that ladder to open it (it never lets go while the hatch is shut; also from above); it then stays open until the next round (`F10`). The character climbs hand over hand with its feet on the rungs; the pose follows the height climbed, so it stops when you stop and runs backward going down. In third person the camera moves behind the climber |
 | Right click (hold) | Aim a rock (only with Rocks equipped) |
 | `F3` | Toggle first person / third person camera |
 
@@ -53,7 +54,7 @@ Scroll the **mouse wheel** at any time (standing, running, punching, blocking) a
 | Smoke (left) | starts at 0 | |
 | Fists (bottom) | none | no utility: you use your fists (shown with a boxing glove) |
 
-- Scrolling steps ROCKS, MOLOTOV, SMOKE, FISTS and back to ROCKS one way, and the reverse the other way. A slot with none left can still be chosen; it simply shows ×0 and you keep your fists.
+- Scrolling steps ROCKS, MOLOTOV, SMOKE, FISTS and back to ROCKS one way, and the reverse the other way. A slot with none left can still be chosen; it simply shows Ã—0 and you keep your fists.
 - **Fists are the fallback.** Fists is the fourth slot, with a boxing-glove icon and no quantity. You use your fists when it is selected or when the selected utility has run out. You start on Fists. The punch, block and movement systems are untouched.
 - The centre shows the selected slot's name and quantity and updates with every scroll. Quantities are read from the inventory, so they stay current when it changes.
 - **This is only the selection and inventory foundation.** Nothing is thrown yet: choosing Rocks, Molotov or Smoke changes what is equipped, nothing more.
@@ -64,7 +65,7 @@ Each player owns their own inventory and selection ([src/inventory/PlayerUtiliti
 
 | Key | Action |
 | --- | --- |
-| `F4` | Show / hide the debug view: combat shapes and guard cone, plus the arena's spawn points (S1-S11), resource sites, the five routes, collision boxes, boundary and platform heights |
+| `F4` | Show / hide the debug view: combat shapes and guard cone, plus the map's spawn points (S1-S8), ladder start and end spots, collision boxes, boundary and floor heights |
 | `F6` | Dummy holds / drops its guard |
 | `F7` | Dummy turns to face you (off by default, so you can test side and rear hits) |
 | `F8` | Dummy crouches (a crouched guard also covers the legs) |
@@ -163,7 +164,7 @@ A rock that hits cover, a wall or the floor bounces off (losing most of its spee
 
 ### Molotov
 
-Pick **Molotov** on the weapon wheel. You start with none (×0), so it can't be equipped until you have one: a pickup is just `utilities.add("MOLOTOV", 1)`. It uses the rock's states, aim line and throw, so the controls are the same: the hand goes to the pocket, the bottle comes up to be lit (a small flame appears), and it is ready. **Hold right click** to aim (the dashed line shows where it lands), then **left click** to throw it. A plain left click is a quick throw. The bottle is spent when it leaves the hand, never when you start aiming; at ×0 you drop back to Fists. Switching away puts it back in the pocket without a flame.
+Pick **Molotov** on the weapon wheel. You start with none (Ã—0), so it can't be equipped until you have one: a pickup is just `utilities.add("MOLOTOV", 1)`. It uses the rock's states, aim line and throw, so the controls are the same: the hand goes to the pocket, the bottle comes up to be lit (a small flame appears), and it is ready. **Hold right click** to aim (the dashed line shows where it lands), then **left click** to throw it. A plain left click is a quick throw. The bottle is spent when it leaves the hand, never when you start aiming; at Ã—0 you drop back to Fists. Switching away puts it back in the pocket without a flame.
 
 It flies like the rock (straight for a few metres, then an arc, `MOLOTOV_PROFILE`) and breaks on the first thing it meets: the floor, a platform, a wall or a body. On a wall the fire drops to the surface below, so it never floats in mid-air.
 
@@ -205,52 +206,42 @@ All attack numbers (damage, timing, knockback, reach, blockability) live in [src
 
 ---
 
-## The arena
+## The map (stage one: the upper floor and the roofs)
 
-A graybox **Free-For-All** arena, 40 m x 40 m with 4 m outer walls, built from basic Three.js geometry (no external assets). There are no teams: every fighter is an individual opponent. It is designed around one rule: **every strong position has a weakness**, so no spot, route or platform wins on its own. A top view is in [map-top-view.png](map-top-view.png).
+A graybox, enclosed, multi-level industrial complex, 64 m x 48 m with 13.5 m outer walls, built from basic Three.js geometry. A dense ring of rooms, corridors, walkways, balconies and covered yards surrounds a central open arena that every side looks down into. The **upper floor** is 4 m up, and above it are three **roof layers** that can be walked on. The ground level is deliberately unfinished: the central arena is bare floor, and the structure under the upper floor is solid for now. There are no hidden or special-role parts; this is the map every fighter sees. (North is up, west is left.) Pictures: [top view](docs/map-top-view.png), [roof layers](docs/map-roof-view.png), and [3D views](docs/map-3d-arena-view.png).
 
-### Layout
+| Part | What it is |
+| --- | --- |
+| Rooms (12) | Each with its own graybox props: **Control room** (raised console dais and monitor banks, taller roof), **Archive** (shelf aisles), **Switch room** (switchgear), **Cargo office** (crate lanes, high roof), **Server room** (rack rows with 1.5 m lanes), **Break room**, **Warehouse** (crate stacks with 2 m lanes, high roof), **Workshop** (benches and machines), **Store** (shelving), **Hall** (columns and a podium), **Barracks** (bunks and a locker wall), **Armory** (racks and a cage). Doorways are 2 m. Rooms join each other through shared doors (Archive - Switch room, Server room - Cargo office, Break room - Warehouse, Workshop - Warehouse, Hall - Armory, Hall - Store) |
+| Walkways | Four widths: wide east (4 m), medium north and south (3 m), a narrower west end (2.2 m) and a 1.5 m service corridor in the north-west. The ring is broken at the south-west corner: the west and south walkways only meet through rooms (the Hall), so there is no endless loop on the walkways alone |
+| Yards and decks | Loading dock and south plaza (covered yards with skylight gaps), east deck and west terrace (open courts), and a roofed north alcove |
+| Balconies (4) | **North overlook** (12 m wide, 4.5 m out, with cover), **south balcony** (lower, 2.8 m, narrow), **east corner balcony** (joins the east and south walkways) and **north-west balcony** (raised 5.2 m, long and narrow). They all hang in the air, so the ground under them stays open. A **maintenance platform** (2.8 m) hangs under the north edge |
+| Stairs (2) | **South-west** (bottom-left): 4 m wide, 16 steps of 25 cm, starts at the south end of the arena's west side and climbs north to a landing on the west walkway, so it serves the west and north sides. **North-east** (top-right): 5 m wide, 20 steps of 20 cm, starts at the north end of the east side and climbs south to a landing on the east walkway, so it serves the east and south sides. Either one alone reaches every room |
+| Ladders (15) | **Five on the arena faces and balconies** (easy to see), **four to the roofs** from the walkways (orange in the plans; the new one is on the north side, up the Switch room), and **six secret ones** (magenta) in nooks: behind the alcove's wall, in the north-west service corridor, in a corner of the south plaza, on the west terrace, on the maintenance platform, and between two roofs. Secret ones are only less obvious (a screen wall round the terrace ladder, crate stacks hiding the plaza ladder, the corridor, the alcove corner behind a roof hatch you open with `E`); anyone can use them. Press `E` to climb |
+| Ledges (14) | Six solid ones (1.2 m ledges you can jump onto on the east deck, west terrace, south plaza and loading dock, a 2.4 m one beside a 1.2 m one, and a 0.75 m housing on the dock roof) and eight that mark an edge you climb: the south balcony and the maintenance platform up to the walkway, the north-west balcony up from the floor, and roof-to-roof steps. They are tan |
+| Roofs (3 layers) | **Low 8.1 m** over most rooms and the alcove, **medium 9.3 m** over the Control room and the two covered yards, **high 10.8 m** over the Cargo office and the Warehouse. Each is a jump or a short climb above the last, every roof can be reached from another, and a steel **catwalk** joins the Server room's roof to the Break room's across the east court |
+| Rooftop machinery | Water tanks, ventilation units, service huts, skylight housings, a duct run, and raised roof walls (1.9 m) and parapets (1 m) along roof edges. Each one is a landmark, cover, or breaks a long sightline: from any roof, a good share of the other roofs is hidden, and a roof looks out through gaps in its walls |
+| Hanging structure zones (6) | Overhead steel beams for a later hanging system, each resting on something real: two trusses across the arena on steel posts at the walkway edges, a beam under each pair of medium roofs across its skylight gap, one between the Control room's wall and the Archive's under the alcove roof, and a crane rail hung from the Warehouse's roof. Drawn and recorded as data (`hangZones`); nothing hangs from them yet |
 
-| Part | What it is | Its weakness |
-| --- | --- | --- |
-| Centre | Open floor around a 2 m monolith and a pinwheel of 0.8 m low walls. A place fights happen, not a hill to hold | Visible from far more of the arena than anywhere else |
-| Corner columns | Four columns (2.2 m radius, 2.4 m tall, too tall to climb) fill the corners | (They remove the camping spots: no two-wall pockets, no endless run round the edge) |
-| North walkway (2.0 m) | Long and narrow, a ramp at one end and stairs at the other | Exposed along its whole length; a hit can knock you off |
-| East tower (2.6 m) | Small, with one long open staircase, or a jump up from the 1.3 m step beside it | Open on three sides; the staircase is a long exposed approach |
-| West terrace (1.5 m) | A ramp, stairs and open drops; the lane behind it is open at both ends | Can be reached from every side |
-| 2 m blocks | Stop punches and block the view; must be walked around | A flanker can use the open side |
-| 0.8 m low walls | Can be hopped; a punch goes over them | Give no real cover |
-| Pillars | Single sight-breakers | Easy to circle |
+Railings are drawn 1.1 m high and you can shoot over them, but they stop a body like a wall: nobody walks, runs or jumps over one, and nobody can stand on top of one (nor on any wall or post). The way off an edge is a gap in the railing, a stair or a ladder. A body needs 1.8 m of headroom, so props are at most 2 m tall, and anything solid is either touching its neighbour or at least 1.4 m away from it, so nobody can be wedged in a gap.
 
-Only about 9% of the floor is high ground, and none of it is in the middle. Every high position has at least two ways up.
-
-### Routes
-
-Five routes cross the arena between the north-west and south-east lanes, and none is better at everything ([src/world/ArenaRoutes.ts](src/world/ArenaRoutes.ts), drawn in the debug view):
-
-| Route | Length | Trade-off |
-| --- | --- | --- |
-| **A** Open lane (east side) | 60 m | Fast and wide open, so heavy punches are easy to land |
-| **B** Covered route (west and south) | 66 m | Most hidden, but the longest ground route, which gives a chaser time to cut across |
-| **C** Elevated route (walkway, then the step) | 78 m | Best view, but narrow and the most exposed |
-| **D** Shortcut (straight across the middle) | 47 m | Shortest, but visible from everywhere and easy to intercept |
-| **E** Central route (through the pinwheel's gaps) | 56 m | Direct, with cover to dodge behind, but the most contested ground |
+The sides have their own character: the **west** is service and maintenance (a 1.5 m corridor, tight rooms, a screened secret ladder on the terrace), the **north** is operations (the Control room, the widest walkway and the big overlook, with a public roof ladder), the **east** is loading and machinery (the Cargo office, Warehouse, a generator on the east deck, the catwalk and the high roofs) and the **south** is workshop and storage (the Workshop, Store and plaza with crates hiding a ladder, and mixed-width walkways).
 
 ### Movement on it
 
-You can walk and sprint up ramps and stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, and jump onto 0.8 m cover. Walls and solid scenery stop you and let you slide along them. Your body stays 0.5 m from scenery, so the camera and fists don't clip into it. Cover and walls also stop punches: a hit needs a clear line to the target, and fists stop at contact.
+You can walk and sprint up stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, jump onto 1.2 m ledges, climb ladders (`E`), vault railings and boxes (hold `W` and press `Space` at one: a one-handed vault, the body rolling over the planted hand), walk across roofs and the catwalk, and walk on the ground right under a balcony. Walls and solid scenery stop you and let you slide along them, and so do ladders: each has a slim solid body against its face, so nobody walks through the rails. Thin walls, railings and posts are solid at any height (a body cannot wade into even a low one), and crashing into a wall in mid-air stops the jump's run; only the slide along the wall is left. Your body stays 0.5 m from scenery, so the camera and fists don't clip into it. Walls also stop punches: a hit needs a clear line to the target, and fists stop at contact.
+
+Collision is a height field over (x, z) in which every solid has an underside: most things are columns from the ground up, while balconies, roofs, catwalks and rooftop machinery start higher, so you can pass underneath them. Room roofs are real surfaces: you can stand on them, and a roof overhead does not block the room below. Thrown rocks and Molotovs stop at roofs and walls like anything else.
 
 ### Spawning
 
-There are 11 predefined spawn points (S1 to S11) on open floor, clear of walls, obstacles and platform edges, and none within 8 m of the middle. Each round every fighter gets one **unique** point chosen at random (the list is shuffled each time), preferring points at least 10 m apart and relaxing that when the arena is full. Nothing about a fighter decides where it starts, and a new round avoids repeating the previous assignment. Spawns face a mix of directions, not all toward the centre, and two spawns that are close together cannot see each other, so the start is a search, not an instant fight.
+There are 8 predefined spawn points (S1 to S8) on bare ground in the central arena, at least 7 m apart, none in a corner and none under a balcony. Each round every fighter gets one **unique** point chosen at random (the list is shuffled each time), preferring points at least 10 m apart and relaxing that when the arena is full. A new round avoids repeating the previous assignment. S1 and S6 face the foot of the two staircases.
 
 The game currently has one player and the training dummy, so it spawns both. `F10` starts a new round. The dummy still respawns by itself 2.5 s after dying (training behaviour); in a real Last Man Standing round the dead would stay out until the next round.
 
-### Ready for later (not implemented)
+### Where it lives
 
-Three **resource sites** (R1 to R3) mark open, contestable ground for future pickups such as rock piles: each is visible from high ground, well away from every spawn, and never in a protected corner. The mix of open sightlines, 2 m cover and elevated positions is meant to suit future ranged attacks and throwables, but none exist yet.
-
-The layout lives in [src/world/ArenaLayout.ts](src/world/ArenaLayout.ts) (one description used by the meshes, the collision and the spawn system), collision in [src/world/ArenaCollision.ts](src/world/ArenaCollision.ts) and spawn logic in [src/world/SpawnSystem.ts](src/world/SpawnSystem.ts). Press `F4` to see spawn points, resource sites, the five routes, collision boxes and platform heights.
+The map is built from named parts ([src/world/MapParts.ts](src/world/MapParts.ts): floor sections, rooms, corridors, balconies, walkways, decks, staircases, ladders, railings, ledges, roof sections, catwalks, columns, industrial props, tanks, overhead beams and hang zones) and placed in [src/world/UpperFloorMap.ts](src/world/UpperFloorMap.ts), which gives one plain description ([src/world/ArenaLayout.ts](src/world/ArenaLayout.ts), with the heights as named constants) used by the meshes, the collision ([src/world/ArenaCollision.ts](src/world/ArenaCollision.ts)) and the spawn system ([src/world/SpawnSystem.ts](src/world/SpawnSystem.ts)). The ground level will replace the bare floor in the next stage. Press `F4` to see spawn points, the ladder start and end spots, collision boxes and floor heights.
 
 ---
 

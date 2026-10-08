@@ -1,4 +1,5 @@
-import { ARENA_LAYOUT, type SpawnPoint } from "./ArenaLayout";
+import type { SpawnPoint } from "./ArenaLayout";
+import { ARENA_LAYOUT } from "./UpperFloorMap";
 import type { ArenaCollision } from "./ArenaCollision";
 
 /**

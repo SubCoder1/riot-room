@@ -1,6 +1,7 @@
 import type { InputManager } from "../../src/input/InputManager";
 import { Player } from "../../src/player/Player";
 import { ArenaCollision } from "../../src/world/ArenaCollision";
+import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 
 export const world = new ArenaCollision();
 export const DT = 1 / 60;
@@ -31,6 +32,7 @@ export function spawnPlayer(x: number, feetY: number, z: number, yaw = 0) {
   const input = new FakeInput();
 
   player.setWorld(world);
+  player.setLadders(ARENA_LAYOUT.ladders);
   player.teleport(x, feetY, z);
   input.yaw = yaw;
 

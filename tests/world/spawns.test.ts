@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ArenaCollision } from "../../src/world/ArenaCollision";
-import { ARENA_LAYOUT } from "../../src/world/ArenaLayout";
+import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 import {
   MIN_SPAWN_DISTANCE,
   SPAWN_OCCUPIED_RADIUS,
@@ -81,11 +81,11 @@ describe("Spawn points", () => {
     const unsafe = (x: number, z: number) =>
       validateSpawnPoint({ id: "t", label: "T", x, y: 0, z, yaw: 0 }, world);
 
-    expect(unsafe(0, 0)).not.toEqual([]); // on the central platform
-    expect(unsafe(-9, -9)).not.toEqual([]); // inside cover
-    expect(unsafe(19.5, 0)).not.toEqual([]); // against the wall
-    expect(unsafe(30, 0)).not.toEqual([]); // outside the arena
-    expect(unsafe(5.4, 0)).not.toEqual([]); // beside a platform edge
+    expect(unsafe(-24, 0)).not.toEqual([]); // inside the west wing
+    expect(unsafe(-16, 5)).not.toEqual([]); // on the south-west staircase
+    expect(unsafe(31.5, 0)).not.toEqual([]); // against the outer wall
+    expect(unsafe(40, 0)).not.toEqual([]); // outside the map
+    expect(unsafe(0, -9.5)).not.toEqual([]); // under the north balcony
   });
 });
 
@@ -116,7 +116,7 @@ describe("Spawn assignment", () => {
   it("keeps small groups apart by the minimum spawn distance", () => {
     for (let seed = 1; seed <= 50; seed++) {
       const spawned = Object.values(
-        assignSpawns(ids(4), { rng: seeded(seed) }),
+        assignSpawns(ids(3), { rng: seeded(seed) }),
       );
 
       for (let i = 0; i < spawned.length; i++) {

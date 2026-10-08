@@ -1,13 +1,16 @@
 import * as THREE from "three";
 
 import {
-  ARENA_HALF,
-  WALL_HEIGHT,
-  WALL_THICKNESS,
+  OUTER_WALL_HEIGHT,
+  OUTER_WALL_THICKNESS,
+  ROOF_MID,
   stairsToSteps,
   type ArenaLayout,
   type BoxSolid,
   type CylinderSolid,
+  type LadderDefinition,
+  type Overhead,
+  type PartRole,
   type RampSolid,
   type StairsDefinition,
 } from "./ArenaLayout";
@@ -24,9 +27,9 @@ const unitCylinder = new THREE.CylinderGeometry(1, 1, 1, 20);
 const materials = {
   floor: new THREE.MeshStandardMaterial({ color: 0x3b4452, roughness: 0.95 }),
   wall: new THREE.MeshStandardMaterial({
-    color: 0x2d3a4c,
-    roughness: 0.8,
-    metalness: 0.25,
+    color: 0x434e62,
+    roughness: 0.85,
+    metalness: 0.05,
   }),
   platform: new THREE.MeshStandardMaterial({ color: 0x6b7385, roughness: 0.9 }),
   ramp: new THREE.MeshStandardMaterial({
@@ -35,8 +38,75 @@ const materials = {
     side: THREE.DoubleSide,
   }),
   stairs: new THREE.MeshStandardMaterial({ color: 0x737c8f, roughness: 0.9 }),
-  cover: new THREE.MeshStandardMaterial({ color: 0x8d95a3, roughness: 0.9 }),
+  railing: new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.8 }),
+  // Climbable ledges stand out so they are easy to find.
+  ledge: new THREE.MeshStandardMaterial({ color: 0xb0865a, roughness: 0.9 }),
+  roofTop: new THREE.MeshStandardMaterial({
+    color: 0x3c4658,
+    roughness: 0.95,
+  }),
+  steel: new THREE.MeshStandardMaterial({
+    color: 0x5a6272,
+    roughness: 0.55,
+    metalness: 0.5,
+  }),
+  prop: new THREE.MeshStandardMaterial({ color: 0x8c7c66, roughness: 0.9 }),
+  machinery: new THREE.MeshStandardMaterial({
+    color: 0x62707f,
+    roughness: 0.6,
+    metalness: 0.2,
+  }),
+  pipe: new THREE.MeshStandardMaterial({
+    color: 0x7c6a55,
+    roughness: 0.5,
+    metalness: 0.45,
+  }),
+  // A roof hatch: amber, so it can be found in the dark.
+  hatch: new THREE.MeshStandardMaterial({
+    color: 0xb88a2a,
+    roughness: 0.6,
+    metalness: 0.4,
+    emissive: 0x2a1c04,
+  }),
+  // The amber landing pad at a ladder's opening.
+  hazard: new THREE.MeshStandardMaterial({
+    color: 0xd9a21b,
+    roughness: 0.7,
+    emissive: 0x3a2a04,
+  }),
+  duct: new THREE.MeshStandardMaterial({ color: 0x4f5c6b, roughness: 0.7 }),
+  glass: new THREE.MeshStandardMaterial({
+    color: 0x6fa8c7,
+    roughness: 0.2,
+    transparent: true,
+    opacity: 0.35,
+    emissive: 0x16303f,
+  }),
+  roof: new THREE.MeshStandardMaterial({
+    color: 0x4a566b,
+    roughness: 0.95,
+    emissive: 0x1a2130,
+  }),
+  ladder: new THREE.MeshStandardMaterial({
+    color: 0xf0c04a,
+    roughness: 0.6,
+    metalness: 0.1,
+    // A faint glow so a ladder reads in the dark, from above as well as below.
+    emissive: 0x5a4208,
+  }),
   pillar: new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
+};
+
+const roleMaterials: Record<PartRole, THREE.Material> = {
+  floor: materials.platform,
+  wall: materials.wall,
+  railing: materials.railing,
+  ledge: materials.ledge,
+  roof: materials.roofTop,
+  catwalk: materials.steel,
+  prop: materials.prop,
+  machinery: materials.machinery,
+  hatch: materials.hatch,
 };
 
 function blockMesh(
@@ -46,11 +116,12 @@ function blockMesh(
   maxZ: number,
   height: number,
   material: THREE.Material,
+  base = 0,
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(unitBox, material);
 
-  mesh.scale.set(maxX - minX, height, maxZ - minZ);
-  mesh.position.set((minX + maxX) / 2, height / 2, (minZ + maxZ) / 2);
+  mesh.scale.set(maxX - minX, height - base, maxZ - minZ);
+  mesh.position.set((minX + maxX) / 2, (height + base) / 2, (minZ + maxZ) / 2);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -61,62 +132,189 @@ export function createArenaFloor(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
   const floor = new THREE.Mesh(unitBox, materials.floor);
 
-  floor.scale.set(layout.size, 0.4, layout.size);
+  floor.scale.set(layout.width, 0.4, layout.depth);
   floor.position.y = -0.2;
   floor.receiveShadow = true;
   group.add(floor);
 
   // Faint 2 m grid: gives a sense of speed and distance on a plain floor.
-  const grid = new THREE.GridHelper(
-    layout.size,
-    layout.size / 2,
-    0x55627a,
-    0x4a566b,
-  );
+  const points: number[] = [];
+  const halfX = layout.width / 2;
+  const halfZ = layout.depth / 2;
 
-  grid.position.y = 0.01;
-  group.add(grid);
+  for (let x = -halfX; x <= halfX + 1e-6; x += 2) {
+    points.push(x, 0.01, -halfZ, x, 0.01, halfZ);
+  }
+
+  for (let z = -halfZ; z <= halfZ + 1e-6; z += 2) {
+    points.push(-halfX, 0.01, z, halfX, 0.01, z);
+  }
+
+  const gridGeometry = new THREE.BufferGeometry();
+
+  gridGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(points, 3),
+  );
+  group.add(
+    new THREE.LineSegments(
+      gridGeometry,
+      new THREE.LineBasicMaterial({ color: 0x4a566b }),
+    ),
+  );
 
   return group;
 }
 
 export function createOuterWalls(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
-  const span = layout.size + WALL_THICKNESS * 2;
-  const offset = ARENA_HALF + WALL_THICKNESS / 2;
+  const halfX = layout.width / 2;
+  const halfZ = layout.depth / 2;
+  const t = OUTER_WALL_THICKNESS;
 
   const walls: Array<[number, number, number, number]> = [
-    [0, -offset, span, WALL_THICKNESS], // north
-    [0, offset, span, WALL_THICKNESS], // south
-    [-offset, 0, WALL_THICKNESS, layout.size], // west
-    [offset, 0, WALL_THICKNESS, layout.size], // east
+    [0, -halfZ - t / 2, layout.width + t * 2, t], // north
+    [0, halfZ + t / 2, layout.width + t * 2, t], // south
+    [-halfX - t / 2, 0, t, layout.depth], // west
+    [halfX + t / 2, 0, t, layout.depth], // east
   ];
 
   for (const [x, z, width, depth] of walls) {
-    const wall = blockMesh(
-      x - width / 2,
-      x + width / 2,
-      z - depth / 2,
-      z + depth / 2,
-      WALL_HEIGHT,
-      materials.wall,
+    group.add(
+      blockMesh(
+        x - width / 2,
+        x + width / 2,
+        z - depth / 2,
+        z + depth / 2,
+        OUTER_WALL_HEIGHT,
+        materials.wall,
+      ),
     );
-
-    group.add(wall);
   }
 
   return group;
 }
 
-export function createPlatform(solid: BoxSolid): THREE.Mesh {
-  return blockMesh(
+/** A floor slab, wall, railing or ledge: coloured by its role. */
+export function createPlatform(solid: BoxSolid): THREE.Object3D {
+  const mesh = blockMesh(
     solid.minX,
     solid.maxX,
     solid.minZ,
     solid.maxZ,
     solid.height,
-    materials.platform,
+    roleMaterials[solid.role ?? "floor"],
+    solid.base ?? solid.bottom ?? 0,
   );
+
+  // A hatch is a panel a touch smaller than its hole, so it never fights the roof.
+  if (solid.role === "hatch") {
+    return createHatchPanel(solid, mesh);
+  }
+
+  // Low roofs (over rooms) let the light through so a room is readable inside.
+  if (solid.role === "roof" && solid.height < ROOF_MID - 0.01) {
+    mesh.castShadow = false;
+  }
+
+  return mesh;
+}
+
+/**
+ * The hatch panel on a hinge along its west edge. Shut it lies in the roof; open
+ * (rotation.z about +1.75 rad, set by the game) it stands up at the hinge,
+ * leaning back over the roof beyond the hole and still in view. It is solid
+ * while open (see hatchLid). Named `hatch:<id>`.
+ */
+function createHatchPanel(solid: BoxSolid, mesh: THREE.Mesh): THREE.Group {
+  const pivot = new THREE.Group();
+  const width = (solid.maxX - solid.minX) * 0.96;
+
+  pivot.name = `hatch:${solid.id}`;
+  pivot.position.set(
+    solid.minX + 0.02,
+    solid.height + 0.01,
+    (solid.minZ + solid.maxZ) / 2,
+  );
+
+  // The panel hangs off the hinge: it extends east, its top at the pivot.
+  mesh.scale.x = width;
+  mesh.scale.z = (solid.maxZ - solid.minZ) * 0.96;
+  mesh.position.set(width / 2, -mesh.scale.y / 2, 0);
+  pivot.add(mesh);
+
+  return pivot;
+}
+
+/** A roof or a lintel: drawn, never solid. */
+export function createOverhead(overhead: Overhead): THREE.Mesh {
+  const mesh = blockMesh(
+    overhead.minX,
+    overhead.maxX,
+    overhead.minZ,
+    overhead.maxZ,
+    overhead.top,
+    materials[overhead.material ?? "roof"],
+    overhead.bottom,
+  );
+
+  // Room roofs let the light through so a room is readable inside (graybox).
+  // Steel beams, pipes and ducts cast shadows; glass does not.
+  const solid =
+    overhead.material !== undefined && overhead.material !== "glass";
+
+  mesh.castShadow = solid;
+  mesh.receiveShadow = true;
+
+  return mesh;
+}
+
+/** Two rails and a rung every 30 cm, from the foot to a metre above the top. */
+export function createLadder(ladder: LadderDefinition): THREE.Group {
+  const group = new THREE.Group();
+  const height = ladder.topY - ladder.bottomY + 1;
+  const half = ladder.width / 2;
+
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(unitBox, materials.ladder);
+
+    rail.scale.set(0.07, height, 0.07);
+    rail.position.set(side * half, ladder.bottomY + height / 2, 0);
+    group.add(rail);
+  }
+
+  // The rungs are one instanced mesh, however tall the ladder is.
+  const rungs: number[] = [];
+
+  for (let y = ladder.bottomY + 0.3; y < ladder.bottomY + height; y += 0.3) {
+    rungs.push(y);
+  }
+
+  const rungMesh = new THREE.InstancedMesh(
+    unitBox,
+    materials.ladder,
+    rungs.length,
+  );
+  const matrix = new THREE.Matrix4();
+
+  rungs.forEach((y, index) => {
+    matrix.compose(
+      new THREE.Vector3(0, y, 0),
+      new THREE.Quaternion(),
+      new THREE.Vector3(ladder.width, 0.05, 0.05),
+    );
+    rungMesh.setMatrixAt(index, matrix);
+  });
+  rungMesh.frustumCulled = false;
+  group.add(rungMesh);
+
+  // The ladder's local x runs across the face.
+  const alongX = ladder.normal.endsWith("z");
+
+  group.position.set(ladder.x, 0, ladder.z);
+  group.rotation.y = alongX ? 0 : Math.PI / 2;
+
+  return group;
 }
 
 /** A wedge: the low edge sits on the floor, the high edge is `height` up. */
@@ -224,22 +422,13 @@ export function createStairs(stairs: StairsDefinition): THREE.Group {
   return group;
 }
 
-export function createCover(solid: BoxSolid): THREE.Mesh {
-  return blockMesh(
-    solid.minX,
-    solid.maxX,
-    solid.minZ,
-    solid.maxZ,
-    solid.height,
-    materials.cover,
-  );
-}
-
 export function createPillar(solid: CylinderSolid): THREE.Mesh {
   const mesh = new THREE.Mesh(unitCylinder, materials.pillar);
 
-  mesh.scale.set(solid.radius, solid.height, solid.radius);
-  mesh.position.set(solid.x, solid.height / 2, solid.z);
+  const base = solid.bottom ?? 0;
+
+  mesh.scale.set(solid.radius, solid.height - base, solid.radius);
+  mesh.position.set(solid.x, (solid.height + base) / 2, solid.z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -266,8 +455,16 @@ export function buildArena(layout: ArenaLayout): THREE.Group {
     arena.add(createStairs(stairs));
   }
 
-  for (const cover of layout.covers) {
-    arena.add(createCover(cover));
+  for (const wall of layout.walls) {
+    arena.add(createPlatform(wall));
+  }
+
+  for (const overhead of layout.overheads) {
+    arena.add(createOverhead(overhead));
+  }
+
+  for (const ladder of layout.ladders) {
+    arena.add(createLadder(ladder));
   }
 
   for (const pillar of layout.pillars) {

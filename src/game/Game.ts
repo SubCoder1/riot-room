@@ -6,7 +6,9 @@ import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
 import { ArenaCollision } from "../world/ArenaCollision";
 import { ArenaDebug } from "../world/ArenaDebug";
-import { ARENA_HALF, ARENA_LAYOUT } from "../world/ArenaLayout";
+import { CLIMB, angleBetween, ladderYaw } from "../player/Climb";
+import { ARENA_HALF_X } from "../world/ArenaLayout";
+import { ARENA_LAYOUT } from "../world/UpperFloorMap";
 import { assignSpawns } from "../world/SpawnSystem";
 import { Character } from "../character/Character";
 import type { CharacterMovementState } from "../character/Character";
@@ -42,6 +44,9 @@ const THROWABLE_TYPE: Record<HeldKind, UtilityType> = {
   rock: "ROCKS",
   molotov: "MOLOTOV",
 };
+
+/** How far an opened hatch panel swings up on its hinge (radians). */
+const HATCH_OPEN_ANGLE = 1.75;
 
 export class Game {
   // ============================================================
@@ -137,6 +142,14 @@ export class Game {
   private crosshair: HTMLElement | null = null;
   /** The left click of this frame, if the rock stance did not use it. */
   private punchClick = false;
+
+  /** The "E to climb" hint, made on first use. */
+  private climbPrompt: HTMLElement | null = null;
+
+  private climbKeyDown = false;
+
+  /** Roof hatches that have been opened this round (they stay open). */
+  private readonly openHatches = new Set<string>();
   private readonly throwOrigin = new THREE.Vector3();
   private readonly throwDirection = new THREE.Vector3();
   private readonly throwCameraDirection = new THREE.Vector3();
@@ -249,6 +262,8 @@ export class Game {
 
     this.player = new Player();
     this.player.setWorld(this.collision);
+    this.player.setLadders(ARENA_LAYOUT.ladders);
+    this.player.isHatchShut = (id) => !this.openHatches.has(id);
 
     // ----------------------------------------------------------
     // Complete Polyfork character
@@ -288,7 +303,7 @@ export class Game {
     this.dummy = new TrainingDummy(
       this.combat.events,
       new THREE.Vector3(0, 0, 4),
-      ARENA_HALF - 0.6,
+      ARENA_HALF_X - 0.6,
     );
 
     // Knockback can't push the dummy through cover, platforms or walls.
@@ -462,6 +477,8 @@ export class Game {
     // The weapon wheel and the rock stance come first: whether the player is
     // aiming a rock decides if they can guard or punch this frame.
     this.updateWeaponWheel(dt);
+    this.updateClimb();
+    this.updateHatches(dt);
     this.updateRockStance(dt);
 
     // Holding F guards. Sprinting wins only when it changes the
@@ -509,9 +526,17 @@ export class Game {
         movementState === "run" ||
         movementState === "runPunch");
 
-    this.bodyYawOffset +=
-      ((diagonalForward ? sideInput * (Math.PI / 4) : 0) - this.bodyYawOffset) *
-      (1 - Math.exp(-10 * dt));
+    const ladder = this.player.climbLadder;
+
+    if (ladder) {
+      // On a ladder the body stays facing it; only the head turns.
+      this.bodyYawOffset = angleBetween(ladderYaw(ladder), this.player.yaw);
+    } else {
+      this.bodyYawOffset +=
+        ((diagonalForward ? sideInput * (Math.PI / 4) : 0) -
+          this.bodyYawOffset) *
+        (1 - Math.exp(-10 * dt));
+    }
 
     this.character.setBodyYawOffset(this.bodyYawOffset, !this.isThirdPerson);
 
@@ -522,10 +547,24 @@ export class Game {
         this.flyPunchActive ||
         this.player.isBlocking ||
         this.rockStance.pointsAtCrosshair,
-      !this.player.isGrounded,
+      !this.player.isGrounded && !this.player.isClimbing,
       (this.punchTimeLeft > 0 || this.runPunchTimeLeft > 0) &&
         this.player.isGrounded,
     );
+
+    // The hands stay on the rails (which end a metre above the top) and the
+    // feet on the rungs (never below the foot of the ladder).
+    const climbing = this.player.climbLadder;
+
+    this.character.setClimb(
+      this.player.isClimbing,
+      this.player.position.y - this.player.eyeHeight,
+      climbing
+        ? { topHand: climbing.topY + 0.85, bottomFoot: climbing.bottomY + 0.1 }
+        : undefined,
+    );
+
+    this.character.setVault(this.player.vaultPose);
 
     this.character.setRock(
       this.rockStance.pose,
@@ -673,7 +712,114 @@ export class Game {
    * Rock states. Right click aims, left click while aiming throws (and is never
    * also a punch), and switching away from ROCKS puts the rock back.
    */
+  /**
+   * E grabs the ladder you are looking at (close, from its foot or from the top
+   * edge) and lets go again. While on a ladder the player cannot punch, guard
+   * or throw: the clicks are thrown away and the held item is put away.
+   */
+  private updateClimb(): void {
+    const key = this.input.isPressed("KeyE");
+    const pressed = key && !this.climbKeyDown;
+
+    this.climbKeyDown = key;
+
+    if (pressed) {
+      if (this.player.isClimbing) {
+        const hatch = this.player.climbLadder?.hatch;
+
+        // With a hatch still shut above, E opens it (from anywhere on the
+        // ladder, so it never lets go by mistake); Space jumps off instead.
+        if (hatch && this.player.hasShutHatch) {
+          this.setHatchOpen(hatch.id, true);
+        } else {
+          this.player.releaseLadder();
+        }
+      } else {
+        const ladder = this.player.ladderInReach();
+
+        if (ladder && this.player.grabLadder()) {
+          this.rockStance.reset();
+          this.input.yaw = ladderYaw(ladder);
+        }
+      }
+    }
+
+    // Looking round is limited: the head turns, the body does not.
+    const onLadder = this.player.climbLadder;
+
+    if (onLadder) {
+      const turn = angleBetween(this.input.yaw, ladderYaw(onLadder));
+
+      if (Math.abs(turn) > CLIMB.LOOK_RANGE) {
+        this.input.yaw =
+          ladderYaw(onLadder) + Math.sign(turn) * CLIMB.LOOK_RANGE;
+      }
+    }
+
+    if (!this.climbPrompt) {
+      this.climbPrompt = document.createElement("div");
+      this.climbPrompt.className = "climb-prompt";
+      document.body.appendChild(this.climbPrompt);
+    }
+
+    const text = this.player.isClimbing
+      ? this.player.atShutHatch
+        ? "E  Open hatch"
+        : this.player.hasShutHatch
+          ? "W / S climb  ·  E open hatch  ·  Space jump off"
+          : "W / S climb  ·  Space jump off  ·  E let go"
+      : this.player.ladderInReach()
+        ? "E  Climb"
+        : "";
+
+    if (this.climbPrompt.textContent !== text) {
+      this.climbPrompt.textContent = text;
+    }
+
+    this.climbPrompt.style.visibility = text ? "visible" : "hidden";
+  }
+
+  /** Opens or shuts a roof hatch: its solid goes (or comes back) and its panel is hidden (or shown). */
+  private setHatchOpen(id: string, open: boolean): void {
+    if (open) {
+      this.openHatches.add(id);
+    } else {
+      this.openHatches.delete(id);
+    }
+
+    this.collision.setOpen(id, open);
+
+    const panel = this.arena.group.getObjectByName(`hatch:${id}`);
+
+    // The panel swings up on its hinge (see updateHatches) and stays in view.
+    if (panel) {
+      panel.userData.target = open ? HATCH_OPEN_ANGLE : 0;
+    }
+  }
+
+  /** Swings every hatch panel toward its open or shut angle. */
+  private updateHatches(dt: number): void {
+    for (const hatch of ARENA_LAYOUT.hatches) {
+      const panel = this.arena.group.getObjectByName(`hatch:${hatch.id}`);
+
+      if (panel) {
+        const target = (panel.userData.target as number | undefined) ?? 0;
+
+        panel.rotation.z +=
+          (target - panel.rotation.z) * (1 - Math.exp(-9 * dt));
+      }
+    }
+  }
+
   private updateRockStance(dt: number): void {
+    if (this.player.isClimbing || this.player.isVaulting) {
+      // Both hands are on the ladder (or the obstacle being vaulted).
+      this.input.consumeAttack();
+      this.punchClick = false;
+
+      return;
+    }
+
     const click = this.input.consumeAttack();
     const armBusy =
       this.punchTimeLeft > 0 ||
@@ -997,6 +1143,13 @@ export class Game {
      *
      * No Y-position guessing.
      */
+    // On a ladder: stepping while climbing, still when holding on.
+    if (this.player.isClimbing) {
+      return this.input.isPressed("KeyW") || this.input.isPressed("KeyS")
+        ? "walk"
+        : "idle";
+    }
+
     if (!this.player.isGrounded) {
       return "jump";
     }
@@ -1345,6 +1498,11 @@ export class Game {
    * state. Free-for-all: nothing about a fighter decides where it starts.
    */
   private startRound(): void {
+    // Every roof hatch is shut again for a new round.
+    for (const id of [...this.openHatches]) {
+      this.setHatchOpen(id, false);
+    }
+
     const spawns = assignSpawns(["player", "dummy"], {
       previous: this.lastSpawns,
     });
@@ -1462,7 +1620,7 @@ export class Game {
     this.characterFeet.set(
       this.player.position.x,
 
-      this.player.position.y - this.player.eyeHeight,
+      this.player.position.y - this.player.eyeHeight - this.player.stepLag,
 
       this.player.position.z,
     );
@@ -1493,6 +1651,8 @@ export class Game {
       0,
       0.15,
       position.y - 0.05,
+      // Only what is at the camera's height gets in its way, not a roof above.
+      position.y + 0.1,
     );
 
     position.x = free.x;
@@ -1660,7 +1820,7 @@ export class Game {
     this.characterFeet.set(
       this.player.position.x,
 
-      this.player.position.y - this.player.eyeHeight,
+      this.player.position.y - this.player.eyeHeight - this.player.stepLag,
 
       this.player.position.z,
     );
@@ -1695,9 +1855,13 @@ export class Game {
     // Put camera in front of character
     // ----------------------------------------------------------
 
+    // On a ladder the wall is straight ahead, so the camera goes to the other
+    // side: behind the climber, looking at their back.
     this.thirdPersonCameraPosition.addScaledVector(
       this.playerForward,
-      this.thirdPersonDistance,
+      this.player.isClimbing
+        ? -this.thirdPersonDistance
+        : this.thirdPersonDistance,
     );
 
     // ----------------------------------------------------------

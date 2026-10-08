@@ -1,18 +1,54 @@
 /**
- * The graybox arena as plain data: no Three.js, no rendering. The mesh builder,
+ * The graybox map as plain data: no Three.js, no rendering. The mesh builder,
  * the collision module, the spawn system and the tests all read this one
- * description, so the map is defined in exactly one place.
+ * description, so the map is defined in exactly one place. The pieces
+ * themselves are made by MapParts and placed in UpperFloorMap.
  *
- * Coordinates: the arena is centred on (0, 0). North is -z. Heights are metres
- * above the main floor (y = 0).
+ * Coordinates: the map is centred on (0, 0). North is -z, east is +x. Heights
+ * are metres above the main floor (y = 0).
+ *
+ * Collision is a height field over (x, z): every solid is a column from the
+ * floor up to its top, so nothing can be walked under. Roofs are drawn but do
+ * not collide.
  */
 
 export type RiseDirection = "+x" | "-x" | "+z" | "-z";
 
-/** A flat-topped block standing on the floor (platform, cover, stair step). */
+/** What a box is, so the builder can colour it and the tests can find it. */
+export type PartRole =
+  | "floor"
+  | "wall"
+  | "railing"
+  | "ledge"
+  | "roof"
+  | "catwalk"
+  | "hatch"
+  | "prop"
+  | "machinery";
+
+/** A flat-topped block standing on the floor (floor slab, wall, railing, ledge, stair step). */
 export interface BoxSolid {
   kind: "box";
   id: string;
+  role?: PartRole;
+  /**
+   * Where the drawn block starts (default: `bottom`). Collision counts the
+   * block as solid from `bottom` (the ground by default) up to `height`; `base`
+   * only stops a wall standing on a floor from being drawn through it.
+   */
+  base?: number;
+  /**
+   * Underside for collision (default 0, a column from the ground). Anything
+   * hanging over open space, such as a balcony, a roof or a catwalk, sets it so
+   * a character can walk underneath.
+   */
+  bottom?: number;
+  /**
+   * How high the solid stops a walking or jumping body, if more than it is
+   * drawn: a railing looks hip-high but cannot be vaulted. Shots, rocks and
+   * sight lines only count its drawn height.
+   */
+  blockTop?: number;
   minX: number;
   maxX: number;
   minZ: number;
@@ -39,6 +75,8 @@ export interface CylinderSolid {
   z: number;
   radius: number;
   height: number;
+  /** Underside, like BoxSolid.bottom (a tank on a roof does not block the room below). */
+  bottom?: number;
 }
 
 export type Solid = BoxSolid | RampSolid | CylinderSolid;
@@ -63,67 +101,146 @@ export interface SpawnPoint {
   x: number;
   y: number;
   z: number;
-  /** Camera yaw that looks at the arena centre. */
+  /** Camera yaw that looks at the point the spawn faces. */
   yaw: number;
 }
 
-/**
- * A spot that could later hold a rock pile or other pickup. It is data only
- * (nothing spawns there yet). Sites are meant to be valuable but exposed: open
- * floor with several ways in, never a protected corner.
- */
-export interface ResourceSite {
+export type Side = "n" | "s" | "e" | "w";
+
+export interface DoorDefinition {
+  side: Side;
+  /** Centre of the opening along the wall (x for n / s walls, z for e / w). */
+  at: number;
+  width: number;
+}
+
+/** Something you can stand in or on, kept as data for the tests, the debug view and later game modes. */
+export type ZoneKind =
+  "room" | "balcony" | "walkway" | "deck" | "landing" | "corridor";
+
+export interface Zone {
   id: string;
-  label: string;
+  name: string;
+  kind: ZoneKind;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  /** Height of the floor you stand on. */
+  floorY: number;
+}
+
+export interface RoomDefinition extends Zone {
+  kind: "room";
+  doors: DoorDefinition[];
+}
+
+/** A ladder against a vertical face. Climbing itself is not built yet; this is where it will go. */
+export interface LadderDefinition {
+  id: string;
+  /** Centre of the ladder, a hand's width off the face. */
   x: number;
   z: number;
+  /** Which way the face looks (out into the open space the ladder is reached from). */
+  normal: RiseDirection;
+  width: number;
+  bottomY: number;
+  topY: number;
+  /** Where a player stands to start climbing (on the floor at the foot). */
+  approach: { x: number; z: number };
+  /** Where a player ends up standing at the top. */
+  exit: { x: number; z: number };
+  /** Hard to see from the main routes (still usable by everyone). */
+  secret?: boolean;
+  /**
+   * A roof hatch above the ladder that must be opened (E) before the climb can
+   * pass. `stopY` is the highest foot height with the head still under it.
+   */
+  hatch?: { id: string; stopY: number };
 }
 
-export const ARENA_SIZE = 40;
-export const ARENA_HALF = ARENA_SIZE / 2;
-export const WALL_HEIGHT = 4;
-export const WALL_THICKNESS = 0.45;
-
-function box(
-  id: string,
-  centerX: number,
-  centerZ: number,
-  width: number,
-  depth: number,
-  height: number,
-): BoxSolid {
-  return {
-    kind: "box",
-    id,
-    minX: centerX - width / 2,
-    maxX: centerX + width / 2,
-    minZ: centerZ - depth / 2,
-    maxZ: centerZ + depth / 2,
-    height,
-  };
+/** A hatch in a roof: shut it is part of the roof, opened it leaves a hole. */
+export interface HatchDefinition {
+  id: string;
+  ladderId: string;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  /** Underside and top of the roof it sits in. */
+  bottom: number;
+  top: number;
 }
 
-function ramp(
-  id: string,
-  minX: number,
-  maxX: number,
-  minZ: number,
-  maxZ: number,
-  height: number,
-  direction: RiseDirection,
-): RampSolid {
-  return { kind: "ramp", id, minX, maxX, minZ, maxZ, height, direction };
+/** A low step a player can climb onto (jump now, a proper climb later). */
+export interface LedgeDefinition {
+  id: string;
+  /** Floor you climb up from. */
+  fromY: number;
+  /** Height of the top. */
+  topY: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
 }
 
-function pillar(
-  id: string,
-  x: number,
-  z: number,
-  radius = 0.6,
-  height = 2.2,
-): CylinderSolid {
-  return { kind: "cylinder", id, x, z, radius, height };
+/**
+ * Drawn but not solid: roofs over rooms and the lintels above doors. Collision
+ * is a height field, so anything overhead would otherwise act as a wall.
+ */
+export type OverheadMaterial =
+  "roof" | "steel" | "pipe" | "duct" | "glass" | "hazard";
+
+export interface Overhead {
+  id: string;
+  /** How it is drawn (default "roof"). */
+  material?: OverheadMaterial;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  bottom: number;
+  top: number;
 }
+
+export const ARENA_WIDTH = 64;
+export const ARENA_DEPTH = 48;
+export const ARENA_HALF_X = ARENA_WIDTH / 2;
+export const ARENA_HALF_Z = ARENA_DEPTH / 2;
+
+/** Height of the outer walls: well above the upper floor and the roofs. */
+export const OUTER_WALL_HEIGHT = 13.5;
+export const OUTER_WALL_THICKNESS = 0.45;
+
+/** Height of the upper floor above the ground. */
+export const UPPER_FLOOR_Y = 4;
+
+/**
+ * The three roof layers (tops). Each is a jump or a short climb above the last:
+ * room roofs, a medium roof over the decks and walkways, and a raised high roof.
+ */
+export const ROOF_LOW = 8.1;
+export const ROOF_MID = 9.3;
+export const ROOF_HIGH = 10.8;
+
+/** Room walls above their floor, and the height of a doorway. */
+export const ROOM_WALL_HEIGHT = 3.8;
+export const DOOR_HEIGHT = 2.6;
+export const DOOR_WIDTH = 2;
+export const WALL_THICKNESS = 0.3;
+
+/**
+ * A railing is drawn hip-high and can be shot over, but it stops a body like a
+ * wall (see RAILING_BLOCK_HEIGHT): nobody walks, runs or jumps over it. The way
+ * off an edge is a gap, a stair or a ladder.
+ */
+export const RAILING_HEIGHT = 1.1;
+
+/** What a railing stops a body at: above the highest jump and step (about 1.4 m). */
+export const RAILING_BLOCK_HEIGHT = 1.6;
+export const RAILING_THICKNESS = 0.2;
+export const ROOF_THICKNESS = 0.3;
 
 /** Expands a flight of stairs into its individual steps. */
 export function stairsToSteps(stairs: StairsDefinition): BoxSolid[] {
@@ -152,23 +269,56 @@ export function stairsToSteps(stairs: StairsDefinition): BoxSolid[] {
   return steps;
 }
 
+/**
+ * A strong overhead anchor (a steel beam or truss, a rail) that a later
+ * hanging or swinging system can use. Data only: nothing hangs from it yet.
+ */
+export interface HangZone {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  /** Height of the underside of the beam. */
+  y: number;
+  /** Which way the beam runs and how long it is (metres). */
+  axis: "x" | "z";
+  length: number;
+}
+
 export interface ArenaLayout {
-  size: number;
+  width: number;
+  depth: number;
+  /** Floor slabs, piers, ledges (anything you stand on). */
   platforms: BoxSolid[];
+  /** Room walls and railings. */
+  walls: BoxSolid[];
   ramps: RampSolid[];
   stairs: StairsDefinition[];
-  covers: BoxSolid[];
   pillars: CylinderSolid[];
+  ladders: LadderDefinition[];
+  ledges: LedgeDefinition[];
+  overheads: Overhead[];
+  hangZones: HangZone[];
+  hatches: HatchDefinition[];
+  /** Heights of the walkable roof layers, lowest first. */
+  roofLevels: number[];
+  rooms: RoomDefinition[];
+  /** Balconies, landings, walkways and open decks (rooms are in `rooms`). */
+  zones: Zone[];
   spawnPoints: SpawnPoint[];
-  resourceSites: ResourceSite[];
 }
 
 /** Camera yaw at (x, z) that looks toward (lookX, lookZ). */
-function yawToward(x: number, z: number, lookX: number, lookZ: number): number {
+export function yawToward(
+  x: number,
+  z: number,
+  lookX: number,
+  lookZ: number,
+): number {
   return Math.atan2(-(lookX - x), -(lookZ - z));
 }
 
-function spawn(
+export function spawn(
   index: number,
   x: number,
   z: number,
@@ -185,150 +335,64 @@ function spawn(
   };
 }
 
-function site(index: number, x: number, z: number): ResourceSite {
-  return { id: `resource-${index}`, label: `R${index}`, x, z };
+/**
+ * The lid of an opened hatch: the panel standing on its hinge (the hole's west
+ * edge), a solid you cannot walk through. It only exists while the hatch is open.
+ */
+export function hatchLid(hatch: HatchDefinition): BoxSolid {
+  const width = (hatch.maxX - hatch.minX) * 0.96;
+
+  return {
+    kind: "box",
+    id: `${hatch.id}-lid`,
+    role: "hatch",
+    minX: hatch.minX - 0.15,
+    maxX: hatch.minX + 0.15,
+    minZ:
+      (hatch.minZ + hatch.maxZ) / 2 - ((hatch.maxZ - hatch.minZ) * 0.96) / 2,
+    maxZ:
+      (hatch.minZ + hatch.maxZ) / 2 + ((hatch.maxZ - hatch.minZ) * 0.96) / 2,
+    bottom: hatch.top,
+    height: hatch.top + width,
+  };
 }
 
 /**
- * COMBAT-FIRST FREE-FOR-ALL LAYOUT (north is -z).
- *
- * Every strong position is paired with a weakness:
- *
- *  - There is no central platform. The middle is open floor around a 2 m
- *    monolith and a pinwheel of hoppable low walls: a place fights happen, and
- *    that can be fought around, through and over, not a hill to sit on.
- *  - Four big corner columns seal the corners, so there are no two-wall pockets
- *    to camp in and no unbroken ring to run round the perimeter forever.
- *  - Three high positions, each different:
- *      NORTH WALKWAY (2.0 m): long and narrow, so it is exposed along its whole
- *        length and a hit can knock you off. Ramp at one end, stairs at the
- *        other.
- *      EAST TOWER (2.6 m): small, one long open staircase up, or a jump up from
- *        the step beside it. Open to attack from three sides.
- *      WEST TERRACE (1.2 m): low, with a ramp, stairs and an open drop, and a
- *        lane behind it that lets you come at it from the rear.
- *  - Mid level: 0.8 m walls (hop over) and 2 m blocks (go around), set so that
- *    one side of a piece is always open for a flanker.
- *
- * Cover heights follow the ~0.93 m jump: 0.8 m can be hopped, 1.2 m can be
- * jumped onto, anything taller must be walked around.
+ * A ladder's body: a slim solid against its face, so nobody walks through the
+ * rails. It stops 0.3 m under the top, so it never makes a ledge at the floor
+ * the ladder tops out on.
  */
-export const ARENA_LAYOUT: ArenaLayout = {
-  size: ARENA_SIZE,
+export function ladderBody(ladder: LadderDefinition): BoxSolid {
+  const alongX = ladder.normal.endsWith("z");
+  const sign = ladder.normal.startsWith("+") ? 1 : -1;
+  // The ladder stands 0.12 m off its face; its body reaches 0.18 m out from it.
+  const face = (alongX ? ladder.z : ladder.x) - sign * 0.12;
+  const out = [face, face + sign * 0.18].sort((a, b) => a - b);
+  const half = ladder.width / 2 + 0.04;
+  const across = alongX ? ladder.x : ladder.z;
 
-  platforms: [
-    box("north-walkway", 0, -9.5, 14, 3.5, 2.0),
-    box("east-tower", 13, 5, 6, 6, 2.6),
-    box("east-step", 8, 5, 4, 4, 1.3),
-    box("west-terrace", -14, 4, 6, 8, 1.5),
-  ],
-
-  ramps: [
-    ramp("walkway-ramp-west", -13.5, -7, -10.75, -8.25, 2.0, "+x"),
-    ramp("step-ramp", 1.5, 6, 4.5, 7, 1.3, "+x"),
-    ramp("terrace-ramp-south", -16, -12.5, 8, 12.5, 1.5, "-z"),
-  ],
-
-  stairs: [
-    {
-      id: "walkway-stairs-east",
-      start: 11.9,
-      direction: "-x",
-      crossMin: -10.75,
-      crossMax: -8.25,
-      steps: 7,
-      rise: 2 / 7,
-      tread: 0.7,
-    },
-    {
-      id: "tower-stairs-south",
-      start: 14.3,
-      direction: "-z",
-      crossMin: 11,
-      crossMax: 14,
-      steps: 9,
-      rise: 2.6 / 9,
-      tread: 0.7,
-    },
-    {
-      id: "terrace-stairs-east",
-      start: -7.5,
-      direction: "-x",
-      crossMin: 1,
-      crossMax: 4,
-      steps: 5,
-      rise: 0.3,
-      tread: 0.7,
-    },
-  ],
-
-  covers: [
-    // Centre: a monolith and a pinwheel of low walls around it.
-    box("monolith", 0, 0, 2, 2, 2.0),
-    box("cover-low-1", 3.5, -3.5, 4, 1, 0.8),
-    box("cover-low-2", 3.5, 1.75, 1, 2.5, 0.8),
-    box("cover-low-3", -3.5, 3.5, 4, 1, 0.8),
-    box("cover-low-4", -3.5, -3.5, 1, 4, 0.8),
-    // North-east brickyard: two blocks that overlap in sight but not in path.
-    box("cover-block-5", 12.5, -6.2, 1.2, 3, 2.0),
-    box("cover-block-6", 14, -13, 1.2, 4, 2.0),
-    // North-west.
-    box("cover-block-7", -13, -5, 1.2, 4, 2.0),
-    box("cover-block-13", -14, -13.5, 1.2, 3, 2.0),
-    // South-west alley: two blocks with a 2.8 m lane between them.
-    box("cover-block-3", -9, 10, 6, 1.2, 2.0),
-    box("cover-block-8", -9, 14, 6, 1.2, 2.0),
-    // South: low hurdles to break up the sprint lane.
-    box("cover-block-9", -3, 14.4, 3, 1.2, 2.0),
-    box("cover-low-10", 4, 12, 3, 1, 0.8),
-    // South-east block.
-    box("cover-block-11", 7.5, 16.8, 2, 2, 2.0),
-  ],
-
-  pillars: [
-    // Corner columns: seal the corners.
-    pillar("column-nw", -17.8, -17.8, 2.2, 2.4),
-    pillar("column-ne", 17.8, -17.8, 2.2, 2.4),
-    pillar("column-sw", -17.8, 17.8, 2.2, 2.4),
-    pillar("column-se", 17.8, 17.8, 2.2, 2.4),
-    // Single sight-breakers.
-    pillar("pillar-1", -9.5, -5),
-    pillar("pillar-2", 6.5, -17.3),
-    pillar("pillar-3", 8.5, 12.5),
-    pillar("pillar-4", -2, 6.5),
-    pillar("pillar-5", -2.5, 17.2),
-    pillar("pillar-6", 17.6, -3.7),
-  ],
-
-  // Eleven individual points on open floor. Nobody owns one: the spawn system
-  // hands them out at random each round. They face a mix of directions (along
-  // lanes, across gaps, toward cover), not all toward the middle.
-  spawnPoints: [
-    spawn(1, -11, -17.5, -16, -11),
-    spawn(2, 1, -17.5, 14, -17.5),
-    spawn(3, 12, -17.5, 16, -12),
-    spawn(4, -17.5, -9, -17.5, -17),
-    spawn(5, 18, -8, 18, -15),
-    spawn(6, -8, 17.5, -16, 17.5),
-    spawn(7, 2, 17.5, 2, 12),
-    spawn(8, 12, 17.5, 12, 11),
-    spawn(9, -9.5, -1.5, -12, -4),
-    spawn(10, 7, -5.5, 0, 0),
-    spawn(11, -4.5, 8, 2, 6),
-  ],
-
-  // Contested, never protected: open floor with several ways in and sightlines
-  // from more than one high position.
-  resourceSites: [site(1, 6.5, 10), site(2, 8, 1), site(3, -6, -6)],
-};
+  return {
+    kind: "box",
+    id: `${ladder.id}-body`,
+    role: "machinery",
+    minX: alongX ? across - half : out[0],
+    maxX: alongX ? across + half : out[1],
+    minZ: alongX ? out[0] : across - half,
+    maxZ: alongX ? out[1] : across + half,
+    bottom: ladder.bottomY,
+    height: ladder.topY - 0.3,
+  };
+}
 
 /** Every collidable solid in the layout, stair steps included. */
-export function allSolids(layout: ArenaLayout = ARENA_LAYOUT): Solid[] {
+export function allSolids(layout: ArenaLayout): Solid[] {
   return [
     ...layout.platforms,
+    ...layout.walls,
     ...layout.ramps,
     ...layout.stairs.flatMap(stairsToSteps),
-    ...layout.covers,
     ...layout.pillars,
+    ...layout.hatches.map(hatchLid),
+    ...layout.ladders.map(ladderBody),
   ];
 }

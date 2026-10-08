@@ -47,6 +47,22 @@ canvas {
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
 }
 
+/* "E  Climb" hint, and the keys while on a ladder. */
+.climb-prompt {
+  position: fixed;
+  left: 50%;
+  top: 62%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #f1f5f9;
+  font-size: 16px;
+  pointer-events: none;
+  z-index: 10;
+  visibility: hidden;
+}
+
 /* ------------------------------------------------------------------
    Enemy health bars and damage numbers. Each bar is projected from the
    enemy's head every frame (see src/ui/WorldHealthBars.ts), so it follows the

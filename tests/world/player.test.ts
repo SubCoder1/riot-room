@@ -1,289 +1,504 @@
 import { describe, expect, it } from "vitest";
 
-import { ARENA_HALF, ARENA_LAYOUT } from "../../src/world/ArenaLayout";
+import { ArenaCollision } from "../../src/world/ArenaCollision";
+import { ARENA_HALF_X, ARENA_HALF_Z } from "../../src/world/ArenaLayout";
+import { MapBuilder } from "../../src/world/MapParts";
+import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 import { EAST, NORTH, SOUTH, WEST, spawnPlayer, yawFor } from "./playerHarness";
 
 const layout = ARENA_LAYOUT;
-const walkway = layout.platforms.find((p) => p.id === "north-walkway")!;
-const tower = layout.platforms.find((p) => p.id === "east-tower")!;
+const UPPER = 4;
 
-/** A running start: hold W (and Shift) for `seconds`. */
-function run(
+/** Holds W (and optionally Shift) for `seconds`. */
+function walk(
   p: ReturnType<typeof spawnPlayer>,
   seconds: number,
+  sprint = false,
   onFrame?: () => void,
 ): void {
   p.input.keys.add("KeyW");
-  p.input.keys.add("ShiftLeft");
+
+  if (sprint) {
+    p.input.keys.add("ShiftLeft");
+  }
+
   p.step(seconds, onFrame);
 }
 
-describe("Player on the arena", () => {
-  it("stands on the floor and stays grounded", () => {
-    const { player, step } = spawnPlayer(-17.5, 0, -9);
+describe("Player on the map", () => {
+  it("stands on the ground floor and stays grounded", () => {
+    const { player, step, feet } = spawnPlayer(0, 0, 0);
 
     step(1);
 
     expect(player.isGrounded).toBe(true);
-    expect(player.position.y - player.eyeHeight).toBeCloseTo(0);
+    expect(feet()).toBeCloseTo(0);
   });
 
-  it("runs up a ramp onto the walkway and stays grounded the whole way", () => {
-    const ramp = layout.ramps.find((r) => r.id === "walkway-ramp-west")!;
-    const z = (ramp.minZ + ramp.maxZ) / 2;
-    const p = spawnPlayer(ramp.minX - 2, 0, z, EAST);
+  it("walks up the south-west staircase to the landing, grounded the whole way", () => {
+    // In the pocket at the foot of the stairs (low end), facing north.
+    const p = spawnPlayer(-16, 0, 10.6, NORTH);
     let airborne = 0;
 
-    run(p, 1.5, () => {
+    walk(p, 6, false, () => {
       if (!p.player.isGrounded) airborne++;
     });
 
-    expect(p.feet()).toBeCloseTo(walkway.height, 2);
-    expect(airborne).toBe(0);
+    expect(p.feet()).toBeCloseTo(UPPER, 2);
+    expect(p.player.isGrounded).toBe(true);
+    expect(p.player.position.z).toBeLessThan(-3.2); // on the landing
+    expect(airborne).toBeLessThan(6);
   });
 
-  it("runs up a long staircase onto the tower", () => {
-    const stairs = layout.stairs.find((s) => s.id === "tower-stairs-south")!;
-    const x = (stairs.crossMin + stairs.crossMax) / 2;
-    const p = spawnPlayer(x, 0, stairs.start + 1.5, NORTH);
+  it("sprints up the north-east staircase to the landing, grounded the whole way", () => {
+    const p = spawnPlayer(15.5, 0, -10.8, SOUTH);
     let airborne = 0;
 
-    run(p, 1.4, () => {
+    walk(p, 6, true, () => {
       if (!p.player.isGrounded) airborne++;
     });
 
-    expect(p.feet()).toBeCloseTo(tower.height, 2);
-    expect(airborne).toBe(0);
+    expect(p.feet()).toBeCloseTo(UPPER, 2);
+    expect(p.player.isGrounded).toBe(true);
+    expect(p.player.position.z).toBeGreaterThan(2.4);
+    expect(airborne).toBeLessThan(6);
   });
 
-  it("runs down the ramp and the stairs without ever leaving the ground", () => {
-    // Down the walkway ramp (heading west along the walkway).
-    const ramp = layout.ramps.find((r) => r.id === "walkway-ramp-west")!;
-    const z = (ramp.minZ + ramp.maxZ) / 2;
-    const down = spawnPlayer(ramp.maxX + 1, walkway.height, z, WEST);
+  it("walks back down a staircase without a fall", () => {
+    const p = spawnPlayer(-16, UPPER, -5, SOUTH);
     let airborne = 0;
 
-    run(down, 1.5, () => {
-      if (!down.player.isGrounded) airborne++;
+    walk(p, 6, false, () => {
+      if (!p.player.isGrounded) airborne++;
     });
 
-    expect(down.feet()).toBeCloseTo(0, 2);
-    expect(airborne).toBe(0);
-
-    // Down the tower stairs (heading south).
-    const stairs = layout.stairs.find((s) => s.id === "tower-stairs-south")!;
-    const x = (stairs.crossMin + stairs.crossMax) / 2;
-    const off = spawnPlayer(x, tower.height, tower.maxZ - 1, SOUTH);
-
-    airborne = 0;
-    run(off, 1.6, () => {
-      if (!off.player.isGrounded) airborne++;
-    });
-
-    expect(off.feet()).toBeCloseTo(0, 2);
-    expect(airborne).toBe(0);
+    expect(p.feet()).toBeCloseTo(0, 2);
+    expect(airborne).toBeLessThan(6);
   });
 
-  it("walking off the walkway's edge falls to the floor and lands", () => {
-    const x = (walkway.minX + walkway.maxX) / 2;
-    const p = spawnPlayer(x, walkway.height, walkway.maxZ - 1, SOUTH);
-    let leftGround = false;
+  it("goes through a doorway into a room and stops at its far wall", () => {
+    // On the north walkway in front of the archive's doorway (x = -8), facing north.
+    const p = spawnPlayer(-8, UPPER, -13.5, NORTH);
+
+    walk(p, 3);
+
+    expect(p.feet()).toBeCloseTo(UPPER, 2);
+    expect(p.player.position.z).toBeLessThan(-16.5); // inside the room
+    expect(p.player.position.z).toBeGreaterThan(-24);
+  });
+
+  it("is stopped by a room wall away from the doorway", () => {
+    const p = spawnPlayer(-4, UPPER, -13.5, NORTH);
+
+    walk(p, 3, true);
+
+    expect(p.player.position.z).toBeGreaterThan(-16); // the archive's south wall
+  });
+
+  it("a balcony railing stops a sprint and a plain jump, but W and Space vault over it", () => {
+    const run = spawnPlayer(0, UPPER, -10, SOUTH);
+
+    walk(run, 2, true);
+    expect(run.player.position.z).toBeLessThan(-8);
+    expect(run.feet()).toBeCloseTo(UPPER, 2);
+
+    // Standing and jumping (no W): still behind the rail.
+    const hop = spawnPlayer(0, UPPER, -9, SOUTH);
+
+    hop.input.jumpQueued = true;
+    hop.step(1.2);
+    expect(hop.player.position.z).toBeLessThan(-8);
+    expect(hop.feet()).toBeCloseTo(UPPER, 2);
+
+    // W and Space at the rail: over it, and down into the arena.
+    const vault = spawnPlayer(0, UPPER, -8.9, SOUTH);
+
+    vault.input.keys.add("KeyW");
+    vault.step(0.05);
+    vault.input.jumpQueued = true;
+    vault.step(0.1);
+    expect(vault.player.isVaulting).toBe(true);
+    vault.step(2);
+    expect(vault.player.isVaulting).toBe(false);
+    expect(vault.player.position.z).toBeGreaterThan(-7.5);
+    expect(vault.feet()).toBeLessThan(UPPER - 0.5);
+  });
+
+  it("a medium box is vaulted: over it and onto the floor beyond, never inside it", () => {
+    const map = new MapBuilder(20, 20);
+
+    map.createFloorSection(
+      "floor",
+      { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+      4,
+    );
+    map.createIndustrialProp("crate", "box", 0, 0, 4, "x");
+
+    const world = new ArenaCollision(map.build());
+    const plan = world.findVault(0, 1.6, 0, -1, 4);
+
+    expect(plan).not.toBeNull();
+    expect(plan?.topY).toBeCloseTo(5);
+    // Landing past the far face (z = -0.55) and clear of it.
+    expect((plan?.distance ?? 0) + 0).toBeGreaterThan(2.1);
+    expect(world.findVault(0, 1.6, 0, 1, 4)).toBeNull();
+    // Too high to vault (a tall stack) or not there at all.
+    expect(world.findVault(8, 8, 0, -1, 4)).toBeNull();
+  });
+
+  it("drops onto the lower balcony through the opening in the south railing, and climbs back up the ledge", () => {
+    const down = spawnPlayer(0, UPPER, 13.5, NORTH);
+
+    walk(down, 1.2);
+    down.input.keys.clear();
+    down.step(1);
+    expect(down.feet()).toBeCloseTo(2.8, 2);
+    expect(down.player.position.z).toBeLessThan(12);
+
+    // Back up: face south from the lower balcony and jump the 1.2 m ledge.
+    const up = spawnPlayer(0, 2.8, 10.6, SOUTH);
+
+    up.input.keys.add("KeyW");
+    up.step(0.15);
+    up.input.jumpQueued = true;
+    up.step(0.8);
+    up.input.keys.clear();
+    up.step(1);
+    expect(up.feet()).toBeCloseTo(UPPER, 1);
+  });
+
+  it("a 1.2 m ledge can be jumped onto from the floor", () => {
+    // East deck ledge (x 29..32, z -4..0): run east at it and jump.
+    const p = spawnPlayer(25.5, UPPER, -2, EAST);
 
     p.input.keys.add("KeyW");
-    p.step(1.5, () => {
-      if (!p.player.isGrounded) leftGround = true;
-    });
+    p.step(0.45);
+    p.input.jumpQueued = true;
+    p.step(0.7);
+    p.input.keys.clear();
+    p.step(1);
 
-    expect(leftGround).toBe(true);
+    expect(p.feet()).toBeCloseTo(UPPER + 1.2, 1);
+  });
+
+  it("the 2.4 m ledge is out of reach from the floor, but not from the 1.2 m one beside it", () => {
+    // Floor side: in front of the tall ledge (x 15..18, z -22..-19), from the south.
+    const floorSide = spawnPlayer(16.5, UPPER, -16, NORTH);
+
+    floorSide.input.keys.add("KeyW");
+    floorSide.step(0.3);
+    floorSide.input.jumpQueued = true;
+    floorSide.step(1);
+    floorSide.input.keys.clear();
+    floorSide.step(1);
+    expect(floorSide.feet()).toBeLessThan(UPPER + 1.2);
+
+    // From the top of the low ledge (x 12..15), face east into the tall one.
+    const stacked = spawnPlayer(13, UPPER + 1.2, -20.5, EAST);
+
+    stacked.input.keys.add("KeyW");
+    stacked.step(0.1);
+    stacked.input.jumpQueued = true;
+    stacked.step(0.45);
+    stacked.input.keys.clear();
+    stacked.step(1);
+    expect(stacked.feet()).toBeCloseTo(UPPER + 2.4, 1);
+  });
+
+  it("a jump onto the upper floor from the ground is out of reach", () => {
+    const p = spawnPlayer(-8, 0, -9, NORTH);
+
+    p.input.keys.add("KeyW");
+    p.step(0.2);
+    p.input.jumpQueued = true;
+    p.step(1.2);
+
+    expect(p.feet()).toBeLessThan(2);
+  });
+
+  it("walks on the ground right under a balcony and a roof edge (they hang over open ground)", () => {
+    // North overlook is 4 m up over x -7..5, z -12..-7.5.
+    const p = spawnPlayer(-1.5, 0, -3, NORTH);
+
+    walk(p, 3);
+
     expect(p.feet()).toBeCloseTo(0, 2);
     expect(p.player.isGrounded).toBe(true);
+    expect(p.player.position.z).toBeLessThan(-11); // right up to the wall, under the balcony
   });
 
-  it("a 2 m block stops a runner; so does the tower's wall", () => {
-    const block = layout.covers.find((c) => c.id === "cover-block-3")!;
-    const bx = (block.minX + block.maxX) / 2;
-    const toBlock = spawnPlayer(bx, 0, block.maxZ + 4, NORTH);
-
-    run(toBlock, 1.5);
-    expect(toBlock.player.position.z).toBeGreaterThan(block.maxZ);
-
-    const toTower = spawnPlayer(
-      (tower.minX + tower.maxX) / 2,
-      0,
-      tower.minZ - 6,
-      SOUTH,
+  it("climbs to a roof and crosses the catwalk to the next roof", () => {
+    const ladder = layout.ladders.find((l) => l.id === "ladder-roof-east")!;
+    const up = spawnPlayer(
+      ladder.approach.x,
+      ladder.bottomY,
+      ladder.approach.z,
+      EAST,
     );
 
-    run(toTower, 2);
-    expect(toTower.feet()).toBe(0);
-    expect(toTower.player.position.z).toBeLessThan(tower.minZ);
+    up.step(0.05);
+    expect(up.player.grabLadder()).toBe(true);
+
+    up.input.keys.add("KeyW");
+
+    for (let t = 0; t < 10 && up.player.isClimbing; t += 1 / 60) {
+      up.step(1 / 60);
+    }
+
+    up.input.keys.clear();
+    up.step(0.3);
+
+    // On the Server room's roof (8.1 m).
+    expect(up.feet()).toBeCloseTo(ladder.topY, 2);
+
+    // East to the catwalk's line, then south along it onto the Break room's roof.
+    up.input.yaw = EAST;
+    up.input.keys.add("KeyW");
+    up.step(0.75);
+    up.input.keys.clear();
+    up.step(0.4);
+    up.input.yaw = SOUTH;
+    up.input.keys.add("KeyW");
+    up.step(2.4);
+
+    expect(up.player.isGrounded).toBe(true);
+    expect(up.feet()).toBeCloseTo(ladder.topY, 1);
+    expect(up.player.position.z).toBeGreaterThan(3);
   });
 
-  it("can hop a 0.8 m low wall by jumping, but never a 2 m block", () => {
-    const low = layout.covers.find((c) => c.id === "cover-low-1")!;
-    const lx = (low.minX + low.maxX) / 2;
-    // Run at the low wall from the north (it is 1 m thick: z -4..-3).
-    const hop = spawnPlayer(lx, 0, low.minZ - 3, SOUTH);
-
-    hop.input.keys.add("KeyW");
-    // Movement now accelerates (CS:GO style), so it takes a little longer to
-    // get up to speed before the jump.
-    hop.step(0.25);
-    hop.input.jumpQueued = true;
-    hop.step(1.4);
-    expect(hop.player.position.z).toBeGreaterThan(low.maxZ);
-
-    const block = layout.covers.find((c) => c.id === "cover-block-3")!;
-    const bx = (block.minX + block.maxX) / 2;
-    const jump = spawnPlayer(bx, 0, block.maxZ + 3, NORTH);
-
-    jump.input.keys.add("KeyW");
-    jump.step(0.25);
-    jump.input.jumpQueued = true;
-    jump.step(1.5);
-    expect(jump.player.position.z).toBeGreaterThan(block.maxZ);
-  });
-
-  it("a jump can reach a 1.3 m step from the floor-level side but not the 2.6 m tower", () => {
-    const step = layout.platforms.find((p) => p.id === "east-step")!;
-    const sx = (step.minX + step.maxX) / 2;
-    // Stand south of the step, face it, jump while walking in.
-    const p = spawnPlayer(sx, 0, step.maxZ + 3, NORTH);
-
-    p.input.keys.add("KeyW");
-    // A run-up long enough to be at full speed and about a metre from the step.
-    p.step(0.47);
-    p.input.jumpQueued = true;
-    p.step(0.6);
-    p.input.keys.clear();
-    p.step(1);
-    expect(p.feet()).toBeCloseTo(step.height, 1);
-
-    // The same from the floor onto the tower is out of reach.
-    const q = spawnPlayer(
-      (tower.minX + tower.maxX) / 2,
-      0,
-      tower.minZ - 3,
-      SOUTH,
-    );
-
-    q.input.keys.add("KeyW");
-    q.step(0.2);
-    q.input.jumpQueued = true;
-    q.step(1.5);
-    expect(q.feet()).toBeLessThan(tower.height - 1);
-  });
-
-  it("from the step, a jump gets up onto the tower (the second way up)", () => {
-    const step = layout.platforms.find((p) => p.id === "east-step")!;
-    // The step is touching the tower's west face: walk east into it and jump.
-    const z = (step.minZ + step.maxZ) / 2;
-    const p = spawnPlayer(step.maxX - 2.5, step.height, z, EAST);
-
-    p.input.keys.add("KeyW");
-    p.step(0.42);
-    p.input.jumpQueued = true;
-    p.step(0.6);
-    p.input.keys.clear();
-    p.step(1);
-
-    expect(p.feet()).toBeCloseTo(tower.height, 1);
-  });
-
-  it("can never leave the arena, even sprinting into a wall for a long time", () => {
+  it("can never leave the map, even sprinting into a wall for a long time", () => {
     for (const yaw of [NORTH, SOUTH, EAST, WEST, yawFor(1, 1), yawFor(-1, 1)]) {
       const p = spawnPlayer(1, 0, 1, yaw);
 
-      run(p, 8);
+      walk(p, 8, true);
 
-      expect(Math.abs(p.player.position.x)).toBeLessThanOrEqual(ARENA_HALF);
-      expect(Math.abs(p.player.position.z)).toBeLessThanOrEqual(ARENA_HALF);
+      expect(Math.abs(p.player.position.x)).toBeLessThanOrEqual(ARENA_HALF_X);
+      expect(Math.abs(p.player.position.z)).toBeLessThanOrEqual(ARENA_HALF_Z);
     }
   });
 
-  it("letting go of the keys mid-jump keeps the momentum; landing stops you", () => {
-    const p = spawnPlayer(-17.5, 0, -9, EAST);
+  it("every spawn point lets the player stand and move", () => {
+    for (const point of layout.spawnPoints) {
+      const p = spawnPlayer(point.x, point.y, point.z, point.yaw);
 
-    p.input.keys.add("KeyW");
+      walk(p, 0.5);
+
+      expect(p.player.isGrounded, point.id).toBe(true);
+    }
+  });
+});
+
+describe("Jumping under a roof", () => {
+  it("standing on a prop under a low roof, a jump bumps the head and stays in the room", () => {
+    const room = layout.rooms.find((r) => r.id === "room-archive")!;
+    const shelf = layout.walls.find((w) => w.id === "shelf-archive-1")!;
+    const x = (shelf.minX + shelf.maxX) / 2;
+    const z = (shelf.minZ + shelf.maxZ) / 2;
+    const p = spawnPlayer(x, shelf.height, z, NORTH);
+
     p.step(0.3);
     p.input.jumpQueued = true;
-    p.step(0.05);
-    p.input.keys.clear();
-
-    const released = p.player.position.x;
-
     p.step(0.2);
-    expect(p.player.isGrounded).toBe(false);
-    expect(p.player.position.x).toBeGreaterThan(released + 0.8);
-
+    p.input.jumpQueued = true;
     p.step(1.5);
-    expect(p.player.isGrounded).toBe(true);
 
-    const landed = p.player.position.x;
-
-    p.step(0.5);
-    expect(p.player.position.x).toBeCloseTo(landed, 5);
+    // Never pushed out of the room, never up onto the roof.
+    expect(p.player.position.x).toBeGreaterThan(room.minX);
+    expect(p.player.position.x).toBeLessThan(room.maxX);
+    expect(p.player.position.z).toBeGreaterThan(room.minZ);
+    expect(p.player.position.z).toBeLessThan(room.maxZ);
+    expect(p.feet()).toBeLessThan(shelf.height + 0.05);
   });
 
-  it("a jump pressed just after running off a ledge still works (coyote time)", () => {
-    const x = (walkway.minX + walkway.maxX) / 2;
-    const p = spawnPlayer(x, walkway.height, walkway.maxZ - 0.6, SOUTH);
+  it("rising never carries the head through the roof", () => {
+    const room = layout.rooms.find((r) => r.id === "room-archive")!;
+    const roof = layout.platforms.find((r) => r.id === "room-archive-roof")!;
+    const shelf = layout.walls.find((w) => w.id === "shelf-archive-1")!;
+    const p = spawnPlayer(
+      (shelf.minX + shelf.maxX) / 2,
+      shelf.height,
+      (shelf.minZ + shelf.maxZ) / 2,
+      NORTH,
+    );
+    let highest = 0;
 
-    p.input.keys.add("KeyW");
-
-    // Walk until the feet leave the edge, then wait a moment and jump.
-    let guard = 0;
-
-    while (p.player.isGrounded && guard++ < 120) p.step(1 / 60);
-
-    expect(p.player.isGrounded).toBe(false);
-    p.step(0.06);
-
-    const before = p.player.velocity.y;
-
+    p.step(0.3);
     p.input.jumpQueued = true;
-    p.step(1 / 60);
-    expect(p.player.velocity.y).toBeGreaterThan(before + 3);
+    p.step(0.9, () => {
+      highest = Math.max(highest, p.player.position.y + 0.1);
+    });
+
+    expect(room).toBeDefined();
+    expect(highest).toBeLessThanOrEqual((roof.bottom ?? 0) + 0.001);
   });
+});
 
-  it("a jump pressed just before landing is remembered and happens on touchdown", () => {
-    const p = spawnPlayer(-17.5, 0, -9);
+describe("Thin tops", () => {
+  it("nobody can stand on a wall, a railing or a post", () => {
+    const wall = layout.walls.find((w) => w.id === "room-archive-wall-s-2")!;
+    const rail = layout.walls.find((w) => w.id === "rail-bn-front-1")!;
 
-    p.input.jumpQueued = true;
-    p.step(0.1);
+    for (const solid of [wall, rail]) {
+      const x = (solid.minX + solid.maxX) / 2;
+      const z = (solid.minZ + solid.maxZ) / 2;
+      const p = spawnPlayer(x, solid.height, z, NORTH);
 
-    let pressed = false;
-    let landed = false;
-    let jumpedAgain = false;
+      p.step(2);
 
-    for (let k = 0; k < 240; k++) {
-      // Falling and almost down: press now, a moment too early.
-      if (!pressed && p.player.velocity.y < 0 && p.feet() < 0.25) {
-        p.input.jumpQueued = true;
-        pressed = true;
-      }
-
-      p.step(1 / 60);
-
-      if (pressed && p.player.isGrounded) landed = true;
-      if (pressed && p.player.velocity.y > 3) jumpedAgain = true;
+      // It slid off and fell, or landed beside it; it is not standing on the top.
+      expect(Math.abs(p.feet() - solid.height), solid.id).toBeGreaterThan(0.5);
     }
-
-    expect(pressed).toBe(true);
-    expect(jumpedAgain).toBe(true);
-    expect(landed || jumpedAgain).toBe(true);
   });
 
-  it("can jump and lands back on the same spot", () => {
-    const p = spawnPlayer(-17.5, 0, -9);
-
-    p.input.jumpQueued = true;
-    p.step(0.1);
-    expect(p.player.isGrounded).toBe(false);
-    expect(p.feet()).toBeGreaterThan(0);
+  it("wide things, like a prop or a ledge, still can be stood on", () => {
+    const crate = layout.walls.find((w) => w.id === "stack-wh-1")!;
+    const x = (crate.minX + crate.maxX) / 2;
+    const z = (crate.minZ + crate.maxZ) / 2;
+    const p = spawnPlayer(x, crate.height, z, NORTH);
 
     p.step(1);
-    expect(p.player.isGrounded).toBe(true);
-    expect(p.feet()).toBeCloseTo(0);
+
+    expect(p.feet()).toBeCloseTo(crate.height, 1);
+  });
+});
+
+describe("Props you can step up on", () => {
+  it("low boxes can be stood on however narrow (a console, a maintenance box), tall posts cannot", () => {
+    const low = layout.walls.find((w) => w.id === "box-server")!; // 1.1 m, 0.8 m wide
+    const post = layout.walls.find((w) => w.id === "post-truss-nw")!;
+    const lx = (low.minX + low.maxX) / 2;
+    const lz = (low.minZ + low.maxZ) / 2;
+    const px = (post.minX + post.maxX) / 2;
+    const pz = (post.minZ + post.maxZ) / 2;
+    const onLow = spawnPlayer(lx, low.height, lz, NORTH);
+    const onPost = spawnPlayer(px, post.height, pz, NORTH);
+
+    onLow.step(1);
+    onPost.step(2);
+
+    expect(onLow.feet()).toBeCloseTo(low.height, 1);
+    expect(Math.abs(onPost.feet() - post.height)).toBeGreaterThan(0.5);
+  });
+
+  it("a crate can be jumped onto from the floor, a 2 m rack cannot", () => {
+    const jumpOnto = (x: number, z: number, feet: number, yaw: number) => {
+      const p = spawnPlayer(x, feet, z, yaw);
+
+      p.input.keys.add("KeyW");
+      p.step(0.4);
+      p.input.jumpQueued = true;
+      p.step(0.7);
+      p.input.keys.clear();
+      p.step(0.8);
+
+      return p.feet();
+    };
+    // The Cargo office's crate (1 m) from the west, and a Server room rack (2 m).
+    const crate = layout.walls.find((w) => w.id === "crate-cargo-d")!;
+    const rack = layout.walls.find((w) => w.id === "rack-server-3")!;
+    const crateTop = crate.height;
+    const rackTop = rack.height;
+
+    expect(
+      jumpOnto(crate.minX - 1.4, (crate.minZ + crate.maxZ) / 2, UPPER, EAST),
+    ).toBeCloseTo(crateTop, 1);
+    expect(
+      jumpOnto((rack.minX + rack.maxX) / 2, rack.maxZ + 1.4, UPPER, NORTH),
+    ).toBeLessThan(rackTop - 0.5);
+  });
+});
+
+describe("Low walls on the roofs", () => {
+  it("a waist-high roof parapet stops a body like a wall: no jumping over, no sinking into it", () => {
+    const parapet = layout.walls.find(
+      (w) => w.id === "parapet-warehouse-north-1",
+    )!;
+    const top = parapet.base ?? parapet.bottom ?? 0;
+
+    for (const wait of [0.2, 0.35, 0.5]) {
+      // On the Warehouse roof, running north at the parapet along its north edge.
+      const p = spawnPlayer(26, top, parapet.maxZ + 3, NORTH);
+
+      p.input.keys.add("KeyW");
+      p.input.keys.add("ShiftLeft");
+      p.step(wait);
+      p.input.jumpQueued = true;
+      p.step(1.5);
+
+      expect(p.player.position.z, `wait ${wait}`).toBeGreaterThan(parapet.maxZ);
+      expect(p.feet(), `wait ${wait}`).toBeCloseTo(top, 1);
+    }
+  });
+});
+
+describe("Crashing into things", () => {
+  it("a low thin wall is solid: a body cannot wade into it", () => {
+    const map = new MapBuilder(20, 20);
+
+    map.createFloorSection(
+      "floor",
+      { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+      4,
+    );
+    // 0.4 m high and 0.3 m thick: under the step-up height, but nothing to stand on.
+    map.createWall("low", "x", 0, -3, 3, 4, 0.3, 0.4);
+
+    const world = new ArenaCollision(map.build());
+
+    expect(world.isBlocked(0, 0.15, 4, 0.2)).toBe(true);
+    expect(world.isBlocked(0, 1, 4, 0.2)).toBe(false);
+    // A body walking at it is stopped, not let in.
+    let z = 3;
+
+    for (let i = 0; i < 60; i++) {
+      z = world.moveHorizontal(0, z, 0, -0.1, 4).z;
+    }
+
+    expect(z).toBeGreaterThan(0.3);
+  });
+
+  it("a low step is climbed as the feet meet it, not with the legs inside it", () => {
+    const map = new MapBuilder(20, 20);
+
+    map.createFloorSection(
+      "floor",
+      { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+      4,
+    );
+    map.createLedge("step", { minX: -3, maxX: 3, minZ: -2, maxZ: 2 }, 4, 0.3);
+
+    const world = new ArenaCollision(map.build());
+
+    // 0.3 m from the edge: the centre is off the block, the feet are at it.
+    expect(world.groundHeight(0, 2.3, 4)).toBe(4);
+    expect(world.groundHeight(0, 2.3, 4, 0.3)).toBeCloseTo(4.3);
+    // Standing on it, stepping off does not hold you up.
+    expect(world.groundHeight(0, 2.3, 4.3, 0.3)).toBe(4);
+  });
+
+  it("jumping into a wall stops the run: the jump does not carry on through or along it", () => {
+    // From the north walkway at the Archive's south wall (z = -16), sprint and jump.
+    const p = spawnPlayer(-4, UPPER, -13.6, NORTH);
+
+    p.input.keys.add("KeyW");
+    p.input.keys.add("ShiftLeft");
+    p.step(0.25);
+    p.input.jumpQueued = true;
+
+    let crashedSpeed = Infinity;
+
+    for (let t = 0; t < 1; t += 1 / 60) {
+      p.step(1 / 60);
+
+      if (!p.player.isGrounded && p.player.position.z < -15.4) {
+        crashedSpeed = Math.min(
+          crashedSpeed,
+          Math.hypot(p.player.velocity.x, p.player.velocity.z),
+        );
+      }
+    }
+
+    expect(p.player.position.z).toBeGreaterThan(-16);
+    expect(crashedSpeed).toBeLessThan(1);
   });
 });

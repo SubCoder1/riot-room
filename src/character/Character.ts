@@ -5,6 +5,8 @@ import { CharacterModel } from "./CharacterModel";
 import { CharacterAnimator } from "./CharacterAnimator";
 import { limitArmReach, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
+import { ClimbRig } from "./ClimbPose";
+import { VaultRig, type VaultShape } from "./VaultPose";
 import { RockArm } from "./RockArm";
 import type { HeldKind, RockPose } from "../inventory/RockStance";
 
@@ -289,6 +291,10 @@ export class Character {
     this.applyPunchReach();
 
     this.applyRockPose();
+
+    this.applyClimbPose(dt);
+
+    this.applyVaultPose(dt);
 
     this.limitArmsToWorld();
 
@@ -1740,13 +1746,19 @@ export class Character {
     // person, completely while aiming/punching, and completely in first person
     // so the arms stay in front of the camera.
     if (Math.abs(this.bodyYawOffset) > 1e-3) {
-      const spineShare = this.upperBodyFollowsLook ? 1 : 0.45 + 0.55 * m;
+      // On a ladder the torso stays facing it: only the neck and head turn.
+      const spineShare = this.climbing
+        ? 0
+        : this.upperBodyFollowsLook
+          ? 1
+          : 0.45 + 0.55 * m;
 
       const counter: Array<[string, number]> = [
         ["Spine", 0.3 * spineShare],
         ["Spine1", 0.35 * spineShare],
         ["Spine2", 0.35 * spineShare],
         ["Neck", 0.4 * (1 - spineShare)],
+        ["Head", this.climbing ? 0.6 : 0],
       ];
 
       for (const [name, share] of counter) {
@@ -2034,6 +2046,137 @@ export class Character {
   /** Where a thrown rock leaves the hand. False if the model is not ready. */
   public getRockReleasePoint(out: THREE.Vector3): boolean {
     return this.rockArm.getReleasePoint(out);
+  }
+
+  // ------------------------------------------------------------
+  // Climbing a ladder (hands on the rails, feet on the rungs)
+  // ------------------------------------------------------------
+
+  private climbRigInstance: ClimbRig | null = null;
+  private climbing = false;
+  private climbMix = 0;
+  private climbed = 0;
+  private climbReach = { topHand: Infinity, bottomFoot: -Infinity };
+  private readonly climbForward = new THREE.Vector3();
+
+  /**
+   * Whether the character is on a ladder, and how high it has climbed (the
+   * pose follows the height, so it stops with the climber and runs backward
+   * going down). Other players can show it from what they report.
+   */
+  public setClimb(
+    active: boolean,
+    climbedHeight: number,
+    reach: { topHand: number; bottomFoot: number } = {
+      topHand: Infinity,
+      bottomFoot: -Infinity,
+    },
+  ): void {
+    this.climbReach = reach;
+    this.climbing = active;
+    this.climbed = climbedHeight;
+  }
+
+  // ------------------------------------------------------------
+  // Vaulting over a railing or a box
+  // ------------------------------------------------------------
+
+  private vaultRigInstance: VaultRig | null = null;
+  private vaultShape: VaultShape | null = null;
+  private vaultMix = 0;
+  private readonly vaultForward = new THREE.Vector3();
+
+  /** Whether the character is vaulting, and how far through it is (null when not). */
+  public setVault(shape: VaultShape | null): void {
+    this.vaultShape = shape;
+  }
+
+  private applyVaultPose(dt: number): void {
+    const target = this.vaultShape ? 1 : 0;
+
+    this.vaultMix +=
+      Math.sign(target - this.vaultMix) *
+      Math.min(dt / 0.08, Math.abs(target - this.vaultMix));
+
+    if (this.vaultMix < 0.002 || !this.vaultShape) {
+      return;
+    }
+
+    this.vaultRigInstance ??= new VaultRig(this.group, (bone, from, to) =>
+      this.rotateBoneBetween(bone, from, to),
+    );
+
+    this.group.getWorldQuaternion(this.pitchQuat);
+    this.vaultForward.set(0, 0, 1).applyQuaternion(this.pitchQuat);
+    this.vaultForward.y = 0;
+    this.vaultForward.normalize();
+
+    this.vaultRigInstance.applyVault(
+      this.vaultMix,
+      this.vaultForward,
+      this.vaultShape,
+    );
+  }
+
+  private armsFade = 1;
+
+  private scaleArms(scale: number): void {
+    for (const name of ["LeftArm", "RightArm"]) {
+      this.group.getObjectByName(name)?.scale.setScalar(scale);
+    }
+  }
+
+  private applyClimbPose(dt: number): void {
+    const target = this.climbing ? 1 : 0;
+    const step = dt / 0.15;
+
+    this.climbMix +=
+      Math.sign(target - this.climbMix) *
+      Math.min(step, Math.abs(target - this.climbMix));
+
+    // Full-size arms for the solve below; they shrink again at the end.
+    if (this.armsFade < 1) {
+      this.scaleArms(1);
+      this.armsFade = 1;
+    }
+
+    if (this.climbMix < 0.002) {
+      return;
+    }
+
+    this.climbRigInstance ??= new ClimbRig(this.group, (bone, from, to) =>
+      this.rotateBoneBetween(bone, from, to),
+    );
+
+    // The way the body faces (flat), toward the ladder.
+    this.group.getWorldQuaternion(this.pitchQuat);
+    // The body faces the ladder whatever way the head is turned.
+    this.climbForward.set(0, 0, 1).applyQuaternion(this.pitchQuat);
+    this.climbForward.y = 0;
+    this.climbForward.normalize();
+
+    this.climbRigInstance.apply(
+      this.climbMix,
+      this.climbForward,
+      this.climbed,
+      this.climbReach,
+    );
+
+    // In first person the camera sits among the shoulders, so with the head
+    // turned on a ladder it would look through the arms from inside. They
+    // shrink away as the head turns (the hands are out of view by then).
+    if (this.upperBodyFollowsLook) {
+      const wanted = THREE.MathUtils.clamp(
+        1 - (Math.abs(this.bodyYawOffset) - 0.3) / 0.35,
+        0,
+        1,
+      );
+
+      if (wanted < 1) {
+        this.armsFade = wanted;
+        this.scaleArms(Math.max(wanted, 0.001));
+      }
+    }
   }
 
   private applyRockPose(): void {

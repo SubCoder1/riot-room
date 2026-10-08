@@ -6,308 +6,194 @@ import {
   STEP_UP,
 } from "../../src/world/ArenaCollision";
 import {
-  ARENA_HALF,
-  ARENA_LAYOUT,
+  ARENA_HALF_X,
+  ARENA_HALF_Z,
+  UPPER_FLOOR_Y,
   allSolids,
   stairsToSteps,
-  type RampSolid,
-  type StairsDefinition,
 } from "../../src/world/ArenaLayout";
+import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 
 const world = new ArenaCollision();
 const layout = ARENA_LAYOUT;
+const F = UPPER_FLOOR_Y;
 
-/** Walks a character along a straight line in small steps, like the game loop. */
-function walk(
-  from: { x: number; z: number },
-  to: { x: number; z: number },
-  feetStart = 0,
-  speed = 8.5,
-): { x: number; z: number; feet: number } {
-  let { x, z } = from;
-  let feet = feetStart;
-  const dt = 1 / 60;
-  const total = Math.hypot(to.x - from.x, to.z - from.z);
-  const ux = (to.x - from.x) / total;
-  const uz = (to.z - from.z) / total;
-
-  for (let travelled = 0; travelled < total; travelled += speed * dt) {
-    const move = world.moveHorizontal(
-      x,
-      z,
-      ux * speed * dt,
-      uz * speed * dt,
-      feet,
-    );
-
-    x = move.x;
-    z = move.z;
-    feet = world.groundHeight(x, z, feet);
-  }
-
-  return { x, z, feet };
-}
-
-/** Unit vector of the direction a ramp or stairs climbs. */
-function riseVector(direction: string): { x: number; z: number } {
-  const sign = direction.startsWith("+") ? 1 : -1;
-
-  return direction.endsWith("x") ? { x: sign, z: 0 } : { x: 0, z: sign };
-}
-
-/** Where a ramp's low edge is, and the line it climbs along. */
-function rampClimb(r: RampSolid): {
-  foot: { x: number; z: number };
-  top: { x: number; z: number };
-  up: { x: number; z: number };
-} {
-  const up = riseVector(r.direction);
-  const cx = (r.minX + r.maxX) / 2;
-  const cz = (r.minZ + r.maxZ) / 2;
-  const halfLength = up.x ? (r.maxX - r.minX) / 2 : (r.maxZ - r.minZ) / 2;
-
-  return {
-    up,
-    foot: { x: cx - up.x * halfLength, z: cz - up.z * halfLength },
-    top: { x: cx + up.x * halfLength, z: cz + up.z * halfLength },
-  };
-}
-
-function stairsClimb(s: StairsDefinition): {
-  foot: { x: number; z: number };
-  top: { x: number; z: number };
-} {
-  const up = riseVector(s.direction);
-  const cross = (s.crossMin + s.crossMax) / 2;
-  const along = (distance: number): { x: number; z: number } =>
-    up.x ? { x: distance, z: cross } : { x: cross, z: distance };
-  const sign = up.x || up.z;
-
-  return {
-    foot: along(s.start),
-    top: along(s.start + sign * s.tread * s.steps),
-  };
-}
-
-describe("Arena layout", () => {
-  it("is 40 m x 40 m", () => {
-    expect(layout.size).toBe(40);
-    expect(ARENA_HALF).toBe(20);
+describe("Layout data", () => {
+  it("is a 64 x 48 m rectangle centred on the origin", () => {
+    expect(layout.width).toBe(64);
+    expect(layout.depth).toBe(48);
+    expect(ARENA_HALF_X).toBe(32);
+    expect(ARENA_HALF_Z).toBe(24);
   });
 
-  it("every solid stays inside the arena", () => {
-    for (const solid of allSolids()) {
+  it("every solid sits inside the walls", () => {
+    for (const solid of allSolids(layout)) {
       if (solid.kind === "cylinder") {
-        expect(Math.abs(solid.x) + solid.radius).toBeLessThanOrEqual(
-          ARENA_HALF + 1e-9,
+        expect(Math.abs(solid.x) + solid.radius, solid.id).toBeLessThanOrEqual(
+          ARENA_HALF_X + 1e-9,
         );
-        expect(Math.abs(solid.z) + solid.radius).toBeLessThanOrEqual(
-          ARENA_HALF + 1e-9,
-        );
-      } else {
-        for (const edge of [solid.minX, solid.maxX, solid.minZ, solid.maxZ]) {
-          expect(Math.abs(edge), solid.id).toBeLessThan(ARENA_HALF);
-        }
+
+        continue;
       }
+
+      expect(solid.minX, solid.id).toBeGreaterThanOrEqual(-ARENA_HALF_X - 1e-9);
+      expect(solid.maxX, solid.id).toBeLessThanOrEqual(ARENA_HALF_X + 1e-9);
+      expect(solid.minZ, solid.id).toBeGreaterThanOrEqual(-ARENA_HALF_Z - 1e-9);
+      expect(solid.maxZ, solid.id).toBeLessThanOrEqual(ARENA_HALF_Z + 1e-9);
     }
   });
 
-  it("every stair step is one a character can walk up", () => {
-    for (const stairs of layout.stairs) {
-      expect(stairs.rise, stairs.id).toBeLessThanOrEqual(STEP_UP);
-      expect(stairsToSteps(stairs), stairs.id).toHaveLength(stairs.steps);
+  it("ids are unique", () => {
+    for (const list of [
+      layout.rooms,
+      layout.ladders,
+      layout.platforms,
+      layout.walls,
+      layout.overheads,
+      layout.stairs,
+    ]) {
+      expect(new Set(list.map((item) => item.id)).size).toBe(list.length);
     }
   });
 
-  it("each ramp and flight of stairs meets a platform at exactly its height", () => {
-    for (const ramp of layout.ramps) {
-      expect(
-        layout.platforms.some((p) => Math.abs(p.height - ramp.height) < 1e-9),
-        ramp.id,
-      ).toBe(true);
+  it("nothing is left of the old free-for-all layout", () => {
+    const ids = allSolids(layout).map((s) => s.id);
+
+    for (const old of [
+      "monolith",
+      "north-walkway",
+      "east-tower",
+      "west-terrace",
+      "column-nw",
+    ]) {
+      expect(ids).not.toContain(old);
     }
 
-    for (const stairs of layout.stairs) {
-      const top = stairs.rise * stairs.steps;
-
-      expect(
-        layout.platforms.some((p) => Math.abs(p.height - top) < 1e-9),
-        stairs.id,
-      ).toBe(true);
-    }
-  });
-
-  it("cover heights fit the jump: 0.8 m can be hopped, 2 m cannot be climbed", () => {
-    const heights = new Set(layout.covers.map((c) => c.height));
-
-    expect(heights.has(0.8)).toBe(true);
-    expect(heights.has(2)).toBe(true);
-    // Nothing that is almost climbable but not quite.
-    for (const c of layout.covers) {
-      expect(c.height === 0.8 || c.height >= 1.5, c.id).toBe(true);
+    expect(layout.ramps).toHaveLength(0);
+    // The only cylinders are the tanks on the roofs.
+    for (const pillar of layout.pillars) {
+      expect(pillar.bottom ?? 0, pillar.id).toBeGreaterThanOrEqual(7);
     }
   });
 });
 
-describe("Arena collision", () => {
-  it("the floor is solid", () => {
-    expect(world.groundHeight(-17, -16, 0)).toBe(0);
-    expect(world.groundHeight(3, 17, 0)).toBe(0);
+describe("Ground and walls", () => {
+  it("the central arena floor is at ground level", () => {
+    expect(world.groundHeight(0, 0, 0)).toBe(0);
+    expect(world.groundHeight(-10, 6, 0)).toBe(0);
   });
 
-  it("the outer walls keep players inside", () => {
-    for (const [dx, dz] of [
-      [50, 0],
-      [-50, 0],
-      [0, 50],
-      [0, -50],
-    ]) {
-      const end = walk({ x: 1, z: 1 }, { x: 1 + dx, z: 1 + dz });
-
-      expect(Math.abs(end.x)).toBeLessThanOrEqual(
-        ARENA_HALF - PLAYER_RADIUS + 1e-9,
-      );
-      expect(Math.abs(end.z)).toBeLessThanOrEqual(
-        ARENA_HALF - PLAYER_RADIUS + 1e-9,
-      );
-    }
+  it("the upper floor is 4 m up, the lower balcony 2.8 m", () => {
+    expect(world.groundHeight(-27, -13.5, F)).toBe(F);
+    expect(world.groundHeight(26, 0, F)).toBe(F);
+    expect(world.groundHeight(0, 10.5, 2.8)).toBe(2.8);
   });
 
-  it("walking into a wall slides along it instead of sticking", () => {
+  it("the outer walls stop the player from leaving the map", () => {
+    expect(world.isBlocked(ARENA_HALF_X - 0.2, 0, F, PLAYER_RADIUS)).toBe(true);
+    expect(world.isBlocked(0, -ARENA_HALF_Z + 0.2, F, PLAYER_RADIUS)).toBe(
+      true,
+    );
+    expect(world.isBlocked(ARENA_HALF_X - 0.6, -3.75, F, PLAYER_RADIUS)).toBe(
+      false,
+    );
+  });
+
+  it("moving into the outer wall at an angle slides along it", () => {
     const move = world.moveHorizontal(
-      ARENA_HALF - PLAYER_RADIUS,
-      0,
-      0.1,
-      0.1,
-      0,
+      ARENA_HALF_X - PLAYER_RADIUS - 0.05,
+      -3.5,
+      0.2,
+      -0.2,
+      F,
     );
 
-    expect(move.z).toBeCloseTo(0.1);
-    expect(move.x).toBeCloseTo(ARENA_HALF - PLAYER_RADIUS);
+    expect(move.z).toBeLessThan(-3.6);
+    expect(move.x).toBeLessThanOrEqual(ARENA_HALF_X - PLAYER_RADIUS + 1e-9);
   });
 
-  it("running at the edge of a pillar or the corner of a block slides round it instead of stopping", () => {
-    const pillar = layout.pillars.find((p) => p.id === "pillar-3")!;
-    const round = walk(
-      { x: pillar.x + 0.3, z: pillar.z - 3.5 },
-      { x: pillar.x + 0.3, z: pillar.z + 2 },
-    );
-
-    expect(round.z).toBeGreaterThan(pillar.z + 0.6);
-
-    const monolith = layout.covers.find((c) => c.id === "monolith")!;
-    const corner = walk(
-      { x: monolith.minX - 0.3, z: monolith.minZ - 4 },
-      { x: monolith.minX + 0.3, z: monolith.maxZ + 6 },
-    );
-
-    expect(corner.z).toBeGreaterThan(monolith.maxZ + 0.5);
+  it("a room wall blocks, and its doorway lets the player through", () => {
+    // The archive's south wall (z = -16.3..-16) with its doorway at x = -8.
+    expect(world.isBlocked(-4, -16.15, F, 0.1)).toBe(true);
+    expect(world.isBlocked(-8, -16.15, F, PLAYER_RADIUS)).toBe(false);
+    expect(world.isBlocked(-8, -15, F, PLAYER_RADIUS)).toBe(false);
+    expect(world.isBlocked(-8, -19, F, PLAYER_RADIUS)).toBe(false);
   });
 
-  it("standing on a corner column, you can walk right into the corner without falling", () => {
-    for (const column of layout.pillars.filter((p) =>
-      p.id.startsWith("column"),
-    )) {
-      const sx = Math.sign(column.x);
-      const sz = Math.sign(column.z);
-      const edge = ARENA_HALF - PLAYER_RADIUS;
+  it("every doorway is wide enough for the player on both sides", () => {
+    for (const room of layout.rooms) {
+      for (const door of room.doors) {
+        expect(door.width, room.id).toBeGreaterThanOrEqual(
+          PLAYER_RADIUS * 2 + 0.6,
+        );
 
-      expect(world.groundHeight(sx * edge, sz * edge, column.height)).toBe(
-        column.height,
-      );
-      expect(
-        world.isBlocked(sx * edge, sz * edge, column.height, PLAYER_RADIUS),
-      ).toBe(false);
+        const horizontal = door.side === "n" || door.side === "s";
+        const edge =
+          door.side === "n"
+            ? room.minZ
+            : door.side === "s"
+              ? room.maxZ
+              : door.side === "w"
+                ? room.minX
+                : room.maxX;
+        const inward = door.side === "n" || door.side === "w" ? 1 : -1;
+
+        const free = (offset: number): boolean => {
+          const at = edge + inward * offset;
+          const x = horizontal ? door.at : at;
+          const z = horizontal ? at : door.at;
+
+          return !world.isBlocked(x, z, room.floorY, PLAYER_RADIUS);
+        };
+
+        // In the doorway itself and a metre inside.
+        expect(free(0), `${room.id} ${door.side} door`).toBe(true);
+        expect(free(1), `${room.id} ${door.side} inside`).toBe(true);
+
+        // Outside, somewhere in the first metre (a 1.5 m corridor is tighter than a yard).
+        expect(
+          [-1, -0.85, -0.75, -0.6].some(free),
+          `${room.id} ${door.side} outside`,
+        ).toBe(true);
+      }
     }
   });
 
-  it("a tall platform cannot be walked into from the floor", () => {
-    const tower = layout.platforms.find((p) => p.id === "east-tower")!;
-    const x = (tower.minX + tower.maxX) / 2;
-    // From the open ground north of the tower, straight at its north face.
-    const end = walk({ x, z: tower.minZ - 5 }, { x, z: tower.minZ + 2 });
+  it("railings are too tall to hop but low enough to see over", () => {
+    const rail = layout.walls.find((w) => w.role === "railing")!;
 
-    expect(end.feet).toBe(0);
-    expect(end.z).toBeLessThan(tower.minZ - PLAYER_RADIUS + 1e-6);
+    expect(rail.height - (rail.base ?? 0)).toBeGreaterThan(0.95);
+    expect(rail.height - (rail.base ?? 0)).toBeLessThan(1.3);
   });
+});
 
-  it.each(layout.ramps.map((r) => [r.id, r] as const))(
-    "%s leads up onto its platform, and back down",
-    (_id, ramp) => {
-      const { foot, top, up } = rampClimb(ramp);
-      const start = { x: foot.x - up.x * 1.5, z: foot.z - up.z * 1.5 };
-      const end = { x: top.x + up.x * 1.2, z: top.z + up.z * 1.2 };
-      const climbed = walk(start, end);
+describe("Staircases", () => {
+  it.each(layout.stairs.map((s) => [s.id, s] as const))(
+    "%s: comfortable steps that reach the upper floor",
+    (_id, stairs) => {
+      expect(stairs.rise).toBeLessThanOrEqual(STEP_UP);
+      expect(stairs.rise).toBeLessThanOrEqual(0.3);
+      expect(stairs.tread).toBeGreaterThanOrEqual(0.55);
+      expect(stairs.crossMax - stairs.crossMin).toBeGreaterThanOrEqual(4);
 
-      expect(climbed.feet).toBeCloseTo(ramp.height);
+      const steps = stairsToSteps(stairs);
 
-      const down = walk(end, start, ramp.height);
-
-      expect(down.feet).toBeCloseTo(0);
+      expect(steps[steps.length - 1].height).toBeCloseTo(F, 9);
     },
   );
 
   it.each(layout.stairs.map((s) => [s.id, s] as const))(
-    "%s leads up onto its platform, and back down",
+    "%s: the top step meets a landing of the same height",
     (_id, stairs) => {
-      const { foot, top } = stairsClimb(stairs);
-      const up = riseVector(stairs.direction);
-      const start = { x: foot.x - up.x * 1.5, z: foot.z - up.z * 1.5 };
-      const end = { x: top.x + up.x * 1.2, z: top.z + up.z * 1.2 };
-      const climbed = walk(start, end);
+      const steps = stairsToSteps(stairs);
+      const top = steps[steps.length - 1];
+      const sign = stairs.direction.startsWith("+") ? 1 : -1;
+      const x = (top.minX + top.maxX) / 2;
+      const z = (top.minZ + top.maxZ) / 2;
+      const beyondX = stairs.direction.endsWith("x") ? sign * 1.5 : 0;
+      const beyondZ = stairs.direction.endsWith("z") ? sign * 1.5 : 0;
 
-      expect(climbed.feet).toBeCloseTo(stairs.rise * stairs.steps);
-
-      const down = walk(end, start, stairs.rise * stairs.steps);
-
-      expect(down.feet).toBeCloseTo(0);
+      expect(world.groundHeight(x + beyondX, z + beyondZ, F)).toBe(F);
     },
   );
-
-  it("walking off a platform edge leaves nothing underfoot (the player falls)", () => {
-    const walkway = layout.platforms.find((p) => p.id === "north-walkway")!;
-    const x = (walkway.minX + walkway.maxX) / 2;
-
-    expect(world.groundHeight(x, walkway.maxZ - 0.1, walkway.height)).toBe(
-      walkway.height,
-    );
-    expect(world.groundHeight(x, walkway.maxZ + 0.5, walkway.height)).toBe(0);
-  });
-
-  it("2 m blocks and pillars block; low walls can be hopped once airborne", () => {
-    const block = layout.covers.find((c) => c.height === 2)!;
-    const low = layout.covers.find((c) => c.height === 0.8)!;
-    const bx = (block.minX + block.maxX) / 2;
-    const lx = (low.minX + low.maxX) / 2;
-
-    // On foot, both stop you.
-    expect(world.isBlocked(bx, block.minZ - 0.2, 0, PLAYER_RADIUS)).toBe(true);
-    expect(world.isBlocked(lx, low.minZ - 0.2, 0, PLAYER_RADIUS)).toBe(true);
-
-    // At the top of a jump (about 0.93 m) the low wall can be crossed...
-    expect(world.isBlocked(lx, low.minZ - 0.2, 0.5, PLAYER_RADIUS)).toBe(false);
-    // ...but the 2 m block cannot.
-    expect(world.isBlocked(bx, block.minZ - 0.2, 0.93, PLAYER_RADIUS)).toBe(
-      true,
-    );
-  });
-
-  it("pushOut frees a character shoved into scenery", () => {
-    const stuck: Array<[string, number, number]> = [
-      ...layout.covers.map((c): [string, number, number] => [
-        c.id,
-        (c.minX + c.maxX) / 2,
-        (c.minZ + c.maxZ) / 2,
-      ]),
-      ...layout.pillars.map((p): [string, number, number] => [p.id, p.x, p.z]),
-    ];
-
-    for (const [id, x, z] of stuck) {
-      const out = world.pushOut(x, z, 0);
-
-      expect(world.isBlocked(out.x, out.z, 0, PLAYER_RADIUS - 0.02), id).toBe(
-        false,
-      );
-    }
-  });
 });

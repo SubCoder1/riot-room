@@ -1,0 +1,893 @@
+import {
+  DOOR_HEIGHT,
+  DOOR_WIDTH,
+  RAILING_BLOCK_HEIGHT,
+  RAILING_HEIGHT,
+  RAILING_THICKNESS,
+  ROOF_THICKNESS,
+  ROOM_WALL_HEIGHT,
+  WALL_THICKNESS,
+  type ArenaLayout,
+  type BoxSolid,
+  type DoorDefinition,
+  type LadderDefinition,
+  type LedgeDefinition,
+  type OverheadMaterial,
+  type PartRole,
+  type RiseDirection,
+  type RoomDefinition,
+  type Side,
+  type StairsDefinition,
+  type Zone,
+  type ZoneKind,
+} from "./ArenaLayout";
+
+/** A stretch along a wall or railing that is left open. */
+interface Gap {
+  from: number;
+  to: number;
+}
+
+/** How thick a floating balcony or a catwalk is. */
+const FLOATING_THICKNESS = 0.5;
+const CATWALK_THICKNESS = 0.25;
+
+/** How wide the opening in a railing is where a ladder tops out. */
+const LADDER_GAP = 2.2;
+const LADDER_WIDTH = 0.7;
+/** How far a ladder stands off the face it climbs. */
+const LADDER_OFFSET = 0.12;
+
+export type PropKind =
+  | "crate"
+  | "crateStack"
+  | "shelf"
+  | "rack"
+  | "bench"
+  | "machine"
+  | "bed"
+  | "locker"
+  | "console"
+  | "table"
+  | "vent"
+  | "cabinet";
+
+/** Sizes (metres) of the graybox props, long side along x unless turned. */
+const PROP_SIZES: Record<
+  PropKind,
+  { width: number; depth: number; height: number; role: PartRole }
+> = {
+  crate: { width: 1.1, depth: 1.1, height: 1, role: "prop" },
+  crateStack: { width: 2, depth: 2, height: 1.8, role: "prop" },
+  shelf: { width: 3, depth: 0.8, height: 2, role: "prop" },
+  rack: { width: 3, depth: 1, height: 2, role: "machinery" },
+  bench: { width: 2.4, depth: 0.9, height: 1, role: "prop" },
+  machine: { width: 1.8, depth: 1.4, height: 1.6, role: "machinery" },
+  bed: { width: 2, depth: 0.9, height: 0.7, role: "prop" },
+  locker: { width: 0.8, depth: 0.6, height: 1.9, role: "prop" },
+  console: { width: 1.4, depth: 0.8, height: 1, role: "machinery" },
+  table: { width: 2.4, depth: 1.2, height: 0.8, role: "prop" },
+  vent: { width: 2, depth: 1.4, height: 1, role: "machinery" },
+  cabinet: { width: 1.2, depth: 0.7, height: 2, role: "machinery" },
+};
+
+export interface Bounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+export interface RoomOptions {
+  id: string;
+  name: string;
+  bounds: Bounds;
+  floorY: number;
+  /** Sides that get a wall (default all four). A shared wall is built by one room only. */
+  walls?: Side[];
+  doors: Array<{ side: Side; at: number; width?: number }>;
+  /** Draw a roof (default true). It is a real slab: you can walk on it. */
+  roof?: boolean;
+  /** Wall height above the floor (default ROOM_WALL_HEIGHT); the roof sits on top. */
+  wallHeight?: number;
+}
+
+export interface LadderOptions {
+  id: string;
+  /** Which way the face looks: the side the ladder is reached from. */
+  normal: RiseDirection;
+  /** Where the face is (x for an east / west face, z for a north / south one). */
+  face: number;
+  /** Position along the face. */
+  along: number;
+  /** Height of the floor the ladder tops out on. */
+  topY: number;
+  /** Height of the floor at its foot (default 0, the ground). */
+  bottomY?: number;
+  /** Hard to see from the main routes. */
+  secret?: boolean;
+}
+
+export interface RailingOptions {
+  id: string;
+  /** Along a line of constant z (`axis` "x") or constant x (`axis` "z"). */
+  axis: "x" | "z";
+  /** The line: the edge of the floor the railing stands on. */
+  at: number;
+  from: number;
+  to: number;
+  floorY: number;
+  /** Which side of `at` the railing stands on (the floor side): +1 or -1. */
+  inside: 1 | -1;
+  /** Extra openings (a ladder's own gap is added by itself). */
+  gaps?: Gap[];
+}
+
+/**
+ * Builds a map out of named parts (floor sections, rooms, balconies, walkways,
+ * staircases, ladders, railings, ledges). Everything lands in a plain
+ * ArenaLayout, so the map stays easy to rearrange.
+ */
+export class MapBuilder {
+  private readonly layout: ArenaLayout;
+
+  constructor(width: number, depth: number) {
+    this.layout = {
+      width,
+      depth,
+      platforms: [],
+      walls: [],
+      ramps: [],
+      stairs: [],
+      pillars: [],
+      ladders: [],
+      ledges: [],
+      overheads: [],
+      hangZones: [],
+      hatches: [],
+      roofLevels: [],
+      rooms: [],
+      zones: [],
+      spawnPoints: [],
+    };
+  }
+
+  public build(): ArenaLayout {
+    return this.layout;
+  }
+
+  // ---------------------------------------------------------------- floors
+
+  /** A floor slab at `floorY`, solid down to the ground. */
+  public createFloorSection(
+    id: string,
+    bounds: Bounds,
+    floorY: number,
+    role: PartRole = "floor",
+  ): BoxSolid {
+    const slab: BoxSolid = {
+      kind: "box",
+      id,
+      role,
+      ...bounds,
+      height: floorY,
+    };
+
+    this.layout.platforms.push(slab);
+
+    return slab;
+  }
+
+  private addZone(
+    kind: ZoneKind,
+    id: string,
+    name: string,
+    bounds: Bounds,
+    floorY: number,
+  ): Zone {
+    const zone: Zone = { id, name, kind, ...bounds, floorY };
+
+    this.layout.zones.push(zone);
+
+    return zone;
+  }
+
+  /** A named walking strip on a floor that already exists. */
+  public createWalkway(
+    id: string,
+    name: string,
+    bounds: Bounds,
+    floorY: number,
+  ): Zone {
+    return this.addZone("walkway", id, name, bounds, floorY);
+  }
+
+  /** A recessed balcony: a named area set back into the building, on a floor that already exists. */
+  public createRecess(
+    id: string,
+    name: string,
+    bounds: Bounds,
+    floorY: number,
+  ): Zone {
+    return this.addZone("balcony", id, name, bounds, floorY);
+  }
+
+  /** A named open area (a plaza, a terrace) on a floor that already exists. */
+  public createDeck(
+    id: string,
+    name: string,
+    bounds: Bounds,
+    floorY: number,
+  ): Zone {
+    return this.addZone("deck", id, name, bounds, floorY);
+  }
+
+  /**
+   * A floor section that sticks out over the central arena (or a landing at the
+   * top of stairs). A floating one hangs over open ground (you can walk under
+   * it); otherwise it is solid down to the ground.
+   */
+  public createBalcony(
+    id: string,
+    name: string,
+    bounds: Bounds,
+    floorY: number,
+    kind: "balcony" | "landing" = "balcony",
+    floating = false,
+  ): Zone {
+    const slab = this.createFloorSection(id, bounds, floorY);
+
+    // A floating balcony hangs over open ground: you can walk under it.
+    if (floating) {
+      slab.bottom = floorY - FLOATING_THICKNESS;
+    }
+
+    return this.addZone(kind, id, name, bounds, floorY);
+  }
+
+  // ----------------------------------------------------------------- walls
+
+  /**
+   * A straight wall box on a floor. `along` runs between `from` and `to` on the
+   * line `at`; openings are left out.
+   */
+  public createWall(
+    id: string,
+    axis: "x" | "z",
+    at: number,
+    from: number,
+    to: number,
+    floorY: number,
+    thickness: number,
+    height: number,
+    role: PartRole = "wall",
+    gaps: Gap[] = [],
+  ): void {
+    const cuts = [...gaps]
+      .filter((gap) => gap.to > from && gap.from < to)
+      .sort((a, b) => a.from - b.from);
+    const pieces: Array<[number, number]> = [];
+    let cursor = from;
+
+    for (const gap of cuts) {
+      if (gap.from > cursor) {
+        pieces.push([cursor, gap.from]);
+      }
+
+      cursor = Math.max(cursor, gap.to);
+    }
+
+    if (cursor < to) {
+      pieces.push([cursor, to]);
+    }
+
+    pieces.forEach(([a, b], index) => {
+      const across: [number, number] = [at, at + thickness];
+
+      this.layout.walls.push({
+        kind: "box",
+        id: `${id}-${index + 1}`,
+        role,
+        minX: axis === "x" ? a : across[0],
+        maxX: axis === "x" ? b : across[1],
+        minZ: axis === "x" ? across[0] : a,
+        maxZ: axis === "x" ? across[1] : b,
+        base: floorY,
+        // Standing on a floor: it does not reach down through whatever hangs
+        // below that floor (a balcony over open ground, a roof over a room).
+        bottom: floorY,
+        height: floorY + height,
+        // A railing is drawn low but stops a body above the highest jump.
+        // (and so does a low wall such as a roof parapet).
+        blockTop:
+          (role === "railing" || role === "wall") &&
+          height < RAILING_BLOCK_HEIGHT
+            ? floorY + RAILING_BLOCK_HEIGHT
+            : undefined,
+      });
+    });
+  }
+
+  /**
+   * A railing along the edge of a floor. It is waist-high: too tall to hop, low
+   * enough to see and shoot over. A ladder that tops out along it leaves its
+   * own opening.
+   */
+  public createRailing(options: RailingOptions): void {
+    const { axis, at, floorY, inside } = options;
+    const lo = inside > 0 ? at : at - RAILING_THICKNESS;
+    const ladderGaps = this.layout.ladders
+      .filter((ladder) => {
+        // The ladder's top exit is on this floor, beside this edge.
+        const face = axis === "x" ? ladder.exit.z : ladder.exit.x;
+
+        return (
+          Math.abs(ladder.topY - floorY) < 1e-6 &&
+          Math.abs(face - (inside > 0 ? at + 0.6 : at - 0.6)) < 0.5
+        );
+      })
+      .map((ladder) => {
+        const centre = axis === "x" ? ladder.exit.x : ladder.exit.z;
+
+        return { from: centre - LADDER_GAP / 2, to: centre + LADDER_GAP / 2 };
+      });
+
+    this.createWall(
+      options.id,
+      axis,
+      lo,
+      options.from,
+      options.to,
+      floorY,
+      RAILING_THICKNESS,
+      RAILING_HEIGHT,
+      "railing",
+      [...(options.gaps ?? []), ...ladderGaps],
+    );
+
+    // A proper opening: a gate post at each end and an amber landing pad on the
+    // floor in front of the ladder, so it reads as the way down (or up).
+    ladderGaps.forEach((gap, index) => {
+      const own = (options.gaps ?? []).some(
+        (other) => other.from < gap.to + 0.2 && other.to > gap.from - 0.2,
+      );
+
+      this.createOverhead(
+        `${options.id}-landing-${index + 1}`,
+        axis === "x"
+          ? {
+              minX: gap.from,
+              maxX: gap.to,
+              minZ: inside > 0 ? at : at - 0.9,
+              maxZ: inside > 0 ? at + 0.9 : at,
+            }
+          : {
+              minX: inside > 0 ? at : at - 0.9,
+              maxX: inside > 0 ? at + 0.9 : at,
+              minZ: gap.from,
+              maxZ: gap.to,
+            },
+        floorY,
+        floorY + 0.03,
+        "hazard",
+      );
+
+      // Posts only where the gap is cut into a rail of its own (not where it
+      // runs into another opening, or off the end of the rail).
+      if (own || gap.from - 0.2 < options.from || gap.to + 0.2 > options.to) {
+        return;
+      }
+
+      for (const [slot, start] of [
+        [1, gap.from - 0.16],
+        [2, gap.to],
+      ] as const) {
+        this.createWall(
+          `${options.id}-post-${index + 1}-${slot}`,
+          axis,
+          lo - 0.04,
+          start,
+          start + 0.16,
+          floorY,
+          RAILING_THICKNESS + 0.08,
+          RAILING_HEIGHT + 0.2,
+          "railing",
+        );
+      }
+    });
+  }
+
+  /**
+   * A room: walls with doorways, a floor that already exists under it, and a
+   * roof (drawn only; collision is a height field). A wall shared with a
+   * neighbouring room is built by one of the two.
+   */
+  public createRoom(options: RoomOptions): RoomDefinition {
+    const { bounds, floorY } = options;
+    const sides = options.walls ?? ["n", "s", "e", "w"];
+    const t = WALL_THICKNESS;
+    const wallHeight = options.wallHeight ?? ROOM_WALL_HEIGHT;
+    const doors: DoorDefinition[] = options.doors.map((door) => ({
+      side: door.side,
+      at: door.at,
+      width: door.width ?? DOOR_WIDTH,
+    }));
+
+    for (const side of sides) {
+      const mine = doors.filter((door) => door.side === side);
+      const gaps = mine.map((door) => ({
+        from: door.at - door.width / 2,
+        to: door.at + door.width / 2,
+      }));
+      const id = `${options.id}-wall-${side}`;
+
+      // North and south walls run the full width; east and west fit between them.
+      if (side === "n") {
+        this.createWall(
+          id,
+          "x",
+          bounds.minZ,
+          bounds.minX,
+          bounds.maxX,
+          floorY,
+          t,
+          wallHeight,
+          "wall",
+          gaps,
+        );
+      } else if (side === "s") {
+        this.createWall(
+          id,
+          "x",
+          bounds.maxZ - t,
+          bounds.minX,
+          bounds.maxX,
+          floorY,
+          t,
+          wallHeight,
+          "wall",
+          gaps,
+        );
+      } else if (side === "w") {
+        this.createWall(
+          id,
+          "z",
+          bounds.minX,
+          bounds.minZ + t,
+          bounds.maxZ - t,
+          floorY,
+          t,
+          wallHeight,
+          "wall",
+          gaps,
+        );
+      } else {
+        this.createWall(
+          id,
+          "z",
+          bounds.maxX - t,
+          bounds.minZ + t,
+          bounds.maxZ - t,
+          floorY,
+          t,
+          wallHeight,
+          "wall",
+          gaps,
+        );
+      }
+    }
+
+    // Above each doorway: drawn only, so the opening stays walkable.
+    doors.forEach((door, index) => {
+      const half = door.width / 2;
+      const across =
+        door.side === "n"
+          ? [bounds.minZ, bounds.minZ + t]
+          : door.side === "s"
+            ? [bounds.maxZ - t, bounds.maxZ]
+            : door.side === "w"
+              ? [bounds.minX, bounds.minX + t]
+              : [bounds.maxX - t, bounds.maxX];
+      const horizontal = door.side === "n" || door.side === "s";
+
+      this.layout.overheads.push({
+        id: `${options.id}-lintel-${index + 1}`,
+        minX: horizontal ? door.at - half : across[0],
+        maxX: horizontal ? door.at + half : across[1],
+        minZ: horizontal ? across[0] : door.at - half,
+        maxZ: horizontal ? across[1] : door.at + half,
+        bottom: floorY + DOOR_HEIGHT,
+        top: floorY + wallHeight,
+      });
+    });
+
+    if (options.roof !== false) {
+      this.createRoofSection(
+        `${options.id}-roof`,
+        bounds,
+        floorY + wallHeight + ROOF_THICKNESS,
+      );
+    }
+
+    const room: RoomDefinition = {
+      id: options.id,
+      name: options.name,
+      kind: "room",
+      ...bounds,
+      floorY,
+      doors,
+    };
+
+    this.layout.rooms.push(room);
+
+    return room;
+  }
+
+  // ----------------------------------------------------------------- roofs
+
+  /**
+   * A roof slab with its top at `top`. It is a real surface: you can walk on
+   * it, and a character underneath is not blocked by it.
+   */
+  public createRoofSection(
+    id: string,
+    area: Bounds,
+    top: number,
+    thickness = ROOF_THICKNESS,
+    hole?: Bounds,
+  ): BoxSolid {
+    const make = (name: string, part: Bounds): BoxSolid => ({
+      kind: "box",
+      id: name,
+      role: "roof",
+      ...part,
+      bottom: top - thickness,
+      height: top,
+    });
+    // With a hole (for a hatch) the slab is built from the pieces around it.
+    const pieces: Bounds[] = hole
+      ? [
+          { ...area, maxX: hole.minX },
+          { ...area, minX: hole.maxX },
+          { ...area, minX: hole.minX, maxX: hole.maxX, maxZ: hole.minZ },
+          { ...area, minX: hole.minX, maxX: hole.maxX, minZ: hole.maxZ },
+        ].filter((p) => p.maxX - p.minX > 0.01 && p.maxZ - p.minZ > 0.01)
+      : [area];
+    const slabs = pieces.map((part, index) =>
+      make(hole ? `${id}-${index + 1}` : id, part),
+    );
+    const slab = slabs[0];
+
+    this.layout.platforms.push(...slabs);
+
+    if (!this.layout.roofLevels.some((level) => Math.abs(level - top) < 1e-6)) {
+      this.layout.roofLevels.push(top);
+      this.layout.roofLevels.sort((a, b) => a - b);
+    }
+
+    return slab;
+  }
+
+  /**
+   * A hatch in a roof, over a ladder's climb: the roof must have been built
+   * with this hole. Shut it is solid like the roof; once opened (in the game) it
+   * is a hole, and the ladder can pass.
+   */
+  public createHatch(
+    id: string,
+    ladderId: string,
+    hole: Bounds,
+    top: number,
+    thickness = ROOF_THICKNESS,
+  ): void {
+    const bottom = top - thickness;
+
+    this.layout.platforms.push({
+      kind: "box",
+      id,
+      role: "hatch",
+      ...hole,
+      bottom,
+      height: top,
+    });
+    this.layout.hatches.push({ id, ladderId, ...hole, bottom, top });
+
+    const ladder = this.layout.ladders.find((l) => l.id === ladderId);
+
+    if (ladder) {
+      // The head must stay under the hatch: 1.8 m of body, a little to spare.
+      ladder.hatch = { id, stopY: bottom - 1.85 };
+    }
+  }
+
+  /** A narrow steel walkway hanging at `top`, with open ground or air beneath. */
+  public createCatwalk(id: string, area: Bounds, top: number): BoxSolid {
+    const slab: BoxSolid = {
+      kind: "box",
+      id,
+      role: "catwalk",
+      ...area,
+      bottom: top - CATWALK_THICKNESS,
+      height: top,
+    };
+
+    this.layout.platforms.push(slab);
+
+    return slab;
+  }
+
+  /** A support column from `fromY` up to `toY` (a roof's underside). */
+  public createColumn(
+    id: string,
+    x: number,
+    z: number,
+    fromY: number,
+    toY: number,
+    size = 0.6,
+  ): BoxSolid {
+    const column: BoxSolid = {
+      kind: "box",
+      id,
+      role: "machinery",
+      minX: x - size / 2,
+      maxX: x + size / 2,
+      minZ: z - size / 2,
+      maxZ: z + size / 2,
+      bottom: fromY,
+      height: toY,
+    };
+
+    this.layout.walls.push(column);
+
+    return column;
+  }
+
+  // ------------------------------------------------------------- corridors
+
+  /**
+   * A roofed passage with walls on its two long sides and open ends. `openings`
+   * are doorways in the long walls. It is listed as a zone, not a room.
+   */
+  public createCorridor(
+    id: string,
+    name: string,
+    area: Bounds,
+    floorY: number,
+    along: "x" | "z",
+    options: { openings?: number[]; roof?: boolean; walled?: boolean } = {},
+  ): Zone {
+    const t = WALL_THICKNESS;
+    const gaps = (options.openings ?? []).map((at) => ({
+      from: at - DOOR_WIDTH / 2,
+      to: at + DOOR_WIDTH / 2,
+    }));
+
+    // Walls that already belong to the rooms beside it are not built twice.
+    for (const side of options.walled === false
+      ? []
+      : (["low", "high"] as const)) {
+      if (along === "x") {
+        const z = side === "low" ? area.minZ : area.maxZ - t;
+
+        this.createWall(
+          `${id}-wall-${side}`,
+          "x",
+          z,
+          area.minX,
+          area.maxX,
+          floorY,
+          t,
+          ROOM_WALL_HEIGHT,
+          "wall",
+          gaps,
+        );
+      } else {
+        const x = side === "low" ? area.minX : area.maxX - t;
+
+        this.createWall(
+          `${id}-wall-${side}`,
+          "z",
+          x,
+          area.minZ,
+          area.maxZ,
+          floorY,
+          t,
+          ROOM_WALL_HEIGHT,
+          "wall",
+          gaps,
+        );
+      }
+    }
+
+    if (options.roof !== false) {
+      this.createRoofSection(
+        `${id}-roof`,
+        area,
+        floorY + ROOM_WALL_HEIGHT + ROOF_THICKNESS,
+      );
+    }
+
+    return this.addZone("corridor", id, name, area, floorY);
+  }
+
+  // ------------------------------------------------------------ industrial
+
+  /**
+   * A simple graybox prop standing on a surface at `baseY`. Boxes are solid
+   * (and only block someone standing on that surface, not a room below a roof).
+   */
+  public createIndustrialProp(
+    kind: PropKind,
+    id: string,
+    x: number,
+    z: number,
+    baseY: number,
+    along: "x" | "z" = "x",
+    size?: { width?: number; depth?: number; height?: number },
+  ): BoxSolid {
+    const spec = PROP_SIZES[kind];
+    const width = size?.width ?? spec.width;
+    const depth = size?.depth ?? spec.depth;
+    const height = size?.height ?? spec.height;
+    const [sx, sz] = along === "x" ? [width, depth] : [depth, width];
+    const prop: BoxSolid = {
+      kind: "box",
+      id,
+      role: spec.role,
+      minX: x - sx / 2,
+      maxX: x + sx / 2,
+      minZ: z - sz / 2,
+      maxZ: z + sz / 2,
+      bottom: baseY,
+      height: baseY + height,
+    };
+
+    this.layout.walls.push(prop);
+
+    return prop;
+  }
+
+  /** A water or fuel tank (a cylinder) standing on a surface at `baseY`. */
+  public createTank(
+    id: string,
+    x: number,
+    z: number,
+    baseY: number,
+    radius = 1.1,
+    height = 2.4,
+  ): void {
+    this.layout.pillars.push({
+      kind: "cylinder",
+      id,
+      x,
+      z,
+      radius,
+      height: baseY + height,
+      bottom: baseY,
+    });
+  }
+
+  /** A drawn-only part (a pipe, a duct, a truss) that nothing collides with. */
+  public createOverhead(
+    id: string,
+    area: Bounds,
+    bottom: number,
+    top: number,
+    material: OverheadMaterial,
+  ): void {
+    this.layout.overheads.push({ id, material, ...area, bottom, top });
+  }
+
+  /**
+   * A strong overhead beam a later hanging system can use: drawn as a steel
+   * beam, and recorded as data. Nothing hangs from it yet.
+   */
+  public createHangZone(
+    id: string,
+    name: string,
+    x: number,
+    z: number,
+    y: number,
+    axis: "x" | "z",
+    length: number,
+  ): void {
+    const half = length / 2;
+    const w = 0.18;
+
+    this.layout.hangZones.push({ id, name, x, z, y, axis, length });
+    this.createOverhead(
+      `${id}-beam`,
+      axis === "x"
+        ? { minX: x - half, maxX: x + half, minZ: z - w, maxZ: z + w }
+        : { minX: x - w, maxX: x + w, minZ: z - half, maxZ: z + half },
+      y,
+      y + 0.4,
+      "steel",
+    );
+  }
+
+  // ------------------------------------------------------- vertical routes
+
+  public createStaircase(stairs: StairsDefinition): void {
+    this.layout.stairs.push(stairs);
+  }
+
+  /**
+   * A ladder up a vertical face. Climbing is not built yet; the ladder is
+   * drawn, and its approach and exit points mark where a player will start and
+   * finish. Add it before the railings so they leave a gap for it.
+   */
+  public createLadder(options: LadderOptions): LadderDefinition {
+    const { normal, face, along, topY } = options;
+    const sign = normal.startsWith("+") ? 1 : -1;
+    const faceIsX = normal.endsWith("x");
+    const place = (offset: number): { x: number; z: number } =>
+      faceIsX
+        ? { x: face + sign * offset, z: along }
+        : { x: along, z: face + sign * offset };
+    const ladder: LadderDefinition = {
+      id: options.id,
+      ...place(LADDER_OFFSET),
+      normal,
+      width: LADDER_WIDTH,
+      bottomY: options.bottomY ?? 0,
+      topY,
+      approach: place(0.9),
+      exit: place(-0.7),
+      secret: options.secret,
+    };
+
+    this.layout.ladders.push(ladder);
+
+    return ladder;
+  }
+
+  /** Marks an existing edge as a climb: `fromY` is the lower floor, `topY` the ledge. */
+  public declareLedge(
+    id: string,
+    area: Bounds,
+    fromY: number,
+    topY: number,
+  ): void {
+    this.layout.ledges.push({ id, fromY, topY, ...area });
+  }
+
+  /** A low step to climb onto, standing on a floor at `fromY`. */
+  public createLedge(
+    id: string,
+    bounds: Bounds,
+    fromY: number,
+    rise: number,
+  ): LedgeDefinition {
+    this.layout.platforms.push({
+      kind: "box",
+      id,
+      role: "ledge",
+      ...bounds,
+      base: fromY,
+      bottom: fromY,
+      height: fromY + rise,
+    });
+
+    const ledge: LedgeDefinition = {
+      id,
+      fromY,
+      topY: fromY + rise,
+      ...bounds,
+    };
+
+    this.layout.ledges.push(ledge);
+
+    return ledge;
+  }
+}
+
+/** A rectangle from its corners, in any order. */
+export function bounds(x0: number, x1: number, z0: number, z1: number): Bounds {
+  return {
+    minX: Math.min(x0, x1),
+    maxX: Math.max(x0, x1),
+    minZ: Math.min(z0, z1),
+    maxZ: Math.max(z0, z1),
+  };
+}

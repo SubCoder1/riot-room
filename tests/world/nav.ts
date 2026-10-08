@@ -1,5 +1,6 @@
 import { ArenaCollision, PLAYER_RADIUS } from "../../src/world/ArenaCollision";
-import { ARENA_HALF, ARENA_LAYOUT } from "../../src/world/ArenaLayout";
+import { ARENA_HALF_X, ARENA_HALF_Z } from "../../src/world/ArenaLayout";
+import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 
 /**
  * Walkable-space analysis for the arena: a graph of where a player can stand
@@ -9,7 +10,8 @@ import { ARENA_HALF, ARENA_LAYOUT } from "../../src/world/ArenaLayout";
  */
 
 export const CELL = 0.5;
-export const COLS = Math.round((ARENA_HALF * 2) / CELL);
+export const COLS = Math.round((ARENA_HALF_X * 2) / CELL);
+export const ROWS = Math.round((ARENA_HALF_Z * 2) / CELL);
 
 /** The highest the feet get during a jump: what a "hop" can clear. */
 const JUMP_RISE = 0.85;
@@ -23,8 +25,8 @@ const groundCache = new Map<number, number>();
 
 const heightKey = (feet: number): number => Math.round(feet / 0.05) + 200;
 const cacheKey = (x: number, z: number, feet: number): number =>
-  (Math.round((z + ARENA_HALF) / CELL) * 100 +
-    Math.round((x + ARENA_HALF) / CELL)) *
+  (Math.round((z + ARENA_HALF_Z) / CELL) * COLS +
+    Math.round((x + ARENA_HALF_X) / CELL)) *
     1000 +
   heightKey(feet);
 
@@ -60,12 +62,14 @@ export interface Node {
   h: number;
 }
 
-export const cellX = (i: number): number => -ARENA_HALF + (i + 0.5) * CELL;
-export const cellZ = (j: number): number => -ARENA_HALF + (j + 0.5) * CELL;
-export const cellOf = (v: number): number =>
-  Math.min(COLS - 1, Math.max(0, Math.floor((v + ARENA_HALF) / CELL)));
+export const cellX = (i: number): number => -ARENA_HALF_X + (i + 0.5) * CELL;
+export const cellZ = (j: number): number => -ARENA_HALF_Z + (j + 0.5) * CELL;
+export const cellI = (x: number): number =>
+  Math.min(COLS - 1, Math.max(0, Math.floor((x + ARENA_HALF_X) / CELL)));
+export const cellJ = (z: number): number =>
+  Math.min(ROWS - 1, Math.max(0, Math.floor((z + ARENA_HALF_Z) / CELL)));
 
-const key = (n: Node): number => (n.h * COLS + n.j) * COLS + n.i;
+const key = (n: Node): number => (n.h * ROWS + n.j) * COLS + n.i;
 
 const DIRS: Array<[number, number]> = [
   [1, 0],
@@ -79,6 +83,8 @@ const DIRS: Array<[number, number]> = [
 ];
 
 export interface NavOptions {
+  /** Ladders carry a walker between their foot and their top (default on). */
+  ladders?: boolean;
   /** Allow jumping over low walls and up onto low ledges. */
   hop?: boolean;
   /** Cells that may not be entered. */
@@ -92,11 +98,45 @@ function neighbours(
   const feet = node.h * 0.05;
   const result: Array<{ node: Node; cost: number }> = [];
 
+  if (options.ladders !== false) {
+    for (const ladder of ARENA_LAYOUT.ladders) {
+      if (
+        node.i === cellI(ladder.approach.x) &&
+        node.j === cellJ(ladder.approach.z) &&
+        node.h === Math.round(ladder.bottomY / 0.05)
+      ) {
+        result.push({
+          node: {
+            i: cellI(ladder.exit.x),
+            j: cellJ(ladder.exit.z),
+            h: Math.round(ladder.topY / 0.05),
+          },
+          cost: 6,
+        });
+      }
+
+      if (
+        node.i === cellI(ladder.exit.x) &&
+        node.j === cellJ(ladder.exit.z) &&
+        node.h === Math.round(ladder.topY / 0.05)
+      ) {
+        result.push({
+          node: {
+            i: cellI(ladder.approach.x),
+            j: cellJ(ladder.approach.z),
+            h: Math.round(ladder.bottomY / 0.05),
+          },
+          cost: 6,
+        });
+      }
+    }
+  }
+
   for (const [di, dj] of DIRS) {
     const i = node.i + di;
     const j = node.j + dj;
 
-    if (i < 0 || j < 0 || i >= COLS || j >= COLS) {
+    if (i < 0 || j < 0 || i >= COLS || j >= ROWS) {
       continue;
     }
 
@@ -216,7 +256,7 @@ export function walkField(
   // Maps without a custom restriction are reused: many tests ask for the same one.
   const cacheKey = options.forbid
     ? null
-    : `${startX},${startZ},${startFeet},${options.hop ? 1 : 0}`;
+    : `${startX},${startZ},${startFeet},${options.hop ? 1 : 0},${options.ladders === false ? 0 : 1}`;
   const cached = cacheKey ? fieldCache.get(cacheKey) : undefined;
 
   if (cached) {
@@ -224,8 +264,8 @@ export function walkField(
   }
 
   const start: Node = {
-    i: cellOf(startX),
-    j: cellOf(startZ),
+    i: cellI(startX),
+    j: cellJ(startZ),
     h: Math.round(startFeet / 0.05),
   };
   const distance = new Map<number, number>([[key(start), 0]]);
@@ -260,13 +300,27 @@ export function walkField(
   return field;
 }
 
+/** Walking distance to a point at one exact floor height (Infinity if it cannot be reached). */
+export function distanceAtHeight(
+  field: Field,
+  x: number,
+  z: number,
+  feet: number,
+): number {
+  return (
+    field.distance.get(
+      key({ i: cellI(x), j: cellJ(z), h: Math.round(feet / 0.05) }),
+    ) ?? Infinity
+  );
+}
+
 /** Shortest walking distance to a point (the lowest over every height there). */
 export function distanceTo(field: Field, x: number, z: number): number {
-  const i = cellOf(x);
-  const j = cellOf(z);
+  const i = cellI(x);
+  const j = cellJ(z);
   let best = Infinity;
 
-  for (let h = -1; h <= 100; h++) {
+  for (let h = -1; h <= 300; h++) {
     best = Math.min(best, field.distance.get(key({ i, j, h })) ?? Infinity);
   }
 
@@ -278,12 +332,12 @@ export function pathTo(
   x: number,
   z: number,
 ): Array<{ x: number; z: number; feet: number }> {
-  const i = cellOf(x);
-  const j = cellOf(z);
+  const i = cellI(x);
+  const j = cellJ(z);
   let at: Node | null = null;
   let best = Infinity;
 
-  for (let h = 0; h <= 100; h++) {
+  for (let h = 0; h <= 300; h++) {
     const d = field.distance.get(key({ i, j, h })) ?? Infinity;
 
     if (d < best) {
@@ -306,7 +360,7 @@ export function pathTo(
 export function floorCells(): Array<{ x: number; z: number }> {
   const cells: Array<{ x: number; z: number }> = [];
 
-  for (let j = 0; j < COLS; j++) {
+  for (let j = 0; j < ROWS; j++) {
     for (let i = 0; i < COLS; i++) {
       if (!world.isBlocked(cellX(i), cellZ(j), 0, PLAYER_RADIUS)) {
         cells.push({ x: cellX(i), z: cellZ(j) });
@@ -331,32 +385,11 @@ export function canSee(
 
 export const SPAWNS = ARENA_LAYOUT.spawnPoints;
 
-/** The real path through a list of waypoints: shortest walking path leg by leg. */
-export function routePath(
-  waypoints: ReadonlyArray<readonly [number, number]>,
-  options: NavOptions = { hop: true },
-): Array<{ x: number; z: number; feet: number }> | null {
-  const path: Array<{ x: number; z: number; feet: number }> = [];
-  let feet = 0;
-
-  for (let k = 0; k + 1 < waypoints.length; k++) {
-    const [ax, az] = waypoints[k];
-    const [bx, bz] = waypoints[k + 1];
-    const field = walkField(ax, az, feet, options);
-
-    if (distanceTo(field, bx, bz) === Infinity) {
-      return null;
-    }
-
-    const leg = pathTo(field, bx, bz);
-
-    path.push(...(k === 0 ? leg : leg.slice(1)));
-    feet = leg[leg.length - 1].feet;
-  }
-
-  return path;
-}
-
+/**
+ * Every place a player can actually stand and reach on foot (or by a hop),
+ * starting from the first spawn: floor, platform tops, ramps and steps, but not
+ * the tops of blocks and columns that nobody can climb onto.
+ */
 export function pathLength(
   path: ReadonlyArray<{ x: number; z: number }>,
 ): number {
@@ -369,11 +402,6 @@ export function pathLength(
   return length;
 }
 
-/**
- * Every place a player can actually stand and reach on foot (or by a hop),
- * starting from the first spawn: floor, platform tops, ramps and steps, but not
- * the tops of blocks and columns that nobody can climb onto.
- */
 export function reachableStands(
   step = 1,
 ): Array<{ x: number; z: number; feet: number }> {
@@ -381,8 +409,8 @@ export function reachableStands(
   const stands: Array<{ x: number; z: number; feet: number }> = [];
 
   for (const k of field.distance.keys()) {
-    const h = Math.floor(k / (COLS * COLS));
-    const j = Math.floor((k % (COLS * COLS)) / COLS);
+    const h = Math.floor(k / (COLS * ROWS));
+    const j = Math.floor((k % (COLS * ROWS)) / COLS);
     const i = k % COLS;
 
     if (i % step === 0 && j % step === 0) {
