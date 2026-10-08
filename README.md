@@ -87,7 +87,7 @@ Each player owns their own inventory and selection ([src/inventory/PlayerUtiliti
 | Crouch | Hold `C` | Deep crouch. Slower movement, with crouch walk, backward and strafe animations. No crouch sprint |
 | Stand from crouch | `Space` while crouched | Stands you up (no jump) until `C` is released |
 
-Approximate speeds: walk 5.5, sprint 8.5, crouch 2.2 (world units per second). Movement is slowed while punching.
+Approximate speeds (metres per second): run 6.0, sprint 8.0, crouch 2.2. Strafing alone is 75% of those. Movement is slowed while punching.
 
 ### Camera
 

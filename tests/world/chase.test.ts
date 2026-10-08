@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SOURCE_MOVEMENT } from "../../src/player/SourceMovement";
 
 import { ARENA_LAYOUT } from "../../src/world/ArenaLayout";
 import { ARENA_ROUTES } from "../../src/world/ArenaRoutes";
@@ -43,7 +44,7 @@ for (let k = 1; k < loop.length; k++) {
 
 /** Metres of path a runner covers each tick (sprint speed over 1/16 s). */
 const TICKS_PER_SECOND = 16;
-const SPEED = 8.5;
+const SPEED = SOURCE_MOVEMENT.SPRINT_SPEED;
 const CATCH = 1.5;
 
 /** Index of the loop point `metres` further on than `from`. */

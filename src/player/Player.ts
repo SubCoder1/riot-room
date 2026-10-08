@@ -2,6 +2,12 @@ import * as THREE from "three";
 
 import { InputManager } from "../input/InputManager";
 import {
+  SOURCE_MOVEMENT,
+  accelerate,
+  steerInAir,
+  applyFriction,
+} from "./SourceMovement";
+import {
   PLAYER_RADIUS,
   SNAP_DOWN,
   type ArenaCollision,
@@ -64,9 +70,12 @@ export class Player {
    * ========================================================
    */
 
-  private readonly moveSpeed = 5.5;
+  // Speeds and acceleration follow CS:GO (see SourceMovement): the normal
+  // speed is a rifle's, Shift is a quick sprint, strafing is slower, and there
+  // are no instant starts or stops, so a moving player can be led and hit.
+  private readonly moveSpeed = SOURCE_MOVEMENT.RUN_SPEED;
 
-  private readonly sprintSpeed = 8.5;
+  private readonly sprintSpeed = SOURCE_MOVEMENT.SPRINT_SPEED;
 
   private readonly crouchSpeed = 2.2;
 
@@ -87,9 +96,6 @@ export class Player {
   private jumpBufferLeft = 0;
 
   private coyoteLeft = 0;
-
-  /** How fast (m/s per second) airborne velocity can be steered by the keys. */
-  private readonly airControl = 30;
 
   /**
    * Gravity strength.
@@ -191,6 +197,13 @@ export class Player {
      * ======================================================
      */
 
+    // Source-style: friction first (on the ground only), then acceleration
+    // toward the wished direction. Nothing starts or stops instantly, and in
+    // the air the momentum of a jump carries on.
+    if (this.grounded) {
+      applyFriction(this.velocity, dt);
+    }
+
     if (moveX !== 0 || moveZ !== 0) {
       /**
        * Player forward direction.
@@ -229,7 +242,12 @@ export class Player {
        */
       direction.normalize();
 
-      let speed = this.isSprinting ? this.sprintSpeed : this.moveSpeed;
+      let speed: number = this.isSprinting ? this.sprintSpeed : this.moveSpeed;
+
+      // Side-stepping alone is slower than running forward or back.
+      if (moveZ === 0) {
+        speed *= SOURCE_MOVEMENT.STRAFE_FACTOR;
+      }
 
       if (this.isCrouching) {
         speed = this.crouchSpeed;
@@ -239,29 +257,26 @@ export class Player {
         speed *= this.punchSpeedFactor;
       }
 
-      const wantX = direction.x * speed;
-      const wantZ = direction.z * speed;
-
       if (this.grounded) {
-        this.velocity.x = wantX;
-        this.velocity.z = wantZ;
+        accelerate(
+          this.velocity,
+          direction,
+          speed,
+          SOURCE_MOVEMENT.GROUND_ACCELERATE,
+          dt,
+        );
       } else {
         // In the air the player can steer, but not stop on the spot.
-        const maxChange = this.airControl * dt;
-        const dx = wantX - this.velocity.x;
-        const dz = wantZ - this.velocity.z;
-        const gap = Math.hypot(dx, dz);
-        const scale = gap > maxChange ? maxChange / gap : 1;
-
-        this.velocity.x += dx * scale;
-        this.velocity.z += dz * scale;
+        steerInAir(
+          this.velocity,
+          direction.x * speed,
+          direction.z * speed,
+          SOURCE_MOVEMENT.AIR_CONTROL * dt,
+        );
       }
-    } else if (this.grounded) {
-      this.velocity.x = 0;
-      this.velocity.z = 0;
     }
 
-    // Airborne with no keys held: the jump carries on with its momentum.
+    // Whatever speed is left (running, braking, or a jump's momentum) moves the player.
     if (this.velocity.x !== 0 || this.velocity.z !== 0) {
       if (this.world) {
         const moved = this.world.moveHorizontal(

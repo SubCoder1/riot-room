@@ -126,7 +126,9 @@ describe("Player on the arena", () => {
     const hop = spawnPlayer(lx, 0, low.minZ - 3, SOUTH);
 
     hop.input.keys.add("KeyW");
-    hop.step(0.15);
+    // Movement now accelerates (CS:GO style), so it takes a little longer to
+    // get up to speed before the jump.
+    hop.step(0.25);
     hop.input.jumpQueued = true;
     hop.step(1.4);
     expect(hop.player.position.z).toBeGreaterThan(low.maxZ);
@@ -136,7 +138,7 @@ describe("Player on the arena", () => {
     const jump = spawnPlayer(bx, 0, block.maxZ + 3, NORTH);
 
     jump.input.keys.add("KeyW");
-    jump.step(0.15);
+    jump.step(0.25);
     jump.input.jumpQueued = true;
     jump.step(1.5);
     expect(jump.player.position.z).toBeGreaterThan(block.maxZ);
@@ -146,10 +148,11 @@ describe("Player on the arena", () => {
     const step = layout.platforms.find((p) => p.id === "east-step")!;
     const sx = (step.minX + step.maxX) / 2;
     // Stand south of the step, face it, jump while walking in.
-    const p = spawnPlayer(sx, 0, step.maxZ + 2, NORTH);
+    const p = spawnPlayer(sx, 0, step.maxZ + 3, NORTH);
 
     p.input.keys.add("KeyW");
-    p.step(0.2);
+    // A run-up long enough to be at full speed and about a metre from the step.
+    p.step(0.47);
     p.input.jumpQueued = true;
     p.step(0.6);
     p.input.keys.clear();
@@ -165,7 +168,7 @@ describe("Player on the arena", () => {
     );
 
     q.input.keys.add("KeyW");
-    q.step(0.1);
+    q.step(0.2);
     q.input.jumpQueued = true;
     q.step(1.5);
     expect(q.feet()).toBeLessThan(tower.height - 1);
@@ -175,10 +178,10 @@ describe("Player on the arena", () => {
     const step = layout.platforms.find((p) => p.id === "east-step")!;
     // The step is touching the tower's west face: walk east into it and jump.
     const z = (step.minZ + step.maxZ) / 2;
-    const p = spawnPlayer(step.maxX - 1.5, step.height, z, EAST);
+    const p = spawnPlayer(step.maxX - 2.5, step.height, z, EAST);
 
     p.input.keys.add("KeyW");
-    p.step(0.15);
+    p.step(0.42);
     p.input.jumpQueued = true;
     p.step(0.6);
     p.input.keys.clear();
