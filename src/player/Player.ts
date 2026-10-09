@@ -46,7 +46,7 @@ interface Vault {
 export class Player {
   private vault: Vault | null = null;
 
-  /** Vaulting over a railing or box (a timed move, Space with W held at the obstacle). */
+  /** Vaulting over a railing or box (a timed move, Space with W, A or D held at the obstacle). */
   public get isVaulting(): boolean {
     return this.vault !== null;
   }
@@ -58,6 +58,8 @@ export class Player {
     near: number;
     far: number;
     distance: number;
+    dirX: number;
+    dirZ: number;
   } | null {
     const v = this.vault;
 
@@ -68,18 +70,23 @@ export class Player {
           near: v.plan.near,
           far: v.plan.far,
           distance: v.plan.distance,
+          dirX: v.dirX,
+          dirZ: v.dirZ,
         }
       : null;
   }
 
-  /** Starts a vault over what is straight ahead, if there is one to vault. */
-  private beginVault(): boolean {
+  /**
+   * Starts a vault over what is straight ahead (side 0), or straight out to the
+   * right (1) or left (-1), if there is one to vault.
+   */
+  private beginVault(side: -1 | 0 | 1 = 0): boolean {
     if (!this.world || !this.grounded || this.isCrouching) {
       return false;
     }
 
-    const dirX = -Math.sin(this.yaw);
-    const dirZ = -Math.cos(this.yaw);
+    const dirX = side === 0 ? -Math.sin(this.yaw) : Math.cos(this.yaw) * side;
+    const dirZ = side === 0 ? -Math.cos(this.yaw) : -Math.sin(this.yaw) * side;
     const startFeet = this.position.y - this.eyeHeight;
     const plan = this.world.findVault(
       this.position.x,
@@ -677,8 +684,13 @@ export class Player {
       ? this.coyoteTime
       : Math.max(0, this.coyoteLeft - dt);
 
-    // W and Space at a railing or a box vaults over it instead of jumping up.
-    if (this.jumpBufferLeft > 0 && moveZ > 0 && this.beginVault()) {
+    // W and Space at a railing or a box vaults over it instead of jumping up; A or
+    // D and Space (strafing, no W or S) vaults sideways over one beside you.
+    if (
+      this.jumpBufferLeft > 0 &&
+      ((moveZ > 0 && this.beginVault()) ||
+        (moveZ === 0 && moveX !== 0 && this.beginVault(moveX > 0 ? 1 : -1)))
+    ) {
       this.updateVault(dt);
 
       return;

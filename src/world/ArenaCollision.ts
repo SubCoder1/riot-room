@@ -3,6 +3,7 @@ import {
   ARENA_HALF_Z,
   allSolids,
   type ArenaLayout,
+  type BoxSolid,
   type RampSolid,
   type Solid,
 } from "./ArenaLayout";
@@ -122,6 +123,15 @@ export class ArenaCollision {
   /** Walls, railings, posts and lids too narrow to stand on: they block, but are no floor. */
   private readonly thin = new Set<Solid>();
 
+  /**
+   * The steps of every flight, with the way it rises: a flight is climbed from
+   * its low end only, never from the side (or from behind a wall beside it).
+   */
+  private readonly stepInfo = new Map<
+    Solid,
+    { alongX: boolean; sign: number; min: number; max: number }
+  >();
+
   /** Solids sorted into coarse square cells, so a query only looks at its neighbours. */
   private readonly cells = new Map<number, Solid[]>();
 
@@ -148,6 +158,21 @@ export class ArenaCollision {
         Math.min(solid.maxX - solid.minX, solid.maxZ - solid.minZ) < THIN_TOP
       ) {
         this.thin.add(solid);
+      }
+    }
+
+    for (const stairs of layout.stairs) {
+      const info = {
+        alongX: stairs.direction.endsWith("x"),
+        sign: stairs.direction.startsWith("+") ? 1 : -1,
+        min: stairs.crossMin,
+        max: stairs.crossMax,
+      };
+
+      for (const solid of this.solids) {
+        if (solid.id.startsWith(`${stairs.id}-step`)) {
+          this.stepInfo.set(solid, info);
+        }
       }
     }
 
@@ -294,7 +319,16 @@ export class ArenaCollision {
 
     // A wall, railing or post is not a step: however low it is, once it is
     // above the feet it is in the way (a body does not wade into it).
-    const limit = body && this.thin.has(solid) ? topLimit - STEP_UP : topLimit;
+    // A step seen from the side of its flight is a wall too: stairs are climbed
+    // from the front.
+    const info = this.stepInfo.get(solid);
+    const across = info ? (info.alongX ? z : x) : 0;
+    const fromSide =
+      info !== undefined && (across < info.min || across > info.max);
+    const limit =
+      body && (this.thin.has(solid) || fromSide)
+        ? topLimit - STEP_UP
+        : topLimit;
 
     // A railing stops a body higher than it is drawn.
     const top =
@@ -375,7 +409,8 @@ export class ArenaCollision {
         height === NO_SURFACE &&
         stepReach > 0 &&
         solid.kind === "box" &&
-        solid.height > feetY + 0.02
+        solid.height > feetY + 0.02 &&
+        this.reachesFromFront(solid, x, z)
       ) {
         height = this.solidHeight(solid, x, z, stepReach);
       }
@@ -386,6 +421,31 @@ export class ArenaCollision {
     }
 
     return ground;
+  }
+
+  /**
+   * Whether (x, z) is in front of `solid` for climbing it from a distance. Only
+   * a step of a flight is picky: it is climbed from straight in front of the
+   * flight, not from beside it or from behind (a wall in the way).
+   */
+  private reachesFromFront(solid: BoxSolid, x: number, z: number): boolean {
+    const info = this.stepInfo.get(solid);
+
+    if (!info) {
+      return true;
+    }
+
+    const across = info.alongX ? z : x;
+
+    if (across < info.min || across > info.max) {
+      return false;
+    }
+
+    const along = info.alongX ? x : z;
+    const low = info.alongX ? solid.minX : solid.minZ;
+    const high = info.alongX ? solid.maxX : solid.maxZ;
+
+    return info.sign > 0 ? along <= low + 1e-6 : along >= high - 1e-6;
   }
 
   /**
@@ -799,6 +859,11 @@ export class ArenaCollision {
     let nearest = Number.POSITIVE_INFINITY;
 
     for (const solid of this.solids) {
+      // A roof or deck far overhead is no obstacle on the ground.
+      if (solid.kind === "box" && (solid.bottom ?? 0) > 6) {
+        continue;
+      }
+
       const distance =
         solid.kind === "cylinder"
           ? Math.max(Math.hypot(x - solid.x, z - solid.z) - solid.radius, 0)

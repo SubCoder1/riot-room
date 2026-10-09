@@ -47,7 +47,7 @@ export function ladderYaw(ladder: LadderDefinition): number {
 
 /**
  * The ladder a player at (x, z) with their feet at `feetY` could grab: close
- * enough, within its height, and looking toward it. It works from the bottom
+ * enough, within its height, on its face side and looking toward it. It works from the bottom
  * and from the top edge (to climb down). The nearest one wins.
  */
 export function findLadder(
@@ -70,6 +70,17 @@ export function findLadder(
     const dx = ladder.x - x;
     const dz = ladder.z - z;
     const distance = Math.hypot(dx, dz);
+
+    // Only from the face side of the ladder, never from behind the wall it is
+    // fixed to; from its top edge (to climb down) the player is on the far side
+    // of the face, but standing at the top.
+    const n = ladderNormal(ladder.normal);
+    const inFront = -(dx * n.x + dz * n.z) >= -0.05;
+    const atTop = feetY >= ladder.topY - 0.3;
+
+    if (!inFront && !atTop) {
+      continue;
+    }
 
     if (distance > bestDistance) {
       continue;

@@ -4,6 +4,7 @@ import {
   CLIMB,
   angleBetween,
   findLadder,
+  ladderNormal,
   ladderYaw,
 } from "../../src/player/Climb";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
@@ -26,6 +27,37 @@ function atFoot(index: number) {
 
   return { ladder, p };
 }
+
+describe("Ladders are grabbed from their face only", () => {
+  it("every ladder can be grabbed from its front, and none from behind the wall it is fixed to", () => {
+    for (const ladder of ladders) {
+      if (ladder.topY - ladder.bottomY < 1) continue;
+
+      const n = ladderNormal(ladder.normal);
+      const midFeet = (ladder.bottomY + ladder.topY) / 2;
+      // Looking at the ladder from a metre in front, and from a metre behind.
+      const yawToward = (fx: number, fz: number): number =>
+        Math.atan2(-fx, -fz);
+      const front = {
+        x: ladder.x + n.x * 1,
+        z: ladder.z + n.z * 1,
+      };
+      const behind = {
+        x: ladder.x - n.x * 1,
+        z: ladder.z - n.z * 1,
+      };
+
+      expect(
+        findLadder([ladder], front.x, front.z, midFeet, yawToward(-n.x, -n.z)),
+        `${ladder.id} front`,
+      ).toBe(ladder);
+      expect(
+        findLadder([ladder], behind.x, behind.z, midFeet, yawToward(n.x, n.z)),
+        `${ladder.id} behind`,
+      ).toBeNull();
+    }
+  });
+});
 
 describe("Finding a ladder", () => {
   it.each(ladders.map((l, i) => [l.id, i] as const))(
