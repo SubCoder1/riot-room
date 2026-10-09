@@ -124,6 +124,32 @@ describe("Player on the map", () => {
     expect(vault.feet()).toBeLessThan(UPPER - 0.5);
   });
 
+  it("A or D and Space at a railing beside you vaults sideways over it, whichever way you face", () => {
+    // The west walkway's railing is a line at x = -18.1, the arena beyond it.
+    const vault = spawnPlayer(-18.9, UPPER, 5, NORTH);
+
+    vault.input.keys.add("KeyD");
+    vault.step(0.05);
+    vault.input.jumpQueued = true;
+    vault.step(0.1);
+    expect(vault.player.isVaulting).toBe(true);
+    // The pose is told which way it travels: east, while the body faced north.
+    expect(vault.player.vaultPose!.dirX).toBeGreaterThan(0.9);
+    vault.step(2);
+    expect(vault.player.isVaulting).toBe(false);
+    expect(vault.player.position.x).toBeGreaterThan(-17.4);
+    expect(vault.feet()).toBeLessThan(UPPER - 0.5);
+
+    // With no rail beside you, A and Space is just a jump.
+    const open = spawnPlayer(-25, UPPER, 0, NORTH);
+
+    open.input.keys.add("KeyA");
+    open.step(0.05);
+    open.input.jumpQueued = true;
+    open.step(0.1);
+    expect(open.player.isVaulting).toBe(false);
+  });
+
   it("jumping in a doorway bumps the head on the wall above it, and still walks under it", () => {
     // The Warehouse's north door at x = 20 (a 2 m opening, wall above 2.6 m).
     const door = spawnPlayer(20, UPPER, 13.6, NORTH);
@@ -290,6 +316,44 @@ describe("Player on the map", () => {
     expect(up.player.position.z).toBeGreaterThan(3);
   });
 
+  it.each(["west", "east", "north", "south"])(
+    "stands, crouches and walks along the %s perch, and falls off its outer edge to the floor",
+    (name) => {
+      const deck = layout.platforms.find(
+        (p) => p.id === `hang-perch-${name}-deck`,
+      )!;
+      const cx = (deck.minX + deck.maxX) / 2;
+      const cz = (deck.minZ + deck.maxZ) / 2;
+      const zone = layout.hangZones.find((z) => z.id === `hang-perch-${name}`)!;
+      // Put the character on the ledge (it is reached by grapple, not walked to).
+      const p = spawnPlayer(cx, deck.height, cz, yawFor(0, 1));
+
+      p.step(0.5);
+      expect(p.player.isGrounded, name).toBe(true);
+      expect(p.feet(), name).toBeCloseTo(deck.height, 2);
+
+      // Crouching on it keeps the character on it.
+      p.input.keys.add("KeyC");
+      p.step(0.6);
+      expect(p.player.isGrounded, name).toBe(true);
+      expect(p.feet(), name).toBeCloseTo(deck.height, 2);
+      p.input.keys.clear();
+      p.step(0.4);
+
+      // Walking out to the outer edge, then off it, drops to the arena floor.
+      const outX = zone.x - cx;
+      const outZ = zone.z - cz;
+
+      p.input.yaw = yawFor(outX, outZ);
+      p.input.keys.add("KeyW");
+      p.step(3);
+      p.input.keys.clear();
+      p.step(3);
+      expect(p.player.isGrounded, name).toBe(true);
+      expect(p.feet(), name).toBeLessThan(1);
+    },
+  );
+
   it("can never leave the map, even sprinting into a wall for a long time", () => {
     for (const yaw of [NORTH, SOUTH, EAST, WEST, yawFor(1, 1), yawFor(-1, 1)]) {
       const p = spawnPlayer(1, 0, 1, yaw);
@@ -336,8 +400,27 @@ describe("Jumping under a roof", () => {
 
   it("rising never carries the head through the roof", () => {
     const room = layout.rooms.find((r) => r.id === "room-archive")!;
-    const roof = layout.platforms.find((r) => r.id === "room-archive-roof")!;
-    const shelf = layout.walls.find((w) => w.id === "shelf-archive-1")!;
+    // A shelf under a piece of the Archive's roof (not under its opening).
+    const roofPieces = layout.platforms.filter((r) =>
+      r.id.startsWith("room-archive-roof"),
+    );
+    const roofAbove = (w: {
+      minX: number;
+      maxX: number;
+      minZ: number;
+      maxZ: number;
+    }) =>
+      roofPieces.find(
+        (r) =>
+          (w.minX + w.maxX) / 2 > r.minX &&
+          (w.minX + w.maxX) / 2 < r.maxX &&
+          (w.minZ + w.maxZ) / 2 > r.minZ &&
+          (w.minZ + w.maxZ) / 2 < r.maxZ,
+      );
+    const shelf = layout.walls.find(
+      (w) => w.id.startsWith("shelf-archive") && roofAbove(w),
+    )!;
+    const roof = roofAbove(shelf)!;
     const p = spawnPlayer(
       (shelf.minX + shelf.maxX) / 2,
       shelf.height,
@@ -389,19 +472,27 @@ describe("Thin tops", () => {
 describe("Props you can step up on", () => {
   it("low boxes can be stood on however narrow (a console, a maintenance box), tall posts cannot", () => {
     const low = layout.walls.find((w) => w.id === "box-server")!; // 1.1 m, 0.8 m wide
-    const post = layout.walls.find((w) => w.id === "post-truss-nw")!;
     const lx = (low.minX + low.maxX) / 2;
     const lz = (low.minZ + low.maxZ) / 2;
-    const px = (post.minX + post.maxX) / 2;
-    const pz = (post.minZ + post.maxZ) / 2;
     const onLow = spawnPlayer(lx, low.height, lz, NORTH);
-    const onPost = spawnPlayer(px, post.height, pz, NORTH);
 
     onLow.step(1);
-    onPost.step(2);
-
     expect(onLow.feet()).toBeCloseTo(low.height, 1);
-    expect(Math.abs(onPost.feet() - post.height)).toBeGreaterThan(0.5);
+
+    // A tall steel post (a thin column) is no floor: nobody stands on its top.
+    const map = new MapBuilder(20, 20);
+
+    map.createFloorSection(
+      "floor",
+      { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+      4,
+    );
+    map.createSteelColumn("post", 0, 0, 4, 7);
+
+    const posts = new ArenaCollision(map.build());
+
+    expect(posts.isBlocked(0.3, 0, 4, 0.2)).toBe(true);
+    expect(posts.groundHeight(0, 0, 7)).toBe(4);
   });
 
   it("a crate can be jumped onto from the floor, a 2 m rack cannot", () => {

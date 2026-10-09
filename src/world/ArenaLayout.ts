@@ -49,6 +49,12 @@ export interface BoxSolid {
    * sight lines only count its drawn height.
    */
   blockTop?: number;
+  /**
+   * Drawn as tinted glass instead of its role's material. Collision is by role
+   * as usual (a glass barrier stops a body like a railing, a glass roof panel
+   * holds you up like a roof).
+   */
+  glass?: boolean;
   minX: number;
   maxX: number;
   minZ: number;
@@ -209,8 +215,6 @@ export const ARENA_DEPTH = 48;
 export const ARENA_HALF_X = ARENA_WIDTH / 2;
 export const ARENA_HALF_Z = ARENA_DEPTH / 2;
 
-/** Height of the outer walls: well above the upper floor and the roofs. */
-export const OUTER_WALL_HEIGHT = 13.5;
 export const OUTER_WALL_THICKNESS = 0.45;
 
 /** Height of the upper floor above the ground. */
@@ -221,8 +225,16 @@ export const UPPER_FLOOR_Y = 4;
  * room roofs, a medium roof over the decks and walkways, and a raised high roof.
  */
 export const ROOF_LOW = 8.1;
+
 export const ROOF_MID = 9.3;
 export const ROOF_HIGH = 10.8;
+
+/**
+ * The wall round the whole edge of the map: well above the highest roof you
+ * can stand on, so from any roof it reads as the edge of the world and not
+ * something to jump over.
+ */
+export const PERIMETER_WALL_HEIGHT = ROOF_HIGH + 2.4;
 
 /** Room walls above their floor, and the height of a doorway. */
 export const ROOM_WALL_HEIGHT = 3.8;
@@ -283,7 +295,12 @@ export interface HangZone {
   /** Which way the beam runs and how long it is (metres). */
   axis: "x" | "z";
   length: number;
+  /** The floor under the hang point (the arena ground, a deck, a warehouse floor). */
+  floorY: number;
 }
+
+/** How far below the beam's underside a hanging character's feet hang. */
+export const HANG_DROP = 1.7;
 
 export interface ArenaLayout {
   width: number;

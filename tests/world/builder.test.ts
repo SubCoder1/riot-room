@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { buildArena, createLadder } from "../../src/world/ArenaBuilder";
-import { OUTER_WALL_HEIGHT } from "../../src/world/ArenaLayout";
+import { PERIMETER_WALL_HEIGHT, ROOF_HIGH } from "../../src/world/ArenaLayout";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 
 function meshes(root: THREE.Object3D): THREE.Mesh[] {
@@ -19,7 +19,7 @@ describe("Arena meshes", () => {
   const arena = buildArena(ARENA_LAYOUT);
   const all = meshes(arena);
 
-  it("builds the floor, the outer walls, every solid, every roof and lintel, and every ladder", () => {
+  it("builds the floor, the perimeter walls, every solid, every roof and lintel, and every ladder", () => {
     const steps = ARENA_LAYOUT.stairs.reduce((n, s) => n + s.steps, 0);
     const ladderParts = ARENA_LAYOUT.ladders.reduce(
       (n, ladder) => n + meshes(createLadder(ladder)).length,
@@ -141,7 +141,7 @@ describe("Arena meshes", () => {
       (w) => (w.role ?? "floor") === "wall",
     ).length;
 
-    // Every wall piece (the wall over each door included) and the four outer walls.
+    // Every wall piece (the wall over each door included) and the four perimeter walls.
     expect(painted.length + bricks.length).toBe(wallCount + 4);
     expect(painted.length).toBeGreaterThan(bricks.length);
     expect(materials.size).toBeLessThanOrEqual(3);
@@ -171,25 +171,71 @@ describe("Arena meshes", () => {
     expect(material.emissive.getHex()).toBe(0);
     expect(steel[0].userData.members).toHaveLength(ARENA_LAYOUT.steel.length);
     expect(ARENA_LAYOUT.steel.length).toBeGreaterThan(40);
-    expect(ARENA_LAYOUT.steel.length).toBeLessThan(120);
+    expect(ARENA_LAYOUT.steel.length).toBeLessThan(400);
 
-    // Only the floor columns are solid.
     const solid = ARENA_LAYOUT.steel.filter((m) => m.solid);
 
     expect(solid.length).toBeGreaterThan(0);
+    // Only the columns are solid.
     expect(solid.every((m) => m.kind === "column")).toBe(true);
   });
 
-  it("the outer walls enclose the whole 64 x 48 m map", () => {
+  it("floating slabs in the open stand on posts that meet their undersides, and the service corridor is roofed around its ladder", () => {
+    const posts = (prefix: string) =>
+      ARENA_LAYOUT.steel.filter((m) => m.id.startsWith(prefix) && m.solid);
+    const slab = (id: string) =>
+      ARENA_LAYOUT.platforms.find((p) => p.id === id)!;
+
+    for (const [prefix, id] of [
+      ["steel-post-south", "balcony-south"],
+      ["steel-post-maintenance", "platform-maintenance"],
+      ["steel-post-nw", "balcony-nw"],
+    ] as const) {
+      const found = posts(prefix);
+      const platform = slab(id);
+
+      expect(found, prefix).toHaveLength(2);
+
+      for (const post of found) {
+        // From the ground to the slab's underside, under the slab.
+        expect(post.from[1]).toBe(0);
+        expect(post.to[1]).toBeCloseTo(platform.bottom!);
+        expect(post.to[0]).toBeGreaterThan(platform.minX);
+        expect(post.to[0]).toBeLessThan(platform.maxX);
+        expect(post.to[2]).toBeGreaterThan(platform.minZ);
+        expect(post.to[2]).toBeLessThan(platform.maxZ);
+      }
+    }
+
+    const corridor = ARENA_LAYOUT.platforms.filter((p) =>
+      p.id.startsWith("roof-corridor-nw"),
+    );
+    const ladder = ARENA_LAYOUT.ladders.find(
+      (l) => l.id === "secret-corridor",
+    )!;
+
+    expect(corridor.length).toBeGreaterThan(0);
+    // No roof piece above the ladder.
+    expect(
+      corridor.some((p) => p.minX < ladder.x + 0.4 && p.maxX > ladder.x - 0.4),
+    ).toBe(false);
+  });
+
+  it("the whole 64 x 48 m map is ringed by the perimeter wall and open to the sky", () => {
     arena.updateMatrixWorld(true);
 
     const box = new THREE.Box3().setFromObject(arena);
 
-    expect(box.max.y).toBeCloseTo(OUTER_WALL_HEIGHT);
-    expect(box.max.x).toBeGreaterThan(32);
-    expect(box.min.x).toBeLessThan(-32);
-    expect(box.max.z).toBeGreaterThan(24);
-    expect(box.min.z).toBeLessThan(-24);
+    expect(box.max.y).toBeGreaterThanOrEqual(PERIMETER_WALL_HEIGHT);
+    expect(box.max.y).toBeLessThanOrEqual(14);
+    expect(box.max.x).toBeGreaterThanOrEqual(32);
+    expect(box.min.x).toBeLessThanOrEqual(-32);
+    expect(box.max.z).toBeGreaterThanOrEqual(24);
+    expect(box.min.z).toBeLessThanOrEqual(-24);
+  });
+
+  it("the perimeter wall is much taller than the highest roof you can stand on", () => {
+    expect(PERIMETER_WALL_HEIGHT).toBeGreaterThanOrEqual(ROOF_HIGH + 2);
   });
 
   it("a wall on a floor is drawn from the floor up, not from the ground", () => {

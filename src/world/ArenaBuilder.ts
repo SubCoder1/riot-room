@@ -1,8 +1,8 @@
 import * as THREE from "three";
 
 import {
-  OUTER_WALL_HEIGHT,
   OUTER_WALL_THICKNESS,
+  PERIMETER_WALL_HEIGHT,
   ROOF_MID,
   stairsToSteps,
   type ArenaLayout,
@@ -164,6 +164,7 @@ export function createArenaFloor(layout: ArenaLayout): THREE.Group {
   return group;
 }
 
+/** A wall all round the edge of the map, up to the first floor's roofs (the frame above it is open). */
 export function createOuterWalls(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
   const halfX = layout.width / 2;
@@ -184,7 +185,7 @@ export function createOuterWalls(layout: ArenaLayout): THREE.Group {
         x + width / 2,
         z - depth / 2,
         z + depth / 2,
-        OUTER_WALL_HEIGHT,
+        PERIMETER_WALL_HEIGHT,
         isBrickOuterWall(side)
           ? industrialMaterials.brick("worn")
           : industrialMaterials.paintedConcrete(
@@ -205,19 +206,29 @@ export function createPlatform(solid: BoxSolid): THREE.Object3D {
     solid.minZ,
     solid.maxZ,
     solid.height,
-    solid.role === "wall" && isBrickWall(solid.id)
-      ? industrialMaterials.brick(industrialMaterials.brickVariantFor(solid.id))
-      : solid.role === "wall"
-        ? industrialMaterials.paintedConcrete(
-            industrialMaterials.paintedVariantFor(solid.id),
+    solid.glass
+      ? industrialMaterials.glass()
+      : solid.role === "wall" && isBrickWall(solid.id)
+        ? industrialMaterials.brick(
+            industrialMaterials.brickVariantFor(solid.id),
           )
-        : solid.role && solid.role !== "floor"
-          ? roleMaterials[solid.role]
-          : industrialMaterials.floor(
-              industrialMaterials.floorVariantFor(solid.id),
-            ),
+        : solid.role === "wall"
+          ? industrialMaterials.paintedConcrete(
+              industrialMaterials.paintedVariantFor(solid.id),
+            )
+          : solid.role && solid.role !== "floor"
+            ? roleMaterials[solid.role]
+            : industrialMaterials.floor(
+                industrialMaterials.floorVariantFor(solid.id),
+              ),
     solid.base ?? solid.bottom ?? 0,
   );
+
+  // Glass is seen through: it casts no shadow and is drawn after what is behind it.
+  if (solid.glass) {
+    mesh.castShadow = false;
+    mesh.renderOrder = 2;
+  }
 
   // A hatch is a panel a touch smaller than its hole, so it never fights the roof.
   if (solid.role === "hatch") {

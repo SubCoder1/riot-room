@@ -14,6 +14,7 @@ import {
   createPaintedConcreteTextures,
   type PaintedConcreteTextures,
 } from "./PaintedConcreteTexture";
+import { createIndustrialGlassMaterial } from "./GlassMaterial";
 import { createIndustrialSteelMaterial } from "./SteelMaterial";
 import { createFloorMaterial, type FloorVariant } from "./FloorMaterial";
 
@@ -27,6 +28,7 @@ export class IndustrialMaterialLibrary {
   private textures: ConcreteTextures | null = null;
   private readonly floors = new Map<FloorVariant, THREE.MeshStandardMaterial>();
   private steelMaterial: THREE.MeshStandardMaterial | null = null;
+  private glassMaterial: THREE.MeshStandardMaterial | null = null;
   private brickTextures: BrickTextures | null = null;
   private paintedTextures: PaintedConcreteTextures | null = null;
   private readonly painted = new Map<
@@ -139,6 +141,13 @@ export class IndustrialMaterialLibrary {
     return this.steelMaterial;
   }
 
+  /** Tinted, see-through reinforced glass for skylights and roof barriers. */
+  public glass(): THREE.MeshStandardMaterial {
+    this.glassMaterial ??= createIndustrialGlassMaterial();
+
+    return this.glassMaterial;
+  }
+
   /** How many floor materials and textures exist (for tests and reports). */
   public get counts(): { materials: number; textures: number } {
     return {
@@ -146,7 +155,8 @@ export class IndustrialMaterialLibrary {
         this.floors.size +
         this.bricks.size +
         this.painted.size +
-        (this.steelMaterial ? 1 : 0),
+        (this.steelMaterial ? 1 : 0) +
+        (this.glassMaterial ? 1 : 0),
       textures:
         (this.textures ? 2 : 0) +
         (this.brickTextures ? 3 : 0) +

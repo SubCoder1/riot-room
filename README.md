@@ -15,44 +15,44 @@ npm run dev        # start the dev server (Vite)
 
 Open the URL Vite prints, then **click the game canvas** to capture the mouse (pointer lock). Press `Esc` to release it.
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Start the dev server |
-| `npm run build` | Type-check (`tsc`) and build for production |
-| `npm run preview` | Serve the production build |
-| `npm test` | Run the automated combat tests once |
-| `npm run test:watch` | Re-run tests when files change |
-| `npm run lint` / `lint:fix` | ESLint |
-| `npm run format` / `format:check` | Prettier |
+| Command                           | What it does                                |
+| --------------------------------- | ------------------------------------------- |
+| `npm run dev`                     | Start the dev server                        |
+| `npm run build`                   | Type-check (`tsc`) and build for production |
+| `npm run preview`                 | Serve the production build                  |
+| `npm test`                        | Run the automated combat tests once         |
+| `npm run test:watch`              | Re-run tests when files change              |
+| `npm run lint` / `lint:fix`       | ESLint                                      |
+| `npm run format` / `format:check` | Prettier                                    |
 
 ---
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| Mouse | Look around (also aims punches) |
-| `W` `A` `S` `D` | Move forward / left / back / right |
-| `Shift` + `W` / `S` | Sprint (run) forward / backward |
-| `Space` | Jump |
-| `C` (hold) | Crouch |
-| Mouse wheel | Switch utility: opens the weapon wheel and equips the next / previous slot at once |
-| Left click | Punch; with Rocks equipped, throw a rock (quick throw, or aimed while right click is held) |
-| `F` (hold) | Block |
-| `E` | Grab the ladder you are looking at when you are within about 1.8 m: standing, running or in mid-air after a jump. `E` on a ladder lets go; `Space` jumps off. On a ladder: `W` / `S` climb, `Space` jumps off backward. No punching, guarding or throwing while on a ladder. A ladder that climbs through a roof stops under a shut amber **hatch**: press `E` anywhere on that ladder to open it (it never lets go while the hatch is shut; also from above); it then stays open until the next round (`F10`). The character climbs hand over hand with its feet on the rungs; the pose follows the height climbed, so it stops when you stop and runs backward going down. In third person the camera moves behind the climber |
-| Right click (hold) | Aim a rock (only with Rocks equipped) |
-| `F3` | Toggle first person / third person camera |
+| Input               | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mouse               | Look around (also aims punches)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `W` `A` `S` `D`     | Move forward / left / back / right                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `Shift` + `W` / `S` | Sprint (run) forward / backward                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `Space`             | Jump                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `C` (hold)          | Crouch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Mouse wheel         | Switch utility: opens the weapon wheel and equips the next / previous slot at once                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Left click          | Punch; with Rocks equipped, throw a rock (quick throw, or aimed while right click is held)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `F` (hold)          | Block                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `E`                 | Grab the ladder you are looking at when you are within about 1.8 m: standing, running or in mid-air after a jump. `E` on a ladder lets go; `Space` jumps off. On a ladder: `W` / `S` climb, `Space` jumps off backward. No punching, guarding or throwing while on a ladder. A ladder that climbs through a roof stops under a shut amber **hatch**: press `E` anywhere on that ladder to open it (it never lets go while the hatch is shut; also from above); it then stays open until the next round (`F10`). The character climbs hand over hand with its feet on the rungs; the pose follows the height climbed, so it stops when you stop and runs backward going down. In third person the camera moves behind the climber |
+| Right click (hold)  | Aim a rock (only with Rocks equipped)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `F3`                | Toggle first person / third person camera                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### Weapon wheel
 
 Scroll the **mouse wheel** at any time (standing, running, punching, blocking) and a small weapon wheel appears in the middle of the screen while the next (scroll down) or previous (scroll up) slot is **equipped in the same moment**. Keep scrolling to keep stepping. About 0.7 seconds after the last scroll the wheel fades away by itself and your choice stays. It never blocks anything: you can keep punching, blocking and moving while it is up. The wheel is a screen overlay, so it works the same in first and third person.
 
-| Slot | Quantity | Note |
-| --- | --- | --- |
-| Rocks (top) | starts at 3 | |
-| Molotov (right) | starts at 0 | |
-| Smoke (left) | starts at 0 | |
-| Fists (bottom) | none | no utility: you use your fists (shown with a boxing glove) |
+| Slot            | Quantity    | Note                                                       |
+| --------------- | ----------- | ---------------------------------------------------------- |
+| Rocks (top)     | starts at 3 |                                                            |
+| Molotov (right) | starts at 0 |                                                            |
+| Smoke (left)    | starts at 0 |                                                            |
+| Fists (bottom)  | none        | no utility: you use your fists (shown with a boxing glove) |
 
 - Scrolling steps ROCKS, MOLOTOV, SMOKE, FISTS and back to ROCKS one way, and the reverse the other way. A slot with none left can still be chosen; it simply shows ×0 and you keep your fists.
 - **Fists are the fallback.** Fists is the fourth slot, with a boxing-glove icon and no quantity. You use your fists when it is selected or when the selected utility has run out. You start on Fists. The punch, block and movement systems are untouched.
@@ -63,14 +63,14 @@ Each player owns their own inventory and selection ([src/inventory/PlayerUtiliti
 
 ### Developer keys
 
-| Key | Action |
-| --- | --- |
-| `F4` | Show / hide the debug view: combat shapes and guard cone, plus the map's spawn points (S1-S8), ladder start and end spots, collision boxes, boundary and floor heights |
-| `F6` | Dummy holds / drops its guard |
-| `F7` | Dummy turns to face you (off by default, so you can test side and rear hits) |
-| `F8` | Dummy crouches (a crouched guard also covers the legs) |
-| `F9` | Dummy looks up (its guard aims up too) |
-| `F10` | Start a new round: the player and the dummy are given new random spawn points |
+| Key   | Action                                                                                                                                                                 |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `F4`  | Show / hide the debug view: combat shapes and guard cone, plus the map's spawn points (S1-S8), ladder start and end spots, collision boxes, boundary and floor heights |
+| `F6`  | Dummy holds / drops its guard                                                                                                                                          |
+| `F7`  | Dummy turns to face you (off by default, so you can test side and rear hits)                                                                                           |
+| `F8`  | Dummy crouches (a crouched guard also covers the legs)                                                                                                                 |
+| `F9`  | Dummy looks up (its guard aims up too)                                                                                                                                 |
+| `F10` | Start a new round: the player and the dummy are given new random spawn points                                                                                          |
 
 ---
 
@@ -78,15 +78,15 @@ Each player owns their own inventory and selection ([src/inventory/PlayerUtiliti
 
 ### Movement
 
-| Move | How | Notes |
-| --- | --- | --- |
-| Walk | `W` / `A` / `S` / `D` | Walk, backward walk and strafe animations |
-| Run | `Shift` + `W` (or `S` for backward) | Fastest movement; also what powers heavy attacks |
-| Strafe | `A` / `D` alone | Side-step animation. Holding `Shift` while strafing is a faster strafe |
-| Diagonal run | `W` + `A` / `D` | The body turns about 45° toward the direction of travel while the head keeps pointing at the crosshair, so it reads as running rather than gliding sideways |
-| Jump | `Space` | A moderate jump height, so it doesn't clear an opponent's head |
-| Crouch | Hold `C` | Deep crouch. Slower movement, with crouch walk, backward and strafe animations. No crouch sprint |
-| Stand from crouch | `Space` while crouched | Stands you up (no jump) until `C` is released |
+| Move              | How                                 | Notes                                                                                                                                                       |
+| ----------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Walk              | `W` / `A` / `S` / `D`               | Walk, backward walk and strafe animations                                                                                                                   |
+| Run               | `Shift` + `W` (or `S` for backward) | Fastest movement; also what powers heavy attacks                                                                                                            |
+| Strafe            | `A` / `D` alone                     | Side-step animation. Holding `Shift` while strafing is a faster strafe                                                                                      |
+| Diagonal run      | `W` + `A` / `D`                     | The body turns about 45° toward the direction of travel while the head keeps pointing at the crosshair, so it reads as running rather than gliding sideways |
+| Jump              | `Space`                             | A moderate jump height, so it doesn't clear an opponent's head                                                                                              |
+| Crouch            | Hold `C`                            | Deep crouch. Slower movement, with crouch walk, backward and strafe animations. No crouch sprint                                                            |
+| Stand from crouch | `Space` while crouched              | Stands you up (no jump) until `C` is released                                                                                                               |
 
 Approximate speeds (metres per second): run 6.0, sprint 8.0, crouch 2.2. Strafing alone is 75% of those. Movement is slowed while punching.
 
@@ -103,12 +103,12 @@ Approximate speeds (metres per second): run 6.0, sprint 8.0, crouch 2.2. Strafin
 
 Punches are aimed at the crosshair. Looking down lets you hit crouched opponents, and looking up lets you punch upward.
 
-| Attack | Trigger | Damage | Blockable |
-| --- | --- | --- | --- |
-| **Light punch** | Left click (spam for an alternating right / left combo) | 10 | Yes |
-| **Heavy running punch** | Left click while sprinting forward, after a short build-up | 25 | No |
-| **Flying light punch** | Left click in the air after a walking / strafing jump | 15 | Yes |
-| **Flying heavy punch** | Left click in the air after a sprint-jump with a built-up sprint | 30 | No |
+| Attack                  | Trigger                                                          | Damage | Blockable |
+| ----------------------- | ---------------------------------------------------------------- | ------ | --------- |
+| **Light punch**         | Left click (spam for an alternating right / left combo)          | 10     | Yes       |
+| **Heavy running punch** | Left click while sprinting forward, after a short build-up       | 25     | No        |
+| **Flying light punch**  | Left click in the air after a walking / strafing jump            | 15     | Yes       |
+| **Flying heavy punch**  | Left click in the air after a sprint-jump with a built-up sprint | 30     | No        |
 
 How they behave:
 
@@ -149,12 +149,12 @@ Pick **Rocks** on the weapon wheel (you start with 3) and the hand goes to the h
 
 **Damage uses the existing combat numbers** ([src/combat/RockConfig.ts](src/combat/RockConfig.ts) is the one place to tune all of it):
 
-| | Value |
-| --- | --- |
-| Body hit | The light jump punch's damage (15) |
-| Head hit | 85% of the heavy attack's damage (21), so it stays below a heavy attack |
-| Guarded hit | The damage above times `ROCK_BLOCK_DAMAGE_MULTIPLIER` (0.35), at least 1: never zero |
-| Knockback / stagger | `ROCK_KNOCKBACK`, `ROCK_HITSTUN` |
+|                     | Value                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| Body hit            | The light jump punch's damage (15)                                                   |
+| Head hit            | 85% of the heavy attack's damage (21), so it stays below a heavy attack              |
+| Guarded hit         | The damage above times `ROCK_BLOCK_DAMAGE_MULTIPLIER` (0.35), at least 1: never zero |
+| Knockback / stagger | `ROCK_KNOCKBACK`, `ROCK_HITSTUN`                                                     |
 
 Guarding a rock uses the same directional guard as melee, measured against the thrower: the guard cone, the vertical aim and the body parts the guard covers. A rock from the side, from behind, or aimed at a part the guard doesn't cover (for example the head over a level guard) does full damage. A guarded rock still lands for the reduced amount, shows that amount as its damage number and the `BLOCKED` tag, and staggers less.
 
@@ -170,13 +170,13 @@ It flies like the rock (straight for a few metres, then an arc, `MOLOTOV_PROFILE
 
 **The fire** is an area-denial zone, not an explosion:
 
-| | Value (all in [src/combat/MolotovConfig.ts](src/combat/MolotovConfig.ts)) |
-| --- | --- |
-| Radius | Spreads from 0.5 m to `MOLOTOV_MAX_RADIUS` (3 m) over `MOLOTOV_SPREAD_TIME` (0.8 s) |
-| Duration | `MOLOTOV_DURATION` (7 s) at full size, counted from when it has fully spread |
-| Ending | It shrinks and fades over `MOLOTOV_FIRE_FADE_TIME` (0.8 s), then is removed |
-| Damage | A tick every `MOLOTOV_TICK_INTERVAL` (0.5 s) for `MOLOTOV_DAMAGE_PER_TICK` (7), growing up to `MOLOTOV_MAX_RAMP` (1.8x) after `MOLOTOV_RAMP_SECONDS` (3 s) of continuous burning, never above `MOLOTOV_MAX_OVERLAP_DAMAGE` (14) |
-| Fires at once | At most `MOLOTOV_MAX_ZONES` (8); the oldest goes out first |
+|               | Value (all in [src/combat/MolotovConfig.ts](src/combat/MolotovConfig.ts))                                                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Radius        | Spreads from 0.5 m to `MOLOTOV_MAX_RADIUS` (3 m) over `MOLOTOV_SPREAD_TIME` (0.8 s)                                                                                                                                             |
+| Duration      | `MOLOTOV_DURATION` (7 s) at full size, counted from when it has fully spread                                                                                                                                                    |
+| Ending        | It shrinks and fades over `MOLOTOV_FIRE_FADE_TIME` (0.8 s), then is removed                                                                                                                                                     |
+| Damage        | A tick every `MOLOTOV_TICK_INTERVAL` (0.5 s) for `MOLOTOV_DAMAGE_PER_TICK` (7), growing up to `MOLOTOV_MAX_RAMP` (1.8x) after `MOLOTOV_RAMP_SECONDS` (3 s) of continuous burning, never above `MOLOTOV_MAX_OVERLAP_DAMAGE` (14) |
+| Fires at once | At most `MOLOTOV_MAX_ZONES` (8); the oldest goes out first                                                                                                                                                                      |
 
 Walking through costs about 17 points; standing in it takes about 63 after 3 seconds and kills a full-health character in about 4.5 seconds. The damage goes through the normal health bar and damage numbers (one per tick, so no spam), and holding **F gives no protection**: you have to leave the fire. Overlapping fires never add ticks: a player takes at most one tick per interval. Anyone inside the radius burns, the thrower included.
 
@@ -210,18 +210,19 @@ All attack numbers (damage, timing, knockback, reach, blockability) live in [src
 
 A graybox, enclosed, multi-level industrial complex, 64 m x 48 m with 13.5 m outer walls, built from basic Three.js geometry. A dense ring of rooms, corridors, walkways, balconies and covered yards surrounds a central open arena that every side looks down into. The **upper floor** is 4 m up, and above it are three **roof layers** that can be walked on. The ground level is deliberately unfinished: the central arena is bare floor, and the structure under the upper floor is solid for now. There are no hidden or special-role parts; this is the map every fighter sees. (North is up, west is left.) Pictures: [top view](docs/map-top-view.png), [roof layers](docs/map-roof-view.png), and [3D views](docs/map-3d-arena-view.png).
 
-| Part | What it is |
-| --- | --- |
-| Rooms (12) | Each with its own graybox props: **Control room** (raised console dais and monitor banks, taller roof), **Archive** (shelf aisles), **Switch room** (switchgear), **Cargo office** (crate lanes, high roof), **Server room** (rack rows with 1.5 m lanes), **Break room**, **Warehouse** (crate stacks with 2 m lanes, high roof), **Workshop** (benches and machines), **Store** (shelving), **Hall** (columns and a podium), **Barracks** (bunks and a locker wall), **Armory** (racks and a cage). Doorways are 2 m. Rooms join each other through shared doors (Archive - Switch room, Server room - Cargo office, Break room - Warehouse, Workshop - Warehouse, Hall - Armory, Hall - Store) |
-| Walkways | Four widths: wide east (4 m), medium north and south (3 m), a narrower west end (2.2 m) and a 1.5 m service corridor in the north-west. The ring is broken at the south-west corner: the west and south walkways only meet through rooms (the Hall), so there is no endless loop on the walkways alone |
-| Yards and decks | Loading dock and south plaza (covered yards with skylight gaps), east deck and west terrace (open courts), and a roofed north alcove |
-| Balconies (4) | **North overlook** (12 m wide, 4.5 m out, with cover), **south balcony** (lower, 2.8 m, narrow), **east corner balcony** (joins the east and south walkways) and **north-west balcony** (raised 5.2 m, long and narrow). They all hang in the air, so the ground under them stays open. A **maintenance platform** (2.8 m) hangs under the north edge |
-| Stairs (2) | **South-west** (bottom-left): 4 m wide, 16 steps of 25 cm, starts at the south end of the arena's west side and climbs north to a landing on the west walkway, so it serves the west and north sides. **North-east** (top-right): 5 m wide, 20 steps of 20 cm, starts at the north end of the east side and climbs south to a landing on the east walkway, so it serves the east and south sides. Either one alone reaches every room |
-| Ladders (15) | **Five on the arena faces and balconies** (easy to see), **four to the roofs** from the walkways (orange in the plans; the new one is on the north side, up the Switch room), and **six secret ones** (magenta) in nooks: behind the alcove's wall, in the north-west service corridor, in a corner of the south plaza, on the west terrace, on the maintenance platform, and between two roofs. Secret ones are only less obvious (a screen wall round the terrace ladder, crate stacks hiding the plaza ladder, the corridor, the alcove corner behind a roof hatch you open with `E`); anyone can use them. Press `E` to climb |
-| Ledges (14) | Six solid ones (1.2 m ledges you can jump onto on the east deck, west terrace, south plaza and loading dock, a 2.4 m one beside a 1.2 m one, and a 0.75 m housing on the dock roof) and eight that mark an edge you climb: the south balcony and the maintenance platform up to the walkway, the north-west balcony up from the floor, and roof-to-roof steps. They are tan |
-| Roofs (3 layers) | **Low 8.1 m** over most rooms and the alcove, **medium 9.3 m** over the Control room and the two covered yards, **high 10.8 m** over the Cargo office and the Warehouse. Each is a jump or a short climb above the last, every roof can be reached from another, and a steel **catwalk** joins the Server room's roof to the Break room's across the east court |
-| Rooftop machinery | Water tanks, ventilation units, service huts, skylight housings, a duct run, and raised roof walls (1.9 m) and parapets (1 m) along roof edges. Each one is a landmark, cover, or breaks a long sightline: from any roof, a good share of the other roofs is hidden, and a roof looks out through gaps in its walls |
-| Hanging structure zones (6) | Overhead steel beams for a later hanging system, each resting on something real: two trusses across the arena on steel posts at the walkway edges, a beam under each pair of medium roofs across its skylight gap, one between the Control room's wall and the Archive's under the alcove roof, and a crane rail hung from the Warehouse's roof. Drawn and recorded as data (`hangZones`); nothing hangs from them yet |
+| Part              | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rooms (12)        | Each with its own graybox props: **Control room** (raised console dais and monitor banks, taller roof), **Archive** (shelf aisles), **Switch room** (switchgear), **Cargo office** (crate lanes, high roof), **Server room** (rack rows with 1.5 m lanes), **Break room**, **Warehouse** (crate stacks with 2 m lanes, high roof), **Workshop** (benches and machines), **Store** (shelving), **Hall** (columns and a podium), **Barracks** (bunks and a locker wall), **Armory** (racks and a cage). Doorways are 2 m. Rooms join each other through shared doors (Archive - Switch room, Server room - Cargo office, Break room - Warehouse, Workshop - Warehouse, Hall - Armory, Hall - Store) |
+| Walkways          | Four widths: wide east (4 m), medium north and south (3 m), a narrower west end (2.2 m) and a 1.5 m service corridor in the north-west. The ring is broken at the south-west corner: the west and south walkways only meet through rooms (the Hall), so there is no endless loop on the walkways alone                                                                                                                                                                                                                                                                                                                                                                                            |
+| Yards and decks   | Loading dock and south plaza (covered yards with skylight gaps), east deck and west terrace (open courts), and a roofed north alcove                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Balconies (4)     | **North overlook** (12 m wide, 4.5 m out, with cover), **south balcony** (lower, 2.8 m, narrow), **east corner balcony** (joins the east and south walkways) and **north-west balcony** (raised 5.2 m, long and narrow). They all hang in the air, so the ground under them stays open. A **maintenance platform** (2.8 m) hangs under the north edge                                                                                                                                                                                                                                                                                                                                             |
+| Stairs (2)        | **South-west** (bottom-left): 4 m wide, 16 steps of 25 cm, starts at the south end of the arena's west side and climbs north to a landing on the west walkway, so it serves the west and north sides. **North-east** (top-right): 5 m wide, 20 steps of 20 cm, starts at the north end of the east side and climbs south to a landing on the east walkway, so it serves the east and south sides. Either one alone reaches every room                                                                                                                                                                                                                                                             |
+| Ladders (15)      | **Five on the arena faces and balconies** (easy to see), **four to the roofs** from the walkways (orange in the plans; the new one is on the north side, up the Switch room), and **six secret ones** (magenta) in nooks: behind the alcove's wall, in the north-west service corridor, in a corner of the south plaza, on the west terrace, on the maintenance platform, and between two roofs. Secret ones are only less obvious (a screen wall round the terrace ladder, crate stacks hiding the plaza ladder, the corridor, the alcove corner behind a roof hatch you open with `E`); anyone can use them. Press `E` to climb                                                                 |
+| Ledges (14)       | Six solid ones (1.2 m ledges you can jump onto on the east deck, west terrace, south plaza and loading dock, a 2.4 m one beside a 1.2 m one, and a 0.75 m housing on the dock roof) and eight that mark an edge you climb: the south balcony and the maintenance platform up to the walkway, the north-west balcony up from the floor, and roof-to-roof steps. They are tan                                                                                                                                                                                                                                                                                                                       |
+| Open sky          | There is no main roof: the arena is open to the sky inside a perimeter wall 13.2 m high (it never looks jumpable). The **Control room**, the **Hall** and the **Cargo office** have no ceiling of their own (open top) for entry from above; the other rooms keep their roofs, which are the lower levels                                                                                                                                                                                                                                                                                                                                                                                         |
+| Roofs (3 layers)  | **Low 8.1 m** over most rooms and the alcove, **medium 9.3 m** over the Control room and the two covered yards, **high 10.8 m** over the Cargo office and the Warehouse. Each is a jump or a short climb above the last, every roof can be reached from another, and a steel **catwalk** joins the Server room's roof to the Break room's across the east court                                                                                                                                                                                                                                                                                                                                   |
+| Rooftop machinery | Water tanks, ventilation units, service huts, skylight housings, a duct run, and raised roof walls (1.9 m) and parapets (1 m) along roof edges. Each one is a landmark, cover, or breaks a long sightline: from any roof, a good share of the other roofs is hidden, and a roof looks out through gaps in its walls                                                                                                                                                                                                                                                                                                                                                                               |
+| Hang points (5)   | Five places for the vigilante to observe and strike from: four narrow **observation ledges** (slim solid slabs 1.6 m deep and 2.6 m wide, 0.25 m thick, one corbel under each) on thin pillars spread round the middle of the arena, each at its own height: north 4.8 m (low, concealed under the north balcony), east 6.5 m (mid), west 8.5 m (high, wide view of the arena) and south 12.6 m (1.8 m over the highest roof, overlooking the rooftops); and the south plaza's skylight beam (mid-south). No ladders: they are for a grapple. Recorded as data (`hangZones`); hanging, grappling and gliding are not implemented yet                                                              |
 
 Railings are drawn 1.1 m high and you can shoot over them, but they stop a body like a wall: nobody walks, runs or jumps over one, and nobody can stand on top of one (nor on any wall or post). The way off an edge is a gap in the railing, a stair or a ladder. A body needs 1.8 m of headroom, so props are at most 2 m tall, and anything solid is either touching its neighbour or at least 1.4 m away from it, so nobody can be wedged in a gap.
 
@@ -229,7 +230,7 @@ The sides have their own character: the **west** is service and maintenance (a 1
 
 ### Movement on it
 
-You can walk and sprint up stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, jump onto 1.2 m ledges, climb ladders (`E`), vault railings and boxes (hold `W` and press `Space` at one: a one-handed vault, the body rolling over the planted hand), walk across roofs and the catwalk, and walk on the ground right under a balcony. Walls and solid scenery stop you and let you slide along them, and so do ladders: each has a slim solid body against its face, so nobody walks through the rails. Thin walls, railings and posts are solid at any height (a body cannot wade into even a low one), and crashing into a wall in mid-air stops the jump's run; only the slide along the wall is left. Your body stays 0.5 m from scenery, so the camera and fists don't clip into it. Walls also stop punches: a hit needs a clear line to the target, and fists stop at contact.
+You can walk and sprint up stairs (steps up to 0.45 m are taken automatically), walk off edges and fall, jump onto 1.2 m ledges, climb ladders (`E`), vault railings and boxes (hold `W`, or `A` or `D` for a sideways vault, and press `Space` at one: a one-handed vault, the body rolling over the planted hand), walk across roofs and the catwalk, and walk on the ground right under a balcony. Walls and solid scenery stop you and let you slide along them, and so do ladders: each has a slim solid body against its face, so nobody walks through the rails. Thin walls, railings and posts are solid at any height (a body cannot wade into even a low one), and crashing into a wall in mid-air stops the jump's run; only the slide along the wall is left. Your body stays 0.5 m from scenery, so the camera and fists don't clip into it. Walls also stop punches: a hit needs a clear line to the target, and fists stop at contact.
 
 Collision is a height field over (x, z) in which every solid has an underside: most things are columns from the ground up, while balconies, roofs, catwalks and rooftop machinery start higher, so you can pass underneath them. Room roofs are real surfaces: you can stand on them, and a roof overhead does not block the room below. Thrown rocks and Molotovs stop at roofs and walls like anything else.
 
@@ -258,10 +259,10 @@ There is no in-game key to hide the dummy, so it has to be done in code. In [src
 **Fully remove it (not visible, not hittable, not solid)** by commenting out these four lines:
 
 ```ts
-this.combat.register(this.dummy);          // in the constructor: stops it being hit
-this.renderer.scene.add(this.dummy.root);  // in the constructor: stops it being drawn
-void this.dummy.load();                    // in the constructor: skips loading its model
-this.resolveDummyCollision();              // in animate(): removes its invisible collision
+this.combat.register(this.dummy); // in the constructor: stops it being hit
+this.renderer.scene.add(this.dummy.root); // in the constructor: stops it being drawn
+void this.dummy.load(); // in the constructor: skips loading its model
+this.resolveDummyCollision(); // in animate(): removes its invisible collision
 ```
 
 **Only hide it visually** (it stays hittable and solid, which is useful for checking the combat debug view on its own): add this line after `this.renderer.scene.add(this.dummy.root);`:

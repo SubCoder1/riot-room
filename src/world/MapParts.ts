@@ -14,6 +14,7 @@ import {
   type LedgeDefinition,
   type OverheadMaterial,
   type SteelKind,
+  type SteelMember,
   type Vec3,
   type PartRole,
   type RiseDirection,
@@ -265,6 +266,7 @@ export class MapBuilder {
     height: number,
     role: PartRole = "wall",
     gaps: Gap[] = [],
+    glass = false,
   ): void {
     const cuts = [...gaps]
       .filter((gap) => gap.to > from && gap.from < to)
@@ -291,6 +293,7 @@ export class MapBuilder {
         kind: "box",
         id: `${id}-${index + 1}`,
         role,
+        glass: glass || undefined,
         minX: axis === "x" ? a : across[0],
         maxX: axis === "x" ? b : across[1],
         minZ: axis === "x" ? across[0] : a,
@@ -664,7 +667,11 @@ export class MapBuilder {
     });
   }
 
-  /** A drawn steel member (a beam, a brace, a truss chord): no collision. */
+  /**
+   * A drawn steel member (a beam, a brace, a truss chord): no collision, unless
+   * `collide` is set, which registers a solid box round an axis-aligned member
+   * (a ledge arm you can stand on and shoot at).
+   */
   public createSteel(
     id: string,
     kind: SteelKind,
@@ -673,8 +680,116 @@ export class MapBuilder {
     profile: "i" | "box" = "i",
     width = 0.3,
     depth = 0.4,
+    collide = false,
   ): void {
-    this.layout.steel.push({ id, kind, from, to, profile, width, depth });
+    const member: SteelMember = { id, kind, from, to, profile, width, depth };
+
+    if (collide) {
+      const alongX = Math.abs(to[0] - from[0]) >= Math.abs(to[2] - from[2]);
+      const yMid = (from[1] + to[1]) / 2;
+
+      member.solid = {
+        kind: "box",
+        id: `${id}-solid`,
+        role: "machinery",
+        minX: alongX ? Math.min(from[0], to[0]) : from[0] - width / 2,
+        maxX: alongX ? Math.max(from[0], to[0]) : from[0] + width / 2,
+        minZ: alongX ? from[2] - width / 2 : Math.min(from[2], to[2]),
+        maxZ: alongX ? from[2] + width / 2 : Math.max(from[2], to[2]),
+        bottom: yMid - depth / 2,
+        height: yMid + depth / 2,
+      };
+    }
+
+    this.layout.steel.push(member);
+  }
+
+  /**
+   * A narrow observation ledge: a slim solid slab 1.6 m deep and 2.6 m wide
+   * jutting out of the side of one thin pillar, with a single corbel under it.
+   * `dir` is the way it faces (the unit x or z step out of the pillar); `y` is
+   * its top. No ladder: it is reached by a grapple, not climbed. A hang point
+   * runs along its outer edge.
+   */
+  public createPerch(
+    id: string,
+    name: string,
+    pillarX: number,
+    pillarZ: number,
+    dir: readonly [number, number],
+    y: number,
+    floorY = 0,
+  ): void {
+    const pillar = 0.5;
+    const depth = 1.6;
+    const width = 2.6;
+    const thickness = 0.25;
+    const under = y - thickness;
+    const [dx, dz] = dir;
+    const face = pillar / 2;
+    const near = face;
+    const far = face + depth;
+    const half = width / 2;
+    const slab: Bounds =
+      dx !== 0
+        ? {
+            minX: Math.min(pillarX + dx * near, pillarX + dx * far),
+            maxX: Math.max(pillarX + dx * near, pillarX + dx * far),
+            minZ: pillarZ - half,
+            maxZ: pillarZ + half,
+          }
+        : {
+            minX: pillarX - half,
+            maxX: pillarX + half,
+            minZ: Math.min(pillarZ + dz * near, pillarZ + dz * far),
+            maxZ: Math.max(pillarZ + dz * near, pillarZ + dz * far),
+          };
+
+    // The one thin pillar, a little over the ledge.
+    this.createColumn(
+      `${id}-pillar`,
+      pillarX,
+      pillarZ,
+      floorY,
+      y + 1.2,
+      pillar,
+    );
+
+    // The slim ledge.
+    this.layout.platforms.push({
+      kind: "box",
+      id: `${id}-deck`,
+      role: "catwalk",
+      ...slab,
+      base: under,
+      bottom: under,
+      height: y,
+    });
+    this.layout.hangZones.push({
+      id,
+      name,
+      x: pillarX + dx * far,
+      z: pillarZ + dz * far,
+      y: under,
+      axis: dx !== 0 ? "z" : "x",
+      length: width,
+      floorY,
+    });
+
+    // One corbel: from the pillar, 1.4 m down, out to the ledge's underside.
+    this.createSteel(
+      `${id}-corbel`,
+      "brace",
+      [pillarX + dx * face, under - 1.4, pillarZ + dz * face],
+      [
+        pillarX + dx * (face + depth * 0.7),
+        under,
+        pillarZ + dz * (face + depth * 0.7),
+      ],
+      "box",
+      0.2,
+      0.24,
+    );
   }
 
   /**
@@ -918,11 +1033,12 @@ export class MapBuilder {
     y: number,
     axis: "x" | "z",
     length: number,
+    floorY = 0,
   ): void {
     const half = length / 2;
     const w = 0.18;
 
-    this.layout.hangZones.push({ id, name, x, z, y, axis, length });
+    this.layout.hangZones.push({ id, name, x, z, y, axis, length, floorY });
     this.createOverhead(
       `${id}-beam`,
       axis === "x"
@@ -932,6 +1048,162 @@ export class MapBuilder {
       y + 0.4,
       "steel",
     );
+    // The hanger: a plate bolted flat under the beam and a short hook rod, so
+    // the hang point is visibly part of the beam.
+    this.createSteel(
+      `${id}-plate`,
+      "support",
+      [x, y, z],
+      [x, y - 0.1, z],
+      "box",
+      0.5,
+      0.5,
+    );
+    this.createSteel(
+      `${id}-hook`,
+      "support",
+      [x, y - 0.1, z],
+      [x, y - 0.45, z],
+      "box",
+      0.07,
+      0.07,
+    );
+  }
+
+  /**
+   * A framed glass panel that fills an opening in a roof (a skylight): it holds
+   * you up like the roof beside it, so the roofline stays continuous. The
+   * steel frame runs round its edge, and `mullions` bars cross it.
+   */
+  public createGlassSkylight(
+    id: string,
+    area: Bounds,
+    top: number,
+    thickness = ROOF_THICKNESS,
+    mullions = 1,
+    across: "x" | "z" = "x",
+  ): void {
+    this.layout.platforms.push({
+      kind: "box",
+      id,
+      role: "roof",
+      glass: true,
+      ...area,
+      base: top - 0.1,
+      bottom: top - thickness,
+      height: top,
+    });
+
+    const y = top - 0.06;
+    const edge = (name: string, a: Vec3, b: Vec3): void =>
+      this.createSteel(`${id}-frame-${name}`, "beam", a, b, "i", 0.16, 0.12);
+
+    edge(
+      "n",
+      [area.minX, y, area.minZ + 0.08],
+      [area.maxX, y, area.minZ + 0.08],
+    );
+    edge(
+      "s",
+      [area.minX, y, area.maxZ - 0.08],
+      [area.maxX, y, area.maxZ - 0.08],
+    );
+    edge(
+      "w",
+      [area.minX + 0.08, y, area.minZ],
+      [area.minX + 0.08, y, area.maxZ],
+    );
+    edge(
+      "e",
+      [area.maxX - 0.08, y, area.minZ],
+      [area.maxX - 0.08, y, area.maxZ],
+    );
+
+    for (let i = 1; i <= mullions; i++) {
+      const t = i / (mullions + 1);
+
+      if (across === "x") {
+        const z = area.minZ + (area.maxZ - area.minZ) * t;
+
+        edge(`m${i}`, [area.minX, y, z], [area.maxX, y, z]);
+      } else {
+        const x = area.minX + (area.maxX - area.minX) * t;
+
+        edge(`m${i}`, [x, y, area.minZ], [x, y, area.maxZ]);
+      }
+    }
+  }
+
+  /**
+   * A glass barrier along an edge: a pane that stops bodies like a railing (and
+   * is no thicker than one), a steel top rail and a post every few metres. It
+   * leaves the openings in `gaps` (a ladder's exit) bare.
+   */
+  public createGlassBarrier(
+    id: string,
+    axis: "x" | "z",
+    at: number,
+    from: number,
+    to: number,
+    floorY: number,
+    gaps: Gap[] = [],
+    height = 1.3,
+  ): void {
+    this.createWall(
+      id,
+      axis,
+      at,
+      from,
+      to,
+      floorY,
+      0.1,
+      height,
+      "railing",
+      gaps,
+      true,
+    );
+
+    const cuts = [...gaps].sort((a, b) => a.from - b.from);
+    const runs: Array<[number, number]> = [];
+    let cursor = from;
+
+    for (const gap of cuts) {
+      if (gap.from > cursor) runs.push([cursor, gap.from]);
+      cursor = Math.max(cursor, gap.to);
+    }
+
+    if (cursor < to) runs.push([cursor, to]);
+
+    const point = (along: number, y: number): Vec3 =>
+      axis === "x" ? [along, y, at + 0.05] : [at + 0.05, y, along];
+
+    runs.forEach(([a, b], run) => {
+      this.createSteel(
+        `${id}-rail-${run + 1}`,
+        "beam",
+        point(a, floorY + height),
+        point(b, floorY + height),
+        "box",
+        0.12,
+        0.08,
+      );
+
+      const posts = Math.max(1, Math.round((b - a) / 3));
+
+      for (let i = 0; i <= posts; i++) {
+        const along = a + ((b - a) * i) / posts;
+
+        this.createSteel(
+          `${id}-post-${run + 1}-${i + 1}`,
+          "column",
+          point(along, floorY),
+          point(along, floorY + height),
+          "box",
+          0.12,
+          0.12,
+        );
+      }
+    });
   }
 
   // ------------------------------------------------------- vertical routes
