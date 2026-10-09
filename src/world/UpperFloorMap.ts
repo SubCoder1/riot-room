@@ -289,6 +289,17 @@ function createUpperFloor(): ArenaLayout {
     bottomY: ROOF_LOW,
     topY: ROOF_HIGH,
   });
+  // From the alcove roof up to the Control room's taller roof, through the gap
+  // left for it in the roof wall (this replaces the way up that used to be a
+  // hole above the room's door).
+  map.createLadder({
+    id: "ladder-roof-control",
+    normal: "+x",
+    face: -21,
+    along: -17.2,
+    bottomY: ROOF_LOW,
+    topY: ROOF_MID,
+  });
   // Secret or semi-hidden (still usable by anyone):
   map.createLadder({
     id: "secret-alcove",
@@ -1092,6 +1103,259 @@ function createUpperFloor(): ArenaLayout {
     ROOF_HIGH - ROOF_THICKNESS - 0.4,
     "x",
     13,
+  );
+
+  // ------------------------------------------------------- structural steel
+  // Exposed I-beams, braces and trusses (drawn as one steel mesh). Everything is
+  // either overhead, under a slab, or flush to a wall; only the six floor
+  // columns are solid, and each sits in a corner against two walls.
+  const STEEL_ROOF = ROOF_MID - ROOF_THICKNESS;
+
+  // 1. Supports under the elevated slabs: cross beams under each floating
+  //    balcony (from the building face), and a rim beam along the free edge.
+  const supportBalcony = (
+    id: string,
+    xs: number[],
+    xMin: number,
+    xMax: number,
+    zWall: number,
+    zFree: number,
+    slabBottom: number,
+  ): void => {
+    const y = slabBottom - 0.175;
+
+    xs.forEach((x, i) => {
+      map.createSteel(
+        `${id}-beam-${i + 1}`,
+        "support",
+        [x, y, zWall],
+        [x, y, zFree],
+        "i",
+        0.22,
+        0.35,
+      );
+    });
+    map.createSteel(
+      `${id}-rim`,
+      "support",
+      [xMin, y, zFree + Math.sign(zWall - zFree) * 0.15],
+      [xMax, y, zFree + Math.sign(zWall - zFree) * 0.15],
+      "i",
+      0.22,
+      0.35,
+    );
+  };
+
+  supportBalcony(
+    "steel-balcony-north",
+    [-5.5, -1.5, 2],
+    -7,
+    5,
+    -12,
+    -7.5,
+    F - 0.5,
+  );
+  supportBalcony(
+    "steel-balcony-east",
+    [12.5, 14.5, 16.5],
+    11,
+    18,
+    12,
+    7.8,
+    F - 0.5,
+  );
+
+  // The east catwalk: two stringers and cross beams under it, and knee braces up
+  // from the two room walls it starts at (high enough to walk under).
+  const CATWALK_UNDER = ROOF_LOW - 0.25;
+
+  for (const x of [26.55, 27.85]) {
+    map.createSteel(
+      `steel-catwalk-stringer-${x}`,
+      "support",
+      [x, CATWALK_UNDER - 0.15, -5],
+      [x, CATWALK_UNDER - 0.15, 3],
+      "i",
+      0.2,
+      0.3,
+    );
+  }
+
+  [-3.5, -1, 1.5].forEach((z, i) => {
+    map.createSteel(
+      `steel-catwalk-cross-${i + 1}`,
+      "support",
+      [26.2, CATWALK_UNDER - 0.13, z],
+      [28.2, CATWALK_UNDER - 0.13, z],
+      "i",
+      0.18,
+      0.26,
+    );
+  });
+
+  for (const x of [26.55, 27.85]) {
+    map.createSteel(
+      `steel-catwalk-knee-s-${x}`,
+      "support",
+      [x, 6.7, -5.05],
+      [x, CATWALK_UNDER - 0.3, -3.6],
+      "box",
+      0.14,
+      0.2,
+    );
+    map.createSteel(
+      `steel-catwalk-knee-n-${x}`,
+      "support",
+      [x, 6.7, 3.05],
+      [x, CATWALK_UNDER - 0.3, 1.6],
+      "box",
+      0.14,
+      0.2,
+    );
+  }
+
+  // 2. I-beam columns in outer corners, tucked against two walls: the dock's
+  //    two north corners and the east and west decks' corners at the outer wall.
+  map.createSteelColumn("steel-column-dock-e", 21.8, -23.8, F, STEEL_ROOF);
+  map.createSteelColumn("steel-column-dock-w", 7.2, -23.8, F, STEEL_ROOF);
+  map.createSteelColumn(
+    "steel-column-deck-east-n",
+    31.8,
+    -4.8,
+    F,
+    ROOF_LOW - 0.3,
+  );
+  map.createSteelColumn(
+    "steel-column-deck-east-s",
+    31.8,
+    2.8,
+    F,
+    ROOF_LOW - 0.3,
+  );
+  map.createSteelColumn(
+    "steel-column-deck-west-n",
+    -31.8,
+    -2.8,
+    F,
+    ROOF_LOW - 0.3,
+  );
+  map.createSteelColumn(
+    "steel-column-deck-west-s",
+    -31.8,
+    4.8,
+    F,
+    ROOF_LOW - 0.3,
+  );
+
+  // 3. A few X braces on the outer walls between those columns (flat against the
+  //    wall, so a body never meets them), and in two Warehouse bays.
+  const xBrace = (
+    id: string,
+    a: [number, number],
+    b: [number, number],
+    plane: "x" | "z",
+    at: number,
+    yLow: number,
+    yHigh: number,
+  ): void => {
+    const point = (t: number, y: number): [number, number, number] =>
+      plane === "x" ? [at, y, t] : [t, y, at];
+
+    map.createSteel(
+      `${id}-1`,
+      "brace",
+      point(a[0], yLow),
+      point(b[0], yHigh),
+      "box",
+      0.14,
+      0.22,
+    );
+    map.createSteel(
+      `${id}-2`,
+      "brace",
+      point(a[1], yLow),
+      point(b[1], yHigh),
+      "box",
+      0.14,
+      0.22,
+    );
+  };
+
+  xBrace(
+    "steel-brace-west",
+    [-2.5, 4.5],
+    [4.5, -2.5],
+    "x",
+    -31.93,
+    F + 0.4,
+    ROOF_LOW - 0.6,
+  );
+  xBrace(
+    "steel-brace-east",
+    [-4.5, 2.5],
+    [2.5, -4.5],
+    "x",
+    31.93,
+    F + 0.4,
+    ROOF_LOW - 0.6,
+  );
+
+  // The Warehouse's south wall: three flat pilasters and an X brace in each bay.
+  const WH_FACE = 23.7;
+  const WH_TOP = F + 6.5;
+
+  for (const x of [19.2, 25, 30.8]) {
+    map.createSteel(
+      `steel-pilaster-warehouse-${x}`,
+      "column",
+      [x, F, WH_FACE - 0.1],
+      [x, WH_TOP, WH_FACE - 0.1],
+      "i",
+      0.3,
+      0.2,
+    );
+  }
+
+  [
+    [19.2, 25],
+    [25, 30.8],
+  ].forEach(([x0, x1], i) => {
+    xBrace(
+      `steel-brace-warehouse-${i + 1}`,
+      [x0 + 0.3, x1 - 0.3],
+      [x1 - 0.3, x0 + 0.3],
+      "z",
+      WH_FACE - 0.07,
+      F + 0.5,
+      WH_TOP - 0.5,
+    );
+  });
+
+  // 4. Roof trusses under the high flat roofs of the Warehouse (two) and the
+  //    Cargo office (one): the top chord rests on the roof's underside, the ends
+  //    on the walls. The arena and the other roofs stay open.
+  const TRUSS_TOP = ROOF_HIGH - ROOF_THICKNESS - 0.15;
+
+  map.createTruss(
+    "steel-truss-warehouse-a",
+    [18.3, TRUSS_TOP, 17],
+    [31.7, TRUSS_TOP, 17],
+    1.4,
+    8,
+  );
+  map.createTruss(
+    "steel-truss-warehouse-b",
+    [18.3, TRUSS_TOP, 20.8],
+    [31.7, TRUSS_TOP, 20.8],
+    1.4,
+    8,
+  );
+  map.createTruss(
+    "steel-truss-cargo",
+    [22.3, TRUSS_TOP, -18],
+    [31.7, TRUSS_TOP, -18],
+    1.4,
+    6,
   );
 
   // ---------------------------------------------------------------- ledges

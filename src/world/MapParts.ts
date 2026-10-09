@@ -13,6 +13,8 @@ import {
   type LadderDefinition,
   type LedgeDefinition,
   type OverheadMaterial,
+  type SteelKind,
+  type Vec3,
   type PartRole,
   type RiseDirection,
   type RoomDefinition,
@@ -143,6 +145,7 @@ export class MapBuilder {
       ladders: [],
       ledges: [],
       overheads: [],
+      steel: [],
       hangZones: [],
       hatches: [],
       roofLevels: [],
@@ -490,14 +493,18 @@ export class MapBuilder {
               : [bounds.maxX - t, bounds.maxX];
       const horizontal = door.side === "n" || door.side === "s";
 
-      this.layout.overheads.push({
+      // The wall above the door: solid from the top of the doorway up, so
+      // nobody (on a prop, or jumping) passes through it.
+      this.layout.walls.push({
+        kind: "box",
         id: `${options.id}-lintel-${index + 1}`,
+        role: "wall",
         minX: horizontal ? door.at - half : across[0],
         maxX: horizontal ? door.at + half : across[1],
         minZ: horizontal ? across[0] : door.at - half,
         maxZ: horizontal ? across[1] : door.at + half,
         bottom: floorY + DOOR_HEIGHT,
-        top: floorY + wallHeight,
+        height: floorY + wallHeight,
       });
     });
 
@@ -614,6 +621,127 @@ export class MapBuilder {
     this.layout.platforms.push(slab);
 
     return slab;
+  }
+
+  // ----------------------------------------------------------------- steel
+
+  /**
+   * An I-beam column standing on a floor at (x, z), flush to the walls it sits
+   * against. It is solid (a thin steel post), so it stops bodies like the wall
+   * it hugs. `size` is the flange width.
+   */
+  public createSteelColumn(
+    id: string,
+    x: number,
+    z: number,
+    fromY: number,
+    toY: number,
+    size = 0.4,
+    flangeAlong: "x" | "z" = "x",
+  ): void {
+    const half = size / 2;
+
+    this.layout.steel.push({
+      id,
+      kind: "column",
+      from: [x, fromY, z],
+      to: [x, toY, z],
+      profile: "i",
+      width: size,
+      depth: size,
+      flangeAlong,
+      solid: {
+        kind: "box",
+        id: `${id}-solid`,
+        role: "machinery",
+        minX: x - half,
+        maxX: x + half,
+        minZ: z - half,
+        maxZ: z + half,
+        bottom: fromY,
+        height: toY,
+      },
+    });
+  }
+
+  /** A drawn steel member (a beam, a brace, a truss chord): no collision. */
+  public createSteel(
+    id: string,
+    kind: SteelKind,
+    from: Vec3,
+    to: Vec3,
+    profile: "i" | "box" = "i",
+    width = 0.3,
+    depth = 0.4,
+  ): void {
+    this.layout.steel.push({ id, kind, from, to, profile, width, depth });
+  }
+
+  /**
+   * A Warren truss under a flat roof: a top chord at the roof's underside, a
+   * bottom chord `rise` below it, and diagonals zig-zagging between, with a post
+   * at each end. Runs from `from` to `to` (same height), flush to what holds it.
+   */
+  public createTruss(
+    id: string,
+    from: Vec3,
+    to: Vec3,
+    rise: number,
+    bays: number,
+  ): void {
+    const [x0, y0, z0] = from;
+    const [x1, , z1] = to;
+    const point = (t: number, y: number): Vec3 => [
+      x0 + (x1 - x0) * t,
+      y,
+      z0 + (z1 - z0) * t,
+    ];
+    const bottom = y0 - rise;
+
+    this.createSteel(`${id}-top`, "truss", from, to, "i", 0.28, 0.3);
+    this.createSteel(
+      `${id}-bottom`,
+      "truss",
+      point(0, bottom),
+      point(1, bottom),
+      "i",
+      0.28,
+      0.3,
+    );
+    this.createSteel(
+      `${id}-post-a`,
+      "truss",
+      point(0, y0),
+      point(0, bottom),
+      "box",
+      0.2,
+      0.2,
+    );
+    this.createSteel(
+      `${id}-post-b`,
+      "truss",
+      point(1, y0),
+      point(1, bottom),
+      "box",
+      0.2,
+      0.2,
+    );
+
+    for (let i = 0; i < bays; i++) {
+      const a = i / bays;
+      const b = (i + 1) / bays;
+      const up = i % 2 === 0;
+
+      this.createSteel(
+        `${id}-diag-${i + 1}`,
+        "truss",
+        point(a, up ? bottom : y0),
+        point(b, up ? y0 : bottom),
+        "box",
+        0.16,
+        0.16,
+      );
+    }
   }
 
   /** A support column from `fromY` up to `toY` (a roof's underside). */

@@ -124,6 +124,30 @@ describe("Player on the map", () => {
     expect(vault.feet()).toBeLessThan(UPPER - 0.5);
   });
 
+  it("jumping in a doorway bumps the head on the wall above it, and still walks under it", () => {
+    // The Warehouse's north door at x = 20 (a 2 m opening, wall above 2.6 m).
+    const door = spawnPlayer(20, UPPER, 13.6, NORTH);
+
+    door.input.keys.add("KeyW");
+    door.step(0.6);
+    expect(door.player.position.z).toBeLessThan(12);
+    expect(door.feet()).toBeCloseTo(UPPER, 2);
+
+    // Standing in the doorway and jumping: the head stops at the lintel (2.6 m).
+    const jump = spawnPlayer(20, UPPER, 12.15, NORTH);
+    let highest = 0;
+
+    jump.input.jumpQueued = true;
+
+    for (let t = 0; t < 1; t += 1 / 60) {
+      jump.step(1 / 60);
+      highest = Math.max(highest, jump.feet() - UPPER);
+    }
+
+    expect(highest).toBeGreaterThan(0.3);
+    expect(highest).toBeLessThan(0.82);
+  });
+
   it("a medium box is vaulted: over it and onto the floor beyond, never inside it", () => {
     const map = new MapBuilder(20, 20);
 
