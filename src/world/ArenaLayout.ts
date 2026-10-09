@@ -298,6 +298,8 @@ export interface ArenaLayout {
   ladders: LadderDefinition[];
   ledges: LedgeDefinition[];
   overheads: Overhead[];
+  /** Exposed structural steel: drawn as one merged mesh; only columns are solid. */
+  steel: SteelMember[];
   hangZones: HangZone[];
   hatches: HatchDefinition[];
   /** Heights of the walkable roof layers, lowest first. */
@@ -384,6 +386,30 @@ export function ladderBody(ladder: LadderDefinition): BoxSolid {
   };
 }
 
+export type SteelKind = "column" | "beam" | "brace" | "truss" | "support";
+
+export type Vec3 = [x: number, y: number, z: number];
+
+/**
+ * One piece of exposed structural steel from `from` to `to`: an I-beam (flanges
+ * and a web) or a plain rectangular bar. Drawn only; a column that stands on a
+ * floor also carries the solid that stops bodies walking through it.
+ */
+export interface SteelMember {
+  id: string;
+  kind: SteelKind;
+  from: Vec3;
+  to: Vec3;
+  profile: "i" | "box";
+  /** Across the flanges (the wider way) and the section's depth, in metres. */
+  width: number;
+  depth: number;
+  /** For an I column: which way the flanges run (default x). */
+  flangeAlong?: "x" | "z";
+  /** The collision of a column that stands on a floor. */
+  solid?: BoxSolid;
+}
+
 /** Every collidable solid in the layout, stair steps included. */
 export function allSolids(layout: ArenaLayout): Solid[] {
   return [
@@ -394,5 +420,6 @@ export function allSolids(layout: ArenaLayout): Solid[] {
     ...layout.pillars,
     ...layout.hatches.map(hatchLid),
     ...layout.ladders.map(ladderBody),
+    ...layout.steel.flatMap((member) => (member.solid ? [member.solid] : [])),
   ];
 }
