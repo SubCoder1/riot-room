@@ -14,6 +14,9 @@ import {
   type RampSolid,
   type StairsDefinition,
 } from "./ArenaLayout";
+import { createSteelStructure } from "./SteelStructure";
+import { isBrickOuterWall, isBrickWall } from "./materials/WallSurfaces";
+import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
 
 /**
  * Graybox mesh builders. Each one turns a piece of the layout into meshes using
@@ -25,13 +28,6 @@ const unitBox = new THREE.BoxGeometry(1, 1, 1);
 const unitCylinder = new THREE.CylinderGeometry(1, 1, 1, 20);
 
 const materials = {
-  floor: new THREE.MeshStandardMaterial({ color: 0x3b4452, roughness: 0.95 }),
-  wall: new THREE.MeshStandardMaterial({
-    color: 0x434e62,
-    roughness: 0.85,
-    metalness: 0.05,
-  }),
-  platform: new THREE.MeshStandardMaterial({ color: 0x6b7385, roughness: 0.9 }),
   ramp: new THREE.MeshStandardMaterial({
     color: 0x7d8699,
     roughness: 0.9,
@@ -97,9 +93,11 @@ const materials = {
   pillar: new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
 };
 
-const roleMaterials: Record<PartRole, THREE.Material> = {
-  floor: materials.platform,
-  wall: materials.wall,
+/** Floors and walls are not here: their concrete and brick come from the material library. */
+const roleMaterials: Record<
+  Exclude<PartRole, "floor" | "wall">,
+  THREE.Material
+> = {
   railing: materials.railing,
   ledge: materials.ledge,
   roof: materials.roofTop,
@@ -130,7 +128,7 @@ function blockMesh(
 
 export function createArenaFloor(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
-  const floor = new THREE.Mesh(unitBox, materials.floor);
+  const floor = new THREE.Mesh(unitBox, industrialMaterials.floor("worn"));
 
   floor.scale.set(layout.width, 0.4, layout.depth);
   floor.position.y = -0.2;
@@ -172,14 +170,14 @@ export function createOuterWalls(layout: ArenaLayout): THREE.Group {
   const halfZ = layout.depth / 2;
   const t = OUTER_WALL_THICKNESS;
 
-  const walls: Array<[number, number, number, number]> = [
-    [0, -halfZ - t / 2, layout.width + t * 2, t], // north
-    [0, halfZ + t / 2, layout.width + t * 2, t], // south
-    [-halfX - t / 2, 0, t, layout.depth], // west
-    [halfX + t / 2, 0, t, layout.depth], // east
+  const walls: Array<[string, number, number, number, number]> = [
+    ["north", 0, -halfZ - t / 2, layout.width + t * 2, t],
+    ["south", 0, halfZ + t / 2, layout.width + t * 2, t],
+    ["west", -halfX - t / 2, 0, t, layout.depth],
+    ["east", halfX + t / 2, 0, t, layout.depth],
   ];
 
-  for (const [x, z, width, depth] of walls) {
+  for (const [side, x, z, width, depth] of walls) {
     group.add(
       blockMesh(
         x - width / 2,
@@ -187,7 +185,11 @@ export function createOuterWalls(layout: ArenaLayout): THREE.Group {
         z - depth / 2,
         z + depth / 2,
         OUTER_WALL_HEIGHT,
-        materials.wall,
+        isBrickOuterWall(side)
+          ? industrialMaterials.brick("worn")
+          : industrialMaterials.paintedConcrete(
+              industrialMaterials.paintedVariantFor(`outer-${side}`),
+            ),
       ),
     );
   }
@@ -203,7 +205,17 @@ export function createPlatform(solid: BoxSolid): THREE.Object3D {
     solid.minZ,
     solid.maxZ,
     solid.height,
-    roleMaterials[solid.role ?? "floor"],
+    solid.role === "wall" && isBrickWall(solid.id)
+      ? industrialMaterials.brick(industrialMaterials.brickVariantFor(solid.id))
+      : solid.role === "wall"
+        ? industrialMaterials.paintedConcrete(
+            industrialMaterials.paintedVariantFor(solid.id),
+          )
+        : solid.role && solid.role !== "floor"
+          ? roleMaterials[solid.role]
+          : industrialMaterials.floor(
+              industrialMaterials.floorVariantFor(solid.id),
+            ),
     solid.base ?? solid.bottom ?? 0,
   );
 
@@ -246,7 +258,7 @@ function createHatchPanel(solid: BoxSolid, mesh: THREE.Mesh): THREE.Group {
   return pivot;
 }
 
-/** A roof or a lintel: drawn, never solid. */
+/** A roof or a beam: drawn, never solid. */
 export function createOverhead(overhead: Overhead): THREE.Mesh {
   const mesh = blockMesh(
     overhead.minX,
@@ -465,6 +477,12 @@ export function buildArena(layout: ArenaLayout): THREE.Group {
 
   for (const ladder of layout.ladders) {
     arena.add(createLadder(ladder));
+  }
+
+  const steel = createSteelStructure(layout.steel);
+
+  if (steel) {
+    arena.add(steel);
   }
 
   for (const pillar of layout.pillars) {
