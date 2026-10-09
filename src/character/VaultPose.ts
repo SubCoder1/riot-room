@@ -17,6 +17,9 @@ export interface VaultShape {
   far: number;
   /** Distance from the start to the landing. */
   distance: number;
+  /** The way the vault travels (a unit vector in x, z); the way the body faces if absent. */
+  dirX?: number;
+  dirZ?: number;
 }
 
 function smoothstep(a: number, b: number, x: number): number {
@@ -33,13 +36,15 @@ function smoothstep(a: number, b: number, x: number): number {
  * vault, so it needs no clip.
  */
 export class VaultRig extends ClimbRig {
+  private readonly travel = new THREE.Vector3();
+  private readonly turned = new THREE.Vector3();
   private readonly hipsPosition = new THREE.Vector3();
   private readonly bodyUp = new THREE.Vector3();
   private readonly shoulder = new THREE.Vector3();
 
   public applyVault(
     weight: number,
-    forward: THREE.Vector3,
+    facing: THREE.Vector3,
     shape: VaultShape,
   ): void {
     if (weight < 0.002) {
@@ -50,13 +55,30 @@ export class VaultRig extends ClimbRig {
 
     this.root.updateMatrixWorld(true);
     this.root.getWorldPosition(this.origin);
-    this.right.crossVectors(forward, UP).normalize();
 
     const hips = this.root.getObjectByName("Hips");
 
     if (!hips) {
       return;
     }
+
+    // A sideways vault travels out to the side the body faces away from: the
+    // body turns to face the way it goes (in and out quickly), then the pose is
+    // the same as the forward vault along that line.
+    const forward = this.travel.copy(facing);
+
+    if (shape.dirX !== undefined && shape.dirZ !== undefined) {
+      forward.set(shape.dirX, 0, shape.dirZ);
+
+      const turn =
+        weight * smoothstep(0.0, 0.12, u) * (1 - smoothstep(0.86, 1, u));
+
+      this.turned.copy(facing).lerp(forward, turn).normalize();
+      this.rotateBoneBetween(hips, facing.clone(), this.turned.clone());
+      this.root.updateMatrixWorld(true);
+    }
+
+    this.right.crossVectors(forward, UP).normalize();
 
     // Roll over the hand: in quickly, held while passing over, out on landing.
     const roll =

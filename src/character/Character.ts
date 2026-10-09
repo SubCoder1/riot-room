@@ -29,6 +29,9 @@ export type CharacterMovementState =
   | "flyLand"
   | "block";
 
+/** How far (degrees) up or down the body tilts toward the crosshair while punching. */
+const PUNCH_AIM_LIMIT_DEGREES = 40;
+
 export class Character {
   public readonly group: THREE.Group;
   public readonly animator: CharacterAnimator;
@@ -1695,11 +1698,14 @@ export class Character {
       return;
     }
 
-    const down = this.aimAirborne ? -25 : -70;
+    // The body only tilts a level up or down toward the crosshair (40 degrees):
+    // beyond that the camera, which sits at the head, would end up inside the
+    // chest and arms, and a punch never needs the hand raised or dropped that far.
+    const down = this.aimAirborne ? -25 : -PUNCH_AIM_LIMIT_DEGREES;
     const pitch = THREE.MathUtils.clamp(
       this.aimPitch,
       THREE.MathUtils.degToRad(down),
-      THREE.MathUtils.degToRad(70),
+      THREE.MathUtils.degToRad(PUNCH_AIM_LIMIT_DEGREES),
     );
 
     this.group.updateMatrixWorld(true);
