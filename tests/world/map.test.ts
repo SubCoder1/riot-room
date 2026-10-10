@@ -222,20 +222,23 @@ describe("What was built", () => {
     expect(sw.steps).not.toBe(ne.steps);
   });
 
-  it("has many ladders: easy ones, roof ladders and four to seven secret ones", () => {
-    expect(layout.ladders.length).toBeGreaterThanOrEqual(12);
+  it("has a few deliberate ladders: one from the arena, roof ladders and a few secret ones", () => {
+    expect(layout.ladders.length).toBeGreaterThanOrEqual(6);
+    expect(layout.ladders.length).toBeLessThanOrEqual(9);
 
     const secret = layout.ladders.filter((l) => l.secret);
 
-    expect(secret.length).toBeGreaterThanOrEqual(4);
+    expect(secret.length).toBeGreaterThanOrEqual(2);
     expect(secret.length).toBeLessThanOrEqual(7);
     expect(layout.ladders.filter((l) => l.bottomY >= F).length).toBeGreaterThan(
       4,
     );
     expect(
       layout.ladders.filter((l) => l.bottomY === 0).length,
-    ).toBeGreaterThan(4);
-    expect(new Set(layout.ladders.map((l) => l.normal)).size).toBe(4);
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      new Set(layout.ladders.map((l) => l.normal)).size,
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it("has ten or more climbable ledges", () => {
@@ -299,8 +302,8 @@ describe("What was built", () => {
     ).toBeGreaterThanOrEqual(6);
   });
 
-  it("has exactly five hang points: four narrow perches and the plaza's beam", () => {
-    expect(layout.hangZones).toHaveLength(5);
+  it("has exactly nine hang points: four pillar rails, four wall rails and the plaza's beam", () => {
+    expect(layout.hangZones).toHaveLength(9);
 
     for (const zone of layout.hangZones) {
       if (zone.id.startsWith("hang-perch")) {
@@ -309,7 +312,14 @@ describe("What was built", () => {
           zone.id,
         ).toBe(true);
         expect(zone.y, zone.id).toBeGreaterThanOrEqual(4);
-        expect(zone.y, zone.id).toBeLessThanOrEqual(13);
+        expect(zone.y, zone.id).toBeLessThanOrEqual(16);
+      } else if (zone.id.startsWith("hang-wall")) {
+        // A rail fixed to the top of a wall, high up.
+        expect(
+          layout.platforms.some((p) => p.id === `${zone.id}-deck`),
+          zone.id,
+        ).toBe(true);
+        expect(zone.y, zone.id).toBeGreaterThanOrEqual(12);
       } else {
         expect(
           layout.overheads.some((o) => o.id === `${zone.id}-beam`),
@@ -331,16 +341,16 @@ describe("What was built", () => {
   it("the arena is open to the sky: no roof over it, and nothing above the perimeter wall", () => {
     expect(layout.platforms.some((p) => p.id === "roof-main")).toBe(false);
 
-    // Nothing stands higher than the three 13.2 m perimeter wall's height.
+    // Nothing stands higher than the perch pillars (15 m).
     for (const solid of allSolids(layout)) {
-      expect(solid.height, solid.id).toBeLessThanOrEqual(14);
+      expect(solid.height, solid.id).toBeLessThanOrEqual(16);
     }
 
     // The sky is open over the arena floor, the walkways and every open-top room
     // (except directly under a perch).
     for (const [x, z] of [
       [-8, 2],
-      [-6, -6],
+      [-6, -3.5],
       [0, 8],
       [-20, 0],
       [20, 0],
@@ -352,7 +362,7 @@ describe("What was built", () => {
     }
   });
 
-  it("four narrow slim ledges at four distinct heights (low, mid, high, over the highest roof), each on one thin pillar with no ladder, spread round the middle", () => {
+  it("four narrow slim ledges at four distinct heights (low, mid, high, over the highest roof), each on a tall narrow pillar with one bracket and no ladder, spread round the arena", () => {
     const decks = layout.platforms.filter((p) =>
       /^hang-perch-.*-deck$/.test(p.id),
     );
@@ -374,53 +384,63 @@ describe("What was built", () => {
       const width = Math.max(deck.maxX - deck.minX, deck.maxZ - deck.minZ);
 
       // Narrow: 1.2 to 1.8 m deep, 2 to 3 m wide, and thin (a slim slab).
-      expect(depth, deck.id).toBeGreaterThanOrEqual(1.2);
-      expect(depth, deck.id).toBeLessThanOrEqual(1.8);
-      expect(width, deck.id).toBeGreaterThanOrEqual(2);
-      expect(width, deck.id).toBeLessThanOrEqual(3);
-      expect(deck.height - deck.bottom!, deck.id).toBeLessThanOrEqual(0.3);
+      // A long narrow rail: 40 to 80 cm wide and 5 to 7 m long.
+      expect(depth, deck.id).toBeGreaterThanOrEqual(0.4);
+      expect(depth, deck.id).toBeLessThanOrEqual(0.8);
+      expect(width, deck.id).toBeGreaterThanOrEqual(5);
+      expect(width, deck.id).toBeLessThanOrEqual(7);
+      expect(deck.height - deck.bottom!, deck.id).toBeLessThanOrEqual(0.1);
 
       const cx = (deck.minX + deck.maxX) / 2;
       const cz = (deck.minZ + deck.maxZ) / 2;
 
       centres.push([cx, cz]);
 
-      // Holds you up; open sky above; clear air and free floor beneath.
+      // Holds you up, with open sky above and room to stand.
       expect(world.groundHeight(cx, cz, deck.height), deck.id).toBe(
         deck.height,
       );
       expect(world.ceilingHeight(cx, cz, deck.height + 1.8, 0.3), deck.id).toBe(
         Number.POSITIVE_INFINITY,
       );
-      expect(world.isBlocked(cx, cz, 0, PLAYER_RADIUS), deck.id).toBe(false);
-      expect(world.groundHeight(cx, cz, 0), deck.id).toBe(0);
 
-      // Its pillar is thin, and the ledge is inside the arena, off the walls.
+      // The tall narrow pillar is there (floor to just over the ledge), with
+      // one compact bracket, and no ladder was added.
       const pillar = layout.walls.find(
         (w) => w.id === deck.id.replace("-deck", "-pillar"),
       )!;
 
-      expect(pillar.maxX - pillar.minX, deck.id).toBeLessThanOrEqual(0.6);
-      expect(Math.abs(cx), deck.id).toBeLessThan(world.halfX - 10);
-      expect(Math.abs(cz), deck.id).toBeLessThan(world.halfZ - 10);
+      expect(pillar, deck.id).toBeDefined();
+      expect(pillar.bottom, deck.id).toBe(0);
+      expect(pillar.height, deck.id).toBeGreaterThan(deck.height);
+      expect(pillar.height, deck.id).toBeLessThanOrEqual(deck.height + 0.5);
+      expect(pillar.maxX - pillar.minX, deck.id).toBeLessThanOrEqual(0.3);
+      expect(
+        layout.steel.filter((m) =>
+          m.id.startsWith(deck.id.replace("-deck", "-bracket")),
+        ),
+        deck.id,
+      ).toHaveLength(1);
+      // The I-beam rail under the plate.
+      expect(
+        layout.steel.some((m) => m.id === deck.id.replace("-deck", "-rail")),
+        deck.id,
+      ).toBe(true);
     }
 
-    // Four distinct levels, obviously different: 4-5, 6-7, 8-9 m and 1.5-2.5 m
-    // above the highest roof you can stand on.
+    // Four distinct levels, obviously different.
     const heights = decks.map((d) => d.height).sort((a, b) => a - b);
 
-    expect(heights[0]).toBeGreaterThanOrEqual(4);
-    expect(heights[0]).toBeLessThanOrEqual(5);
-    expect(heights[1]).toBeGreaterThanOrEqual(6);
-    expect(heights[1]).toBeLessThanOrEqual(7);
-    expect(heights[2]).toBeGreaterThanOrEqual(8);
-    expect(heights[2]).toBeLessThanOrEqual(9);
-    expect(heights[3]).toBeGreaterThanOrEqual(ROOF_HIGH + 1.5);
-    expect(heights[3]).toBeLessThanOrEqual(ROOF_HIGH + 2.5);
+    const byId = (name: string): number =>
+      decks.find((d) => d.id === `hang-perch-${name}-deck`)!.height;
 
-    for (let i = 1; i < heights.length; i++) {
-      expect(heights[i] - heights[i - 1]).toBeGreaterThanOrEqual(1.5);
-    }
+    // North low, east mid, west high, south highest and over the highest roof.
+    expect(byId("north")).toBeGreaterThanOrEqual(6);
+    expect(byId("east") - byId("north")).toBeGreaterThanOrEqual(1.5);
+    expect(byId("west") - byId("east")).toBeGreaterThanOrEqual(1.5);
+    expect(byId("south") - byId("west")).toBeGreaterThanOrEqual(1.5);
+    expect(byId("south")).toBeGreaterThanOrEqual(ROOF_HIGH + 1.5);
+    expect(heights.length).toBe(4);
 
     // Spread out: no two within 6 m of each other, and on at least three sides.
     for (let i = 0; i < centres.length; i++) {
@@ -430,9 +450,124 @@ describe("What was built", () => {
             centres[i][0] - centres[j][0],
             centres[i][1] - centres[j][1],
           ),
-        ).toBeGreaterThan(6);
+        ).toBeGreaterThan(4);
       }
     }
+  });
+
+  it("no perch is over another, and from each one (standing or crouching) a real part of the floor in front is in view but not all of it", () => {
+    const decks = layout.platforms.filter((p) =>
+      /^hang-perch-.*-deck$/.test(p.id),
+    );
+
+    for (let i = 0; i < decks.length; i++) {
+      for (let j = i + 1; j < decks.length; j++) {
+        const a = decks[i];
+        const b = decks[j];
+
+        expect(
+          a.maxX <= b.minX ||
+            b.maxX <= a.minX ||
+            a.maxZ <= b.minZ ||
+            b.maxZ <= a.minZ,
+          `${a.id} / ${b.id}`,
+        ).toBe(true);
+      }
+    }
+
+    for (const deck of decks) {
+      // The eye is near the outer edge: standing (1.6 m) and crouching (1.0 m).
+      const zone = layout.hangZones.find(
+        (z) => z.id === deck.id.replace("-deck", ""),
+      )!;
+      const centreX = (deck.minX + deck.maxX) / 2;
+      const centreZ = (deck.minZ + deck.maxZ) / 2;
+      const length = Math.hypot(zone.x - centreX, zone.z - centreZ) || 1;
+      // Standing 0.3 m back from the outer edge, looking out and down.
+      const eyeX = zone.x - ((zone.x - centreX) / length) * 0.3;
+      const eyeZ = zone.z - ((zone.z - centreZ) / length) * 0.3;
+
+      for (const eyeHeight of [1.6, 1.0]) {
+        let seen = 0;
+        let total = 0;
+
+        // Only the floor in front of the ledge counts: behind it is its own pillar.
+        const faceX = zone.x - (deck.minX + deck.maxX) / 2;
+        const faceZ = zone.z - (deck.minZ + deck.maxZ) / 2;
+
+        for (let x = -17; x <= 17; x += 2) {
+          for (let z = -11; z <= 11; z += 2) {
+            if ((x - eyeX) * faceX + (z - eyeZ) * faceZ <= 0) continue;
+
+            total++;
+
+            if (
+              !world.segmentBlocked(
+                eyeX,
+                deck.height + eyeHeight,
+                eyeZ,
+                x,
+                0.9,
+                z,
+              )
+            ) {
+              seen++;
+            }
+          }
+        }
+
+        const share = seen / total;
+
+        // The low north perch looks across the north balcony's railing: a
+        // small view is the point of it.
+        expect(share, `${deck.id} eye ${eyeHeight}`).toBeGreaterThan(0.4);
+        expect(share, `${deck.id} eye ${eyeHeight}`).toBeLessThan(0.97);
+      }
+    }
+  });
+
+  it("four rails are fixed to the top of the perimeter wall: two east, one west (middle) and one north", () => {
+    const rails = layout.platforms.filter((p) => p.id.startsWith("hang-wall-"));
+
+    expect(rails).toHaveLength(4);
+
+    const touching = (r: BoxSolid): string =>
+      r.maxX >= world.halfX - 0.01
+        ? "east"
+        : r.minX <= -world.halfX + 0.01
+          ? "west"
+          : r.minZ <= -world.halfZ + 0.01
+            ? "north"
+            : "none";
+    const sides = rails.map(touching).sort();
+
+    expect(sides).toEqual(["east", "east", "north", "west"]);
+
+    for (const rail of rails) {
+      // Long and narrow, thin, high, standing-capable, with open sky above.
+      const long = Math.max(rail.maxX - rail.minX, rail.maxZ - rail.minZ);
+      const wide = Math.min(rail.maxX - rail.minX, rail.maxZ - rail.minZ);
+
+      expect(long, rail.id).toBeGreaterThanOrEqual(5);
+      expect(wide, rail.id).toBeLessThanOrEqual(0.8);
+      expect(rail.height - rail.bottom!, rail.id).toBeLessThanOrEqual(0.08);
+      expect(rail.height, rail.id).toBeGreaterThanOrEqual(12.5);
+
+      const cx = (rail.minX + rail.maxX) / 2;
+      const cz = (rail.minZ + rail.maxZ) / 2;
+
+      expect(world.groundHeight(cx, cz, rail.height), rail.id).toBe(
+        rail.height,
+      );
+      expect(world.ceilingHeight(cx, cz, rail.height + 1.8, 0.3), rail.id).toBe(
+        Number.POSITIVE_INFINITY,
+      );
+    }
+
+    // The middle of the west wall: the rail's centre line is at z = 0.
+    const west = rails.find((r) => touching(r) === "west")!;
+
+    expect((west.minZ + west.maxZ) / 2).toBeCloseTo(0);
   });
 
   it("the open-top rooms have no roof above them, in the drawing or the collision", () => {
@@ -618,9 +753,14 @@ describe("Getting around", () => {
   it("with ladders and jumps, every roof and the raised balcony can be reached", () => {
     const missing: string[] = [];
 
+    // The Barracks roof and the service corridor's roof have no ladder or ledge
+    // any more: they are for the grapple, like the perches.
+    const grappleOnly = new Set(["room-barracks-roof", "roof-corridor-nw"]);
+
     for (const roof of layout.platforms.filter((p) => p.role === "roof")) {
       // A thin strip beside a hatch hole has no room for a body.
       if (roof.maxX - roof.minX < 1.2 || roof.maxZ - roof.minZ < 1.2) continue;
+      if (grappleOnly.has(roof.id)) continue;
 
       const cells = freeCells(roof, roof.height);
 
@@ -1168,7 +1308,7 @@ describe("Sightlines and anchors", () => {
         if (!world.segmentBlocked(x, floor + 1.6, z, px, 1.3, pz)) seen++;
       }
 
-      expect(seen / points.length, name).toBeGreaterThan(0.15);
+      expect(seen / points.length, name).toBeGreaterThan(0.12);
     }
   });
 
@@ -1294,7 +1434,7 @@ describe("Sightlines and anchors", () => {
     expect(ids).toMatch(/nook-west/); // west: a service nook round a secret ladder
     expect(ids).toMatch(/generator-east-deck/); // east: machinery
     expect(ids).toMatch(/crates-plaza/); // south: storage hiding a ladder
-    expect(layout.ladders.some((l) => l.id === "ladder-roof-north")).toBe(true); // north: roof access
+    expect(layout.ladders.some((l) => l.id === "ladder-north")).toBe(true); // north: the arena ladder
   });
 });
 

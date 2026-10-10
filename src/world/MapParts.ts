@@ -153,6 +153,14 @@ export class MapBuilder {
       rooms: [],
       zones: [],
       spawnPoints: [],
+      vents: { id: "ground", surfaceY: 0, grates: [], tunnels: [], closed: [] },
+      upperVents: {
+        id: "upper",
+        surfaceY: 4,
+        grates: [],
+        tunnels: [],
+        closed: [],
+      },
     };
   }
 
@@ -705,11 +713,12 @@ export class MapBuilder {
   }
 
   /**
-   * A narrow observation ledge: a slim solid slab 1.6 m deep and 2.6 m wide
-   * jutting out of the side of one thin pillar, with a single corbel under it.
-   * `dir` is the way it faces (the unit x or z step out of the pillar); `y` is
-   * its top. No ladder: it is reached by a grapple, not climbed. A hang point
-   * runs along its outer edge.
+   * An observation ledge on a tall narrow pillar, shaped like a steel rail: a
+   * long thin I-beam (6 m) running straight out of the side of the pillar near
+   * its top (`dir` is the unit x or z step out of it), with a narrow top plate
+   * (50 cm wide, 7 cm thick) to stand on, held by one compact bracket. `y` is
+   * the top of the plate. No ladder and no railing. A hang point runs along its
+   * outer end.
    */
   public createPerch(
     id: string,
@@ -720,42 +729,47 @@ export class MapBuilder {
     y: number,
     floorY = 0,
   ): void {
-    const pillar = 0.5;
-    const depth = 1.6;
-    const width = 2.6;
-    const thickness = 0.25;
+    const pillar = 0.25;
+    const length = 6;
+    const width = 0.5;
+    const thickness = 0.07;
+    const beamDepth = 0.3;
     const under = y - thickness;
     const [dx, dz] = dir;
     const face = pillar / 2;
-    const near = face;
-    const far = face + depth;
     const half = width / 2;
+    const end = face + length;
     const slab: Bounds =
       dx !== 0
         ? {
-            minX: Math.min(pillarX + dx * near, pillarX + dx * far),
-            maxX: Math.max(pillarX + dx * near, pillarX + dx * far),
+            minX: Math.min(pillarX + dx * face, pillarX + dx * end),
+            maxX: Math.max(pillarX + dx * face, pillarX + dx * end),
             minZ: pillarZ - half,
             maxZ: pillarZ + half,
           }
         : {
             minX: pillarX - half,
             maxX: pillarX + half,
-            minZ: Math.min(pillarZ + dz * near, pillarZ + dz * far),
-            maxZ: Math.max(pillarZ + dz * near, pillarZ + dz * far),
+            minZ: Math.min(pillarZ + dz * face, pillarZ + dz * end),
+            maxZ: Math.max(pillarZ + dz * face, pillarZ + dz * end),
           };
+    const at = (u: number, level: number): Vec3 => [
+      pillarX + dx * u,
+      level,
+      pillarZ + dz * u,
+    ];
 
-    // The one thin pillar, a little over the ledge.
+    // The tall narrow pillar, a little over the rail.
     this.createColumn(
       `${id}-pillar`,
       pillarX,
       pillarZ,
       floorY,
-      y + 1.2,
+      y + 0.3,
       pillar,
     );
 
-    // The slim ledge.
+    // The thin top plate: the surface you stand on.
     this.layout.platforms.push({
       kind: "box",
       id: `${id}-deck`,
@@ -768,27 +782,115 @@ export class MapBuilder {
     this.layout.hangZones.push({
       id,
       name,
-      x: pillarX + dx * far,
-      z: pillarZ + dz * far,
-      y: under,
+      x: pillarX + dx * end,
+      z: pillarZ + dz * end,
+      y: under - beamDepth,
       axis: dx !== 0 ? "z" : "x",
       length: width,
       floorY,
     });
 
-    // One corbel: from the pillar, 1.4 m down, out to the ledge's underside.
+    // The I-beam under the plate: top flange, web and bottom flange, like a rail.
     this.createSteel(
-      `${id}-corbel`,
+      `${id}-rail`,
+      "beam",
+      at(0, under - beamDepth / 2),
+      at(end, under - beamDepth / 2),
+      "i",
+      width * 0.8,
+      beamDepth,
+    );
+
+    // One compact bracket: from the pillar, 1.2 m down, out along the rail.
+    this.createSteel(
+      `${id}-bracket`,
       "brace",
-      [pillarX + dx * face, under - 1.4, pillarZ + dz * face],
-      [
-        pillarX + dx * (face + depth * 0.7),
-        under,
-        pillarZ + dz * (face + depth * 0.7),
-      ],
+      at(face, under - beamDepth - 1.2),
+      at(face + 1.6, under - beamDepth),
       "box",
-      0.2,
-      0.24,
+      0.07,
+      0.09,
+    );
+  }
+
+  /**
+   * A rail fixed to the face of a wall near its top: the same long thin I-beam
+   * (6 m, 50 cm top plate 7 cm thick) as the pillar perches, running straight
+   * out of the wall into the arena. `face` is the wall's inner face (x or z,
+   * whichever axis `dir` runs along), `along` the middle of the rail along the
+   * wall, `y` the top of the plate. One bracket back to the wall. A hang point
+   * runs along its outer end.
+   */
+  public createWallRail(
+    id: string,
+    name: string,
+    face: number,
+    along: number,
+    dir: readonly [number, number],
+    y: number,
+    floorY = 0,
+  ): void {
+    const length = 6;
+    const width = 0.5;
+    const thickness = 0.07;
+    const beamDepth = 0.3;
+    const under = y - thickness;
+    const [dx, dz] = dir;
+    const half = width / 2;
+    const out = face + (dx !== 0 ? dx : dz) * length;
+    const slab: Bounds =
+      dx !== 0
+        ? {
+            minX: Math.min(face, out),
+            maxX: Math.max(face, out),
+            minZ: along - half,
+            maxZ: along + half,
+          }
+        : {
+            minX: along - half,
+            maxX: along + half,
+            minZ: Math.min(face, out),
+            maxZ: Math.max(face, out),
+          };
+    const at = (u: number, level: number): Vec3 =>
+      dx !== 0 ? [face + dx * u, level, along] : [along, level, face + dz * u];
+
+    this.layout.platforms.push({
+      kind: "box",
+      id: `${id}-deck`,
+      role: "catwalk",
+      ...slab,
+      base: under,
+      bottom: under,
+      height: y,
+    });
+    this.layout.hangZones.push({
+      id,
+      name,
+      x: dx !== 0 ? out : along,
+      z: dx !== 0 ? along : out,
+      y: under - beamDepth,
+      axis: dx !== 0 ? "z" : "x",
+      length: width,
+      floorY,
+    });
+    this.createSteel(
+      `${id}-rail`,
+      "beam",
+      at(0.05, under - beamDepth / 2),
+      at(length, under - beamDepth / 2),
+      "i",
+      width * 0.8,
+      beamDepth,
+    );
+    this.createSteel(
+      `${id}-bracket`,
+      "brace",
+      at(0.05, under - beamDepth - 1.2),
+      at(1.6, under - beamDepth),
+      "box",
+      0.07,
+      0.09,
     );
   }
 

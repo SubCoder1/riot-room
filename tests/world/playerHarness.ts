@@ -33,6 +33,7 @@ export function spawnPlayer(x: number, feetY: number, z: number, yaw = 0) {
 
   player.setWorld(world);
   player.setLadders(ARENA_LAYOUT.ladders);
+  player.setVents([ARENA_LAYOUT.vents, ARENA_LAYOUT.upperVents]);
   player.teleport(x, feetY, z);
   input.yaw = yaw;
 

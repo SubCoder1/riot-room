@@ -350,11 +350,11 @@ describe("Grabbing on the move, and solid ladders", () => {
   });
 
   it("jumping at a ladder and pressing E in the air grabs it", () => {
-    const ladder = ladders.find((l) => l.id === "ladder-south")!;
+    const ladder = ladders.find((l) => l.id === "ladder-north")!;
     const p = spawnPlayer(
       ladder.approach.x,
       0,
-      ladder.approach.z - 1.4,
+      ladder.approach.z + 1.4,
       ladderYaw(ladder),
     );
 

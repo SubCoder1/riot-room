@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { buildArena, createLadder } from "../../src/world/ArenaBuilder";
 import { PERIMETER_WALL_HEIGHT, ROOF_HIGH } from "../../src/world/ArenaLayout";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
+import { ventBlocks } from "../../src/world/Vents";
 
 function meshes(root: THREE.Object3D): THREE.Mesh[] {
   const found: THREE.Mesh[] = [];
@@ -26,7 +27,7 @@ describe("Arena meshes", () => {
       0,
     );
     const expected =
-      1 +
+      1 + // the arena floor (one merged mesh with a hole under each grate)
       4 +
       ARENA_LAYOUT.platforms.length +
       ARENA_LAYOUT.walls.length +
@@ -35,6 +36,9 @@ describe("Arena meshes", () => {
       ARENA_LAYOUT.pillars.length +
       ARENA_LAYOUT.overheads.length +
       1 + // the structural steel, merged into one mesh
+      3 + // the vents: floor and walls of the ground network, floor of the upper
+      ventBlocks(ARENA_LAYOUT.vents).length + // ...then a block of grating each
+      ventBlocks(ARENA_LAYOUT.upperVents).length +
       ladderParts;
 
     expect(all).toHaveLength(expected);
@@ -44,8 +48,16 @@ describe("Arena meshes", () => {
     const geometries = new Set(all.map((m) => m.geometry));
     const materials = new Set(all.map((m) => m.material));
 
-    // One box, one cylinder (the tanks), the merged steel, and a wedge per ramp.
-    expect(geometries.size).toBe(3 + ARENA_LAYOUT.ramps.length);
+    // One box, one cylinder (the tanks), the merged steel, the merged floor, the
+    // vent floor and walls, a merged grate each, and a wedge per ramp.
+    expect(geometries.size).toBe(
+      6 +
+        ventBlocks(ARENA_LAYOUT.vents).length +
+        ventBlocks(ARENA_LAYOUT.upperVents).length +
+        1 + // the upper network's floor (its walls are the cut floor)
+        2 + // the north and south wings, cut round the upper grating
+        ARENA_LAYOUT.ramps.length,
+    );
     expect(materials.size).toBeLessThanOrEqual(24);
   });
 
@@ -180,7 +192,7 @@ describe("Arena meshes", () => {
     expect(solid.every((m) => m.kind === "column")).toBe(true);
   });
 
-  it("floating slabs in the open stand on posts that meet their undersides, and the service corridor is roofed around its ladder", () => {
+  it("floating slabs in the open stand on posts that meet their undersides, and the service corridor is roofed end to end", () => {
     const posts = (prefix: string) =>
       ARENA_LAYOUT.steel.filter((m) => m.id.startsWith(prefix) && m.solid);
     const slab = (id: string) =>
@@ -210,15 +222,12 @@ describe("Arena meshes", () => {
     const corridor = ARENA_LAYOUT.platforms.filter((p) =>
       p.id.startsWith("roof-corridor-nw"),
     );
-    const ladder = ARENA_LAYOUT.ladders.find(
-      (l) => l.id === "secret-corridor",
-    )!;
 
-    expect(corridor.length).toBeGreaterThan(0);
-    // No roof piece above the ladder.
-    expect(
-      corridor.some((p) => p.minX < ladder.x + 0.4 && p.maxX > ladder.x - 0.4),
-    ).toBe(false);
+    // One unbroken slab: the ladder that opened it is gone.
+    expect(corridor).toHaveLength(1);
+    expect(ARENA_LAYOUT.ladders.some((l) => l.id === "secret-corridor")).toBe(
+      false,
+    );
   });
 
   it("the whole 64 x 48 m map is ringed by the perimeter wall and open to the sky", () => {
@@ -227,7 +236,7 @@ describe("Arena meshes", () => {
     const box = new THREE.Box3().setFromObject(arena);
 
     expect(box.max.y).toBeGreaterThanOrEqual(PERIMETER_WALL_HEIGHT);
-    expect(box.max.y).toBeLessThanOrEqual(14);
+    expect(box.max.y).toBeLessThanOrEqual(16);
     expect(box.max.x).toBeGreaterThanOrEqual(32);
     expect(box.min.x).toBeLessThanOrEqual(-32);
     expect(box.max.z).toBeGreaterThanOrEqual(24);

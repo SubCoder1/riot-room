@@ -9,6 +9,12 @@ import { ArenaDebug } from "../world/ArenaDebug";
 import { CLIMB, angleBetween, ladderYaw } from "../player/Climb";
 import { ARENA_HALF_X } from "../world/ArenaLayout";
 import { ARENA_LAYOUT } from "../world/UpperFloorMap";
+import {
+  inTunnel,
+  ventCeilingY,
+  ventFloorY,
+  type VentBlock,
+} from "../world/Vents";
 import { assignSpawns } from "../world/SpawnSystem";
 import { Character } from "../character/Character";
 import type { CharacterMovementState } from "../character/Character";
@@ -47,6 +53,9 @@ const THROWABLE_TYPE: Record<HeldKind, UtilityType> = {
 
 /** How far an opened hatch panel swings up on its hinge (radians). */
 const HATCH_OPEN_ANGLE = 1.75;
+
+/** How far a block of vent grating swings up on its hinge when it opens (radians). */
+const VENT_PANEL_OPEN = 1.85;
 
 export class Game {
   // ============================================================
@@ -185,18 +194,23 @@ export class Game {
   // ============================================================
 
   /**
-   * Move camera slightly down from the center
-   * of the Polyfork Head bone.
+   * Move camera slightly down from the center of the Polyfork Head bone. A small
+   * value keeps the eye high, so the fists sit lower in the view.
    */
-  private readonly firstPersonHeadDownOffset = 0.08;
+  private readonly firstPersonHeadDownOffset = 0.04;
 
   /**
    * Move camera slightly forward from the head.
    *
-   * This prevents the camera from being inside
-   * the character's head.
+   * This prevents the camera from being inside the character's head. Pulled
+   * back a little (0.18 to 0.10) so the fists and forearms sit farther away and
+   * look smaller; closer than about 0.05 the hair shows at the top of the view.
    */
-  private readonly firstPersonForwardOffset = 0.18;
+  private readonly firstPersonForwardOffset = 0.1;
+
+  /** Extra eye distance (m) eased in during a running or airborne punch. */
+  private readonly leaningPunchMargin = 0.12;
+  private punchCameraMargin = 0;
 
   // ============================================================
   // THIRD PERSON CAMERA
@@ -263,6 +277,7 @@ export class Game {
     this.player = new Player();
     this.player.setWorld(this.collision);
     this.player.setLadders(ARENA_LAYOUT.ladders);
+    this.player.setVents([ARENA_LAYOUT.vents, ARENA_LAYOUT.upperVents]);
     this.player.isHatchShut = (id) => !this.openHatches.has(id);
 
     // ----------------------------------------------------------
@@ -473,12 +488,14 @@ export class Game {
     //
 
     this.updateCrouchState();
+    this.duckThroughVent();
 
     // The weapon wheel and the rock stance come first: whether the player is
     // aiming a rock decides if they can guard or punch this frame.
     this.updateWeaponWheel(dt);
     this.updateClimb();
     this.updateHatches(dt);
+    this.updateGrates(dt);
     this.updateRockStance(dt);
 
     // Holding F guards. Sprinting wins only when it changes the
@@ -565,6 +582,9 @@ export class Game {
     );
 
     this.character.setVault(this.player.vaultPose);
+    this.character.setVentMove(this.player.ventPose);
+    this.character.setLegsHidden(this.player.isInVent && !this.isThirdPerson);
+    this.updateVentArms();
 
     this.character.setRock(
       this.rockStance.pose,
@@ -644,6 +664,11 @@ export class Game {
   // ============================================================
 
   private isCrouching(): boolean {
+    // In the vents (and climbing in or out) the vigilante is always crouched.
+    if (this.player.isInVent) {
+      return true;
+    }
+
     return (
       this.player.isGrounded &&
       !this.crouchCancelled &&
@@ -664,6 +689,13 @@ export class Game {
     }
 
     this.player.isCrouching = this.isCrouching();
+  }
+
+  /** In the vents (and on the way in or out) the vigilante is always crouched. */
+  private duckThroughVent(): void {
+    if (this.player.isInVent) {
+      this.player.isCrouching = true;
+    }
   }
 
   // ============================================================
@@ -723,7 +755,14 @@ export class Game {
 
     this.climbKeyDown = key;
 
-    if (pressed) {
+    if (pressed && this.player.isInVent) {
+      // Underground: E climbs out through the grate overhead (any grate).
+      this.player.leaveVent();
+    } else if (pressed && !this.player.isClimbing && this.player.enterVent()) {
+      // Standing on the grating wins over a ladder that happens to be in view.
+      // E on a grate: the vigilante climbs down into the vents.
+      this.rockStance.reset();
+    } else if (pressed) {
       if (this.player.isClimbing) {
         const hatch = this.player.climbLadder?.hatch;
 
@@ -768,9 +807,17 @@ export class Game {
         : this.player.hasShutHatch
           ? "W / S climb  ·  E open hatch  ·  Space jump off"
           : "W / S climb  ·  Space jump off  ·  E let go"
-      : this.player.ladderInReach()
-        ? "E  Climb"
-        : "";
+      : this.player.isInVent
+        ? this.player.ventExitInReach()
+          ? "E  Climb out"
+          : this.player.isUnderground
+            ? "W A S D crawl  ·  find a grate"
+            : ""
+        : this.player.ventEntryInReach()
+          ? "E  Enter vent"
+          : this.player.ladderInReach()
+            ? "E  Climb"
+            : "";
 
     if (this.climbPrompt.textContent !== text) {
       this.climbPrompt.textContent = text;
@@ -797,6 +844,92 @@ export class Game {
     }
   }
 
+  private ventArmFade = 1;
+
+  /**
+   * Underground, the hands draw in as a tunnel wall, the ceiling or the floor
+   * comes within reach along the view (and 35 degrees either side), so they
+   * never poke through solid surfaces. Outside the vents they are untouched.
+   */
+  private updateVentArms(): void {
+    let wanted = 1;
+
+    if (this.player.isUnderground && !this.isThirdPerson) {
+      const vents = this.player.ventNetwork ?? ARENA_LAYOUT.vents;
+      // The camera, at the head (the crouched head is well below the body's
+      // eye point).
+      const eye = this.renderer.camera.position;
+      let nearest = Number.POSITIVE_INFINITY;
+
+      for (const turn of [0, 0.6, -0.6]) {
+        const yaw = this.player.yaw + turn;
+        const pitch = this.player.pitch;
+        const dx = -Math.sin(yaw) * Math.cos(pitch);
+        const dy = Math.sin(pitch);
+        const dz = -Math.cos(yaw) * Math.cos(pitch);
+
+        for (let s = 0.1; s <= 1.2; s += 0.05) {
+          const x = eye.x + dx * s;
+          const y = eye.y + dy * s;
+          const z = eye.z + dz * s;
+
+          if (
+            y > ventCeilingY(vents) - 0.05 ||
+            y < ventFloorY(vents) + 0.05 ||
+            !inTunnel(vents, x, z)
+          ) {
+            nearest = Math.min(nearest, s);
+
+            break;
+          }
+        }
+      }
+
+      // Full size with 1.2 m clear, gone by 0.55 m.
+      wanted = THREE.MathUtils.clamp((nearest - 0.55) / 0.65, 0, 1);
+    }
+
+    this.ventArmFade += (wanted - this.ventArmFade) * 0.3;
+    this.character.setVentArmFade(this.ventArmFade);
+  }
+
+  private ventBlockObjects: THREE.Object3D[] | null = null;
+
+  /**
+   * Only the blocks of grating under (and touching) the body swing open on
+   * their hinges while the vigilante climbs in or out, fast, and drop shut
+   * after; the rest of the path stays put.
+   */
+  private updateGrates(dt: number): void {
+    if (!this.ventBlockObjects) {
+      this.ventBlockObjects = [];
+      this.arena.group.traverse((object) => {
+        if (object.name.startsWith("ventblock:")) {
+          this.ventBlockObjects?.push(object);
+        }
+      });
+    }
+
+    const point = this.player.ventTransitionPoint;
+
+    for (const object of this.ventBlockObjects) {
+      const block = object.userData.block as VentBlock;
+      const touched =
+        point !== null &&
+        Math.abs(block.y - point.y) < 0.05 &&
+        point.x + 0.45 >= block.minX &&
+        point.x - 0.45 <= block.maxX &&
+        point.z + 0.45 >= block.minZ &&
+        point.z - 0.45 <= block.maxZ;
+      // Swings up fast to open, and drops shut faster still.
+      const target = touched ? VENT_PANEL_OPEN : 0;
+      const rate = touched ? 26 : 22;
+
+      object.rotation.z +=
+        (target - object.rotation.z) * (1 - Math.exp(-rate * dt));
+    }
+  }
+
   /** Swings every hatch panel toward its open or shut angle. */
   private updateHatches(dt: number): void {
     for (const hatch of ARENA_LAYOUT.hatches) {
@@ -812,7 +945,11 @@ export class Game {
   }
 
   private updateRockStance(dt: number): void {
-    if (this.player.isClimbing || this.player.isVaulting) {
+    if (
+      this.player.isClimbing ||
+      this.player.isVaulting ||
+      this.player.isInVent
+    ) {
       // Both hands are on the ladder (or the obstacle being vaulted).
       this.input.consumeAttack();
       this.punchClick = false;
@@ -1034,7 +1171,8 @@ export class Game {
       this.punchBufferLeft = 0;
     }
 
-    const canPunch = grounded && !this.player.isCrouching;
+    const canPunch =
+      grounded && !this.player.isCrouching && !this.player.isInVent;
     const duration = this.character.punchDuration;
     const runDuration = this.character.runPunchDuration;
 
@@ -1645,6 +1783,12 @@ export class Game {
    * is, so you can't see the inside of scenery (or through it).
    */
   private keepCameraOutOfScenery(position: THREE.Vector3): void {
+    // In the vents the tunnel walls are the bounds; the solid block of the upper
+    // floor around an upper tunnel must not push the camera out of it.
+    if (this.player.isInVent) {
+      return;
+    }
+
     const free = this.collision.pushOut(
       position.x,
       position.z,
@@ -1657,6 +1801,49 @@ export class Game {
 
     position.x = free.x;
     position.z = free.z;
+  }
+
+  /** Underground the camera stays under the floor slab (so it never pokes out of the vent). */
+  private keepUndergroundCameraBelowFloor(position: THREE.Vector3): void {
+    if (this.player.isUnderground) {
+      const net = this.player.ventNetwork;
+
+      if (net) {
+        position.y = Math.min(
+          Math.max(position.y, ventFloorY(net) + 0.2),
+          ventCeilingY(net) - 0.15,
+        );
+
+        // Never outside the tunnel, the same on both sides: the camera is slid
+        // sideways into the nearest tunnel (15 cm off its walls) and stays in the
+        // head. (It is not pulled back toward the body: that put the camera
+        // inside the torso and the legs.)
+        let bestX = position.x;
+        let bestZ = position.z;
+        let bestD = Infinity;
+
+        for (const tun of net.tunnels) {
+          const x = Math.min(
+            Math.max(position.x, tun.minX + 0.15),
+            tun.maxX - 0.15,
+          );
+          const z = Math.min(
+            Math.max(position.z, tun.minZ + 0.15),
+            tun.maxZ - 0.15,
+          );
+          const d = Math.hypot(x - position.x, z - position.z);
+
+          if (d < bestD) {
+            bestD = d;
+            bestX = x;
+            bestZ = z;
+          }
+        }
+
+        position.x = bestX;
+        position.z = bestZ;
+      }
+    }
   }
 
   private updateCamera(): void {
@@ -1742,6 +1929,22 @@ export class Game {
         0.05 * THREE.MathUtils.clamp(this.player.pitch / 1.0, 0, 1),
       );
 
+      // A running or airborne punch pitches the head and chest forward and the
+      // chin comes up toward the camera: ease the eye out while one is in
+      // progress (and back in after it).
+      const leaning =
+        this.runPunchTimeLeft > 0 ||
+        this.flyPunchActive ||
+        (this.punchTimeLeft > 0 && !this.player.isGrounded);
+
+      this.punchCameraMargin +=
+        ((leaning ? this.leaningPunchMargin : 0) - this.punchCameraMargin) *
+        0.3;
+      this.firstPersonCameraPosition.addScaledVector(
+        this.playerForward,
+        this.punchCameraMargin,
+      );
+
       // Looking down tips the head forward and the forehead sweeps toward the
       // camera, so move the eye out a little as the pitch increases.
       this.firstPersonCameraPosition.addScaledVector(
@@ -1757,6 +1960,7 @@ export class Game {
     // Apply camera position
     // ----------------------------------------------------------
 
+    this.keepUndergroundCameraBelowFloor(this.firstPersonCameraPosition);
     this.keepCameraOutOfScenery(this.firstPersonCameraPosition);
     this.renderer.camera.position.copy(this.firstPersonCameraPosition);
     this.character.aimEye = this.firstPersonCameraPosition;
@@ -1868,6 +2072,7 @@ export class Game {
     // Apply camera position
     // ----------------------------------------------------------
 
+    this.keepUndergroundCameraBelowFloor(this.thirdPersonCameraPosition);
     this.keepCameraOutOfScenery(this.thirdPersonCameraPosition);
     this.renderer.camera.position.copy(this.thirdPersonCameraPosition);
 

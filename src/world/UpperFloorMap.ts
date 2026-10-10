@@ -3,6 +3,7 @@ import {
   ARENA_HALF_X,
   ARENA_HALF_Z,
   ARENA_WIDTH,
+  PERIMETER_WALL_HEIGHT,
   ROOF_HIGH,
   ROOF_LOW,
   ROOF_MID,
@@ -26,9 +27,9 @@ import { MapBuilder, bounds } from "./MapParts";
  *
  * Routes up, from easiest to hardest to find:
  *   - two public staircases (south-west and north-east),
- *   - five ladders on the arena faces and balconies,
+ *   - one ladder up the north face of the arena,
  *   - three ladders to the roofs from the walkways,
- *   - six secret ladders in nooks (still usable by anyone),
+ *   - two secret ladders (the alcove's, under a hatch, and the terrace's) and a maintenance ladder,
  *   - low ledges (1.2 m, a jump) and ledge chains (2.4 m, a climb later),
  *   - the roof network: every roof can be reached from another.
  *
@@ -236,48 +237,12 @@ function createUpperFloor(): ArenaLayout {
     along: -9,
     topY: F,
   });
-  map.createLadder({
-    id: "ladder-south",
-    normal: "-z",
-    face: 12,
-    along: 8,
-    topY: F,
-  });
-  map.createLadder({
-    id: "ladder-west",
-    normal: "+x",
-    face: -18,
-    along: -8.8,
-    topY: F,
-  });
-  map.createLadder({
-    id: "ladder-east-balcony",
-    normal: "-x",
-    face: 11,
-    along: 10,
-    topY: F,
-  });
-  map.createLadder({
-    id: "ladder-north-balcony",
-    normal: "+z",
-    face: -7.5,
-    along: 3.5,
-    topY: F,
-  });
   // To the roofs, from the walkways:
   map.createLadder({
     id: "ladder-roof-east",
     normal: "-x",
     face: 22,
     along: -6,
-    bottomY: F,
-    topY: ROOF_LOW,
-  });
-  map.createLadder({
-    id: "ladder-roof-south",
-    normal: "-z",
-    face: 15,
-    along: 8.5,
     bottomY: F,
     topY: ROOF_LOW,
   });
@@ -289,39 +254,29 @@ function createUpperFloor(): ArenaLayout {
     bottomY: ROOF_LOW,
     topY: ROOF_HIGH,
   });
-  // Secret or semi-hidden (still usable by anyone):
   map.createLadder({
-    id: "secret-alcove",
-    normal: "-x",
-    face: -14,
-    along: -23,
-    bottomY: F,
-    topY: ROOF_LOW,
-    secret: true,
-  });
-  map.createLadder({
-    id: "secret-corridor",
+    id: "ladder-roof-south",
     normal: "-z",
-    face: -12,
-    along: -23.5,
+    face: 15,
+    along: 8.5,
     bottomY: F,
     topY: ROOF_LOW,
-    secret: true,
-  });
-  map.createLadder({
-    id: "secret-plaza",
-    normal: "+x",
-    face: -9,
-    along: 22.8,
-    bottomY: F,
-    topY: ROOF_LOW,
-    secret: true,
   });
   map.createLadder({
     id: "secret-terrace",
     normal: "-z",
     face: 5,
     along: -29,
+    bottomY: F,
+    topY: ROOF_LOW,
+    secret: true,
+  });
+  // Secret or semi-hidden (still usable by anyone):
+  map.createLadder({
+    id: "secret-alcove",
+    normal: "-x",
+    face: -14,
+    along: -23,
     bottomY: F,
     topY: ROOF_LOW,
     secret: true,
@@ -819,11 +774,11 @@ function createUpperFloor(): ArenaLayout {
   });
   prop("locker", "lockers-barracks-a", -27, -10.1, F, "z", {
     width: 3.2,
-    depth: 0.8,
+    depth: 0.75,
   });
   prop("locker", "lockers-barracks-b", -27, -4.4, F, "z", {
     width: 2.2,
-    depth: 0.8,
+    depth: 0.75,
   });
 
   // Armory: racks along the north wall, a table, a cage in the corner.
@@ -973,32 +928,32 @@ function createUpperFloor(): ArenaLayout {
   );
 
   // ---------------------------------------------- hang points and perches
-  // The arena is open to the sky: there is no roof over it and no tower. Four
-  // narrow observation ledges (slim slabs 1.6 m deep and 2.6 m wide) jut out of
-  // four thin pillars, spread round the middle of the arena, each facing a
-  // different way and each at its own height (arena floor 0, first floor 4 m,
-  // roofs 8.1 to 10.8 m):
-  //   north  4.8 m  low, close in under the north balcony: a concealed post
-  //   east   6.5 m  mid: crosses the stairs and the east side
-  //   west   8.5 m  high: a wide view of the main combat space
-  //   south 12.6 m  over the highest roof (10.8 m): overlooks the rooftops
+  // The arena is open to the sky. Four tall narrow steel pillars stand round
+  // the middle of the arena, each with a thin narrow observation ledge (a steel
+  // plate 2.4 m long and 0.7 m deep) bracketed to its side near the top, each
+  // at its own height and facing a different way (arena floor 0, first floor
+  // 4 m, roofs 8.1 to 10.8 m):
+  //   north-west  6.8 m  low, close in: a concealed post
+  //   east        8.5 m  mid: crosses the stairs and the east side
+  //   west       10.5 m  high: a wide view of the main combat space
+  //   south      14.6 m  highest, 3.8 m over the highest roof (10.8 m)
   // No ladders: they are reached by grapple. Each pillar stands on free ground
   // clear of the spawns and the stairs. From configuration values below.
   const PERCHES = [
     {
       id: "north",
-      x: -4,
+      x: -9,
       z: -6.5,
-      dir: [0, 1],
-      y: 4.8,
-      label: "north, low, facing south",
+      dir: [1, 0],
+      y: 6.8,
+      label: "north-west, low, facing east",
     },
     {
       id: "east",
       x: 10,
       z: -1,
       dir: [-1, 0],
-      y: 6.5,
+      y: 8.5,
       label: "east, mid, facing west",
     },
     {
@@ -1006,7 +961,7 @@ function createUpperFloor(): ArenaLayout {
       x: -10,
       z: -1,
       dir: [1, 0],
-      y: 8.5,
+      y: 10.5,
       label: "west, high, facing east",
     },
     {
@@ -1014,8 +969,8 @@ function createUpperFloor(): ArenaLayout {
       x: 0,
       z: 6.5,
       dir: [0, -1],
-      y: ROOF_HIGH + 1.8,
-      label: "south, rooftop overlook, facing north",
+      y: ROOF_HIGH + 3.8,
+      label: "south, highest, facing north",
     },
   ] as const;
 
@@ -1027,6 +982,28 @@ function createUpperFloor(): ArenaLayout {
       perch.z,
       perch.dir,
       perch.y,
+    );
+  }
+
+  // Four more rails fixed near the top of the perimeter wall (13.2 m), running
+  // straight in from it: two on the east (right) wall, one in the middle of the
+  // west (left) wall and one on the north (top) wall. Clear of the open-top
+  // rooms and of the floor sightlines in the middle.
+  const WALL_RAIL_Y = PERIMETER_WALL_HEIGHT - 0.2;
+
+  for (const [id, face, along, dir, label] of [
+    ["east-north", ARENA_HALF_X, -8, [-1, 0], "east wall, north end"],
+    ["east-south", ARENA_HALF_X, 8, [-1, 0], "east wall, south end"],
+    ["west-mid", -ARENA_HALF_X, 0, [1, 0], "west wall, middle"],
+    ["north-mid", -ARENA_HALF_Z, 0, [0, 1], "north wall, middle"],
+  ] as const) {
+    map.createWallRail(
+      `hang-wall-${id}`,
+      `Wall rail (${label})`,
+      face,
+      along,
+      dir,
+      WALL_RAIL_Y,
     );
   }
 
@@ -1238,8 +1215,7 @@ function createUpperFloor(): ArenaLayout {
 
   // ------------------------------------------- enclosure and supported ledges
   // The service corridor between the Control room and the Barracks is walled on
-  // both sides, so it gets a roof level with the Barracks' (the ladder up from it
-  // keeps its opening). Every other room is already roofed; the arena, the
+  // both sides, so it gets a roof level with the Barracks'. Every other room is already roofed; the arena, the
   // walkways, the decks and the balconies stay open to the sky on purpose.
   // The two gaps between the medium roofs (over the dock and over the south
   // plaza) are glazed with framed reinforced glass, level with the slabs beside
@@ -1250,7 +1226,7 @@ function createUpperFloor(): ArenaLayout {
   // Glass barriers along two roof edges: the Warehouse's west edge over the
   // lower workshop roof (the ladder up from it keeps its opening), and the
   // Control room's south edge over the service corridor, which also stops a hop
-  // up onto the Control roof from the corridor roof (its way up is its ladder).
+  // up onto the Control roof from the corridor roof.
   map.createGlassBarrier(
     "glass-barrier-warehouse-west",
     "z",
@@ -1265,8 +1241,6 @@ function createUpperFloor(): ArenaLayout {
     "roof-corridor-nw",
     bounds(-32, -21, -13.5, -12),
     ROOF_LOW,
-    ROOF_THICKNESS,
-    bounds(-24.8, -22.2, -13.5, -12),
   );
 
   // Floating slabs out in the open arena stand on a post under each outer
@@ -1299,14 +1273,6 @@ function createUpperFloor(): ArenaLayout {
   // the terrace's secret ladder.
   map.createWall("nook-west", "z", -27.4, 1.2, 5, F, 0.3, 2.6);
   // NORTH (operations): a public ladder up the Switch room to its roof.
-  map.createLadder({
-    id: "ladder-roof-north",
-    normal: "+z",
-    face: -17,
-    along: 5.4,
-    bottomY: F,
-    topY: ROOF_LOW,
-  });
   // EAST (loading and machinery): a generator on the east deck.
   prop("machine", "generator-east-deck", 23.6, -2.6, F);
   // SOUTH (workshop and storage): crate stacks hide the plaza's secret ladder.
@@ -1323,7 +1289,7 @@ function createUpperFloor(): ArenaLayout {
   prop("vent", "unit-switch", 3, -20.5, ROOF_LOW);
   prop("machine", "box-server", 24.4, -7.2, ROOF_LOW, "x", {
     width: 1.2,
-    depth: 0.8,
+    depth: 0.75,
     height: 1.1,
   });
   prop("vent", "unit-break", 25.2, 9.4, ROOF_LOW);
@@ -1339,7 +1305,7 @@ function createUpperFloor(): ArenaLayout {
   });
   prop("machine", "duct-warehouse", 23.5, 14.6, ROOF_HIGH, "x", {
     width: 5,
-    depth: 0.8,
+    depth: 0.75,
     height: 0.9,
   });
   // Raised roof walls and tall huts stop the higher roofs from seeing over
@@ -1398,6 +1364,121 @@ function createUpperFloor(): ArenaLayout {
   );
 
   const layout = map.build();
+
+  // The ventilation system under the arena floor: tunnels 2.4 m wide (the east
+  // branch 1.8 m, to keep off the north-east stairs), all on the 0.6 m grid, in
+  // a T-shape: a long tunnel east-west under the north side, and a branch down
+  // to the south at each end. The whole path is grated over (one grating per
+  // tunnel), so it is seen from above and entered or left anywhere along it. It
+  // stands on bare floor clear of the perches' pillars, the stairs and the
+  // spawn points.
+  const tunnels = [
+    { id: "vent-grate-long", minX: -13.2, maxX: 13.2, minZ: -9.6, maxZ: -7.8 },
+    { id: "vent-grate-west", minX: -13.2, maxX: -11.4, minZ: -7.8, maxZ: 6 },
+    { id: "vent-grate-east", minX: 10.8, maxX: 12.6, minZ: -7.8, maxZ: 9 },
+  ];
+
+  layout.vents = {
+    id: "ground",
+    surfaceY: 0,
+    grates: tunnels.map((t) => ({
+      id: t.id,
+      x: (t.minX + t.maxX) / 2,
+      z: (t.minZ + t.maxZ) / 2,
+      halfX: (t.maxX - t.minX) / 2,
+      halfZ: (t.maxZ - t.minZ) / 2,
+    })),
+    tunnels: [
+      ...tunnels.map(({ minX, maxX, minZ, maxZ }) => ({
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+      })),
+    ],
+    // The foot of any ladder over the tunnels stays plain floor: 2 m square
+    // round the spot you stand on to grab it, so E there is the ladder's.
+    closed: layout.ladders
+      .filter((ladder) =>
+        tunnels.some(
+          (t) =>
+            ladder.approach.x > t.minX - 1.6 &&
+            ladder.approach.x < t.maxX + 1.6 &&
+            ladder.approach.z > t.minZ - 1.6 &&
+            ladder.approach.z < t.maxZ + 1.6,
+        ),
+      )
+      .map((ladder) => ({
+        minX: ladder.approach.x - 1,
+        maxX: ladder.approach.x + 1,
+        minZ: ladder.approach.z - 1,
+        maxZ: ladder.approach.z + 1,
+      })),
+  };
+
+  // The ventilation system in the upper floor (4 m): a single narrow
+  // block wide (1.2 m), grated flush in the floor over a 1.3 m crouch-only
+  // tunnel. Two short routes, each a straight line in plan, from the walkway
+  // ring into the rooms:
+  //   south  a straight tunnel from inside the Store (z 21) north through its
+  //          door and out onto the south walkway (z 12.6), then east
+  //          along the walkway to x -3.8, where you stand to look west
+  //   north  an L from the north walkway (x 6.4) west along its edge to the
+  //          Archive's south door, then north through the door into the Archive
+  // The grating is left as plain floor wherever something stands on it.
+  const upperTunnels: Array<{
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    grated?: boolean;
+  }> = [
+    { minX: -13.6, maxX: -12.4, minZ: 12.6, maxZ: 21 },
+    { minX: -13.6, maxX: -3.8, minZ: 13, maxZ: 14.2 },
+    { minX: -9.2, maxX: 6.4, minZ: -13.6, maxZ: -12.4 },
+    { minX: -8.6, maxX: -7.4, minZ: -21.6, maxZ: -13.6 },
+  ];
+  const standing = [
+    ...layout.walls,
+    ...layout.platforms.filter((p) => p.role !== "floor" && p.role !== "roof"),
+  ].filter((w) => (w.bottom ?? 0) > F - 0.1 && (w.bottom ?? 0) < F + 0.6);
+  const ladderSpots = layout.ladders.flatMap((l) => {
+    const spots = [];
+
+    if (Math.abs(l.topY - F) < 0.05) spots.push(l.exit, l.approach);
+    if (Math.abs(l.bottomY - F) < 0.05) spots.push(l.approach, l.exit);
+
+    return spots.map((p) => ({
+      minX: p.x - 1,
+      maxX: p.x + 1,
+      minZ: p.z - 1,
+      maxZ: p.z + 1,
+    }));
+  });
+
+  layout.upperVents = {
+    id: "upper",
+    surfaceY: F,
+    grates: upperTunnels.map((t, i) => ({
+      id: `vent-upper-${i}`,
+      x: (t.minX + t.maxX) / 2,
+      z: (t.minZ + t.maxZ) / 2,
+      halfX: (t.maxX - t.minX) / 2,
+      halfZ: (t.maxZ - t.minZ) / 2,
+    })),
+    tunnels: upperTunnels,
+    // Plain floor under anything that stands on the ring (walls, railings,
+    // cover) and at the head and foot of a ladder.
+    closed: [
+      ...standing.map((w) => ({
+        minX: w.minX,
+        maxX: w.maxX,
+        minZ: w.minZ,
+        maxZ: w.maxZ,
+      })),
+      ...ladderSpots,
+    ],
+  };
 
   layout.spawnPoints = [
     spawn(1, -10, 9, -16, 9.6), // facing the south-west staircase

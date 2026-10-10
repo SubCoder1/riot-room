@@ -14,7 +14,12 @@ import {
   type ArenaCollision,
   type VaultPlan,
 } from "../world/ArenaCollision";
-import type { LadderDefinition } from "../world/ArenaLayout";
+import type {
+  LadderDefinition,
+  VentGrate,
+  VentNetwork,
+} from "../world/ArenaLayout";
+import { findGrate, fitsInTunnels, ventFloorY } from "../world/Vents";
 import { CLIMB, climbSpot, findLadder, ladderNormal } from "./Climb";
 
 /** The head top is this far above the eye (the body is 1.8 m, the eye at 1.7). */
@@ -28,6 +33,28 @@ const STEP_SMOOTHING = 14;
 
 /** Walking (no Shift) on stairs runs at this share of the walk speed. */
 const STAIRS_WALK_FACTOR = 0.6;
+
+/** Seconds the climb down into (or up out of) a vent takes. */
+const VENT_TRANSITION_TIME = 0.28;
+
+/** Radius of the body inside a vent tunnel (m). */
+const VENT_BODY_RADIUS = 0.4;
+
+/** Whose side a player is on: only the vigilante may use the vents. */
+export type PlayerRole = "vigilante" | "thug";
+
+interface VentMove {
+  phase: "entering" | "inside" | "leaving";
+  time: number;
+  grateId: string;
+  net: VentNetwork;
+  fromX: number;
+  fromZ: number;
+  fromFeet: number;
+  toX: number;
+  toZ: number;
+  toFeet: number;
+}
 
 /** Seconds a vault takes. */
 const VAULT_TIME = 0.62;
@@ -45,6 +72,252 @@ interface Vault {
 
 export class Player {
   private vault: Vault | null = null;
+
+  /**
+   * Which side this player is on. The vents are the vigilante's alone: a thug is
+   * refused whatever it does (there is no way in but `enterVent`, and that
+   * checks this).
+   */
+  public role: PlayerRole = "vigilante";
+
+  private nets: VentNetwork[] = [];
+  private ventMove: VentMove | null = null;
+
+  /** The ventilation networks the vigilante can use (the arena floor's, the upper floor's). */
+  public setVents(network: VentNetwork | VentNetwork[]): void {
+    this.nets = Array.isArray(network) ? network : [network];
+  }
+
+  /** In the vents, or on the way in or out of them. */
+  public get isInVent(): boolean {
+    return this.ventMove !== null;
+  }
+
+  /** Inside the tunnels proper (not in the middle of climbing in or out). */
+  public get isUnderground(): boolean {
+    return this.ventMove?.phase === "inside";
+  }
+
+  /** The network the vigilante is in (null when not in one). */
+  public get ventNetwork(): VentNetwork | null {
+    return this.ventMove?.net ?? null;
+  }
+
+  /** How far through the climb in or out, and which way, for the pose (null otherwise). */
+  public get ventPose(): { progress: number; entering: boolean } | null {
+    const move = this.ventMove;
+
+    if (!move || move.phase === "inside") {
+      return null;
+    }
+
+    return {
+      progress: Math.min(move.time / VENT_TRANSITION_TIME, 1),
+      entering: move.phase === "entering",
+    };
+  }
+
+  /** Where the climb in or out is happening, and the floor it is set in (null when not climbing). */
+  public get ventTransitionPoint(): { x: number; z: number; y: number } | null {
+    return this.ventMove && this.ventMove.phase !== "inside"
+      ? {
+          x: this.ventMove.toX,
+          z: this.ventMove.toZ,
+          y: this.ventMove.net.surfaceY,
+        }
+      : null;
+  }
+
+  /** The grating underfoot the vigilante could climb through, and its network. */
+  private entryIn(): { net: VentNetwork; grate: VentGrate } | null {
+    if (
+      this.role !== "vigilante" ||
+      this.ventMove ||
+      this.ladder ||
+      this.vault ||
+      !this.grounded
+    ) {
+      return null;
+    }
+
+    const feet = this.position.y - this.eyeHeight;
+
+    for (const net of this.nets) {
+      if (Math.abs(feet - net.surfaceY) > 0.25) {
+        continue;
+      }
+
+      const grate = findGrate(net, this.position.x, this.position.z);
+
+      if (grate) {
+        return { net, grate };
+      }
+    }
+
+    return null;
+  }
+
+  /** The grate the vigilante could climb into from here (or null). */
+  public ventEntryInReach(): string | null {
+    return this.entryIn()?.grate.id ?? null;
+  }
+
+  /** The grate the vigilante could climb out of from where they are underground. */
+  public ventExitInReach(): string | null {
+    const move = this.ventMove;
+
+    if (move?.phase !== "inside") {
+      return null;
+    }
+
+    return findGrate(move.net, this.position.x, this.position.z)?.id ?? null;
+  }
+
+  /** Starts the climb through a grate of `net`: down into it, or up out of it. */
+  private beginVentMove(net: VentNetwork, id: string, entering: boolean): void {
+    this.ventMove = {
+      phase: entering ? "entering" : "leaving",
+      time: 0,
+      grateId: id,
+      net,
+      fromX: this.position.x,
+      fromZ: this.position.z,
+      fromFeet: this.position.y - this.eyeHeight,
+      toX: this.position.x,
+      toZ: this.position.z,
+      toFeet: entering ? ventFloorY(net) : net.surfaceY,
+    };
+
+    // Standing a little beside the grating (it can be used from its edge), the
+    // body drops to the nearest spot where it fits in the tunnel, so it is never
+    // put somewhere it cannot move from.
+    if (
+      entering &&
+      !fitsInTunnels(net, this.position.x, this.position.z, VENT_BODY_RADIUS)
+    ) {
+      let best: { x: number; z: number } | null = null;
+      let bestDistance = Infinity;
+
+      for (const t of net.tunnels) {
+        const x = Math.min(
+          Math.max(this.position.x, t.minX + VENT_BODY_RADIUS),
+          t.maxX - VENT_BODY_RADIUS,
+        );
+        const z = Math.min(
+          Math.max(this.position.z, t.minZ + VENT_BODY_RADIUS),
+          t.maxZ - VENT_BODY_RADIUS,
+        );
+        const d = Math.hypot(x - this.position.x, z - this.position.z);
+
+        if (d < bestDistance && fitsInTunnels(net, x, z, VENT_BODY_RADIUS)) {
+          best = { x, z };
+          bestDistance = d;
+        }
+      }
+
+      if (best) {
+        this.ventMove.toX = best.x;
+        this.ventMove.toZ = best.z;
+      }
+    }
+  }
+
+  /** Climbs down into the vents through the grating underfoot. Only the vigilante can. */
+  public enterVent(): boolean {
+    const hit = this.entryIn();
+
+    if (!hit) {
+      return false;
+    }
+
+    this.beginVentMove(hit.net, hit.grate.id, true);
+    this.velocity.set(0, 0, 0);
+    this.isSprinting = false;
+    this.jumpBufferLeft = 0;
+    this.coyoteLeft = 0;
+
+    return true;
+  }
+
+  /** Climbs up out of the vents through the grating overhead (any of it). */
+  public leaveVent(): boolean {
+    const id = this.ventExitInReach();
+    const net = this.ventMove?.net;
+
+    if (!id || !net) {
+      return false;
+    }
+
+    this.beginVentMove(net, id, false);
+
+    return true;
+  }
+
+  /** The climb in or out, and crawling about inside. Nothing else moves the body. */
+  private updateVent(dt: number, input: InputManager): void {
+    const move = this.ventMove;
+
+    if (!move) {
+      return;
+    }
+
+    if (move.phase !== "inside") {
+      move.time += dt;
+
+      const u = Math.min(move.time / VENT_TRANSITION_TIME, 1);
+      const e = u * u * (3 - 2 * u);
+      // Slide to the middle of the grate first, then straight down or up.
+      const slide = Math.min(u / 0.4, 1);
+
+      this.position.set(
+        move.fromX + (move.toX - move.fromX) * slide,
+        move.fromFeet + (move.toFeet - move.fromFeet) * e + this.eyeHeight,
+        move.fromZ + (move.toZ - move.fromZ) * slide,
+      );
+
+      if (u >= 1) {
+        if (move.phase === "entering") {
+          move.phase = "inside";
+        } else {
+          this.ventMove = null;
+          this.grounded = true;
+          this.velocity.set(0, 0, 0);
+          this.position.y = move.toFeet + this.eyeHeight;
+        }
+      }
+
+      return;
+    }
+
+    // Crawling: walk (or crouch-walk) along the tunnels, kept inside them.
+    const moveX =
+      (input.isPressed("KeyD") ? 1 : 0) - (input.isPressed("KeyA") ? 1 : 0);
+    const moveZ =
+      (input.isPressed("KeyW") ? 1 : 0) - (input.isPressed("KeyS") ? 1 : 0);
+
+    this.position.y = ventFloorY(move.net) + this.eyeHeight;
+
+    if (moveX === 0 && moveZ === 0) {
+      return;
+    }
+
+    const dirX = -Math.sin(this.yaw) * moveZ + Math.cos(this.yaw) * moveX;
+    const dirZ = -Math.cos(this.yaw) * moveZ - Math.sin(this.yaw) * moveX;
+    const length = Math.hypot(dirX, dirZ);
+    const speed = (this.isCrouching ? this.crouchSpeed : 3.2) * dt;
+    const stepX = (dirX / length) * speed;
+    const stepZ = (dirZ / length) * speed;
+    const { x, z } = this.position;
+
+    if (fitsInTunnels(move.net, x + stepX, z + stepZ, VENT_BODY_RADIUS)) {
+      this.position.x = x + stepX;
+      this.position.z = z + stepZ;
+    } else if (fitsInTunnels(move.net, x + stepX, z, VENT_BODY_RADIUS)) {
+      this.position.x = x + stepX;
+    } else if (fitsInTunnels(move.net, x, z + stepZ, VENT_BODY_RADIUS)) {
+      this.position.z = z + stepZ;
+    }
+  }
 
   /** Vaulting over a railing or box (a timed move, Space with W, A or D held at the obstacle). */
   public get isVaulting(): boolean {
@@ -428,6 +701,7 @@ export class Player {
   /** Puts the player (feet position) somewhere new and stops all movement. */
   public teleport(x: number, feetY: number, z: number): void {
     this.ladder = null;
+    this.ventMove = null;
     this.position.set(x, feetY + this.eyeHeight, z);
     this.velocity.set(0, 0, 0);
     this.jumpBufferLeft = 0;
@@ -478,6 +752,13 @@ export class Player {
     this.yaw = input.yaw;
 
     this.pitch = input.pitch;
+
+    if (this.ventMove) {
+      input.consumeJump();
+      this.updateVent(dt, input);
+
+      return;
+    }
 
     if (this.ladder) {
       this.updateClimb(dt, input);

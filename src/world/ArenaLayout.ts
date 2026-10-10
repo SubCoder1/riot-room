@@ -302,6 +302,44 @@ export interface HangZone {
 /** How far below the beam's underside a hanging character's feet hang. */
 export const HANG_DROP = 1.7;
 
+/** A metal grate in the arena floor: a way into the vents, for the vigilante only. */
+export interface VentGrate {
+  id: string;
+  x: number;
+  z: number;
+  halfX: number;
+  halfZ: number;
+}
+
+/**
+ * The ventilation system under the arena floor: grates in the floor and the
+ * tunnels joining them (axis-aligned rectangles on a 0.6 m grid). It is
+ * entered and left only by the vigilante, through a grate, by an interaction:
+ * the floor itself stays solid for everyone.
+ */
+export interface VentNetwork {
+  id: string;
+  /** Height of the floor the grating is set in (0 the arena floor, 4 the upper floor). */
+  surfaceY: number;
+  grates: VentGrate[];
+  /**
+   * The tunnels. A tunnel with `grated: false` is a plain connector under the
+   * floor: no grating over it and no way in or out of it from above.
+   */
+  tunnels: Array<{
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    grated?: boolean;
+  }>;
+  /**
+   * Spots over the tunnels left as plain solid floor (no grating, no way in or
+   * out): where a ladder starts, so its foot is not a vent.
+   */
+  closed: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>;
+}
+
 export interface ArenaLayout {
   width: number;
   depth: number;
@@ -325,6 +363,10 @@ export interface ArenaLayout {
   /** Balconies, landings, walkways and open decks (rooms are in `rooms`). */
   zones: Zone[];
   spawnPoints: SpawnPoint[];
+  /** The ventilation system under the arena floor. */
+  vents: VentNetwork;
+  /** The ventilation system in the upper floor (along the walkways, touching the rooms). */
+  upperVents: VentNetwork;
 }
 
 /** Camera yaw at (x, z) that looks toward (lookX, lookZ). */

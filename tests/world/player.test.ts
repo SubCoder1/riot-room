@@ -317,7 +317,7 @@ describe("Player on the map", () => {
   });
 
   it.each(["west", "east", "north", "south"])(
-    "stands, crouches and walks along the %s perch, and falls off its outer edge to the floor",
+    "stands, crouches and walks along the %s perch, and drops off its outer edge to a lower surface",
     (name) => {
       const deck = layout.platforms.find(
         (p) => p.id === `hang-perch-${name}-deck`,
@@ -350,7 +350,8 @@ describe("Player on the map", () => {
       p.input.keys.clear();
       p.step(3);
       expect(p.player.isGrounded, name).toBe(true);
-      expect(p.feet(), name).toBeLessThan(1);
+      // It drops to a lower surface (a walkway, a roof or the floor).
+      expect(p.feet(), name).toBeLessThan(deck.height - 1.5);
     },
   );
 
