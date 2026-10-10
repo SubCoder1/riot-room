@@ -5,33 +5,197 @@ import * as THREE from "three";
 /** How big a Molotov bottle is drawn (1 = 25 cm tall). */
 export const BOTTLE_SCALE = 1.4;
 
-/** A lumpy rock rather than a ball (the bumps depend only on the vertex, so it is stable). */
-export function createRockGeometry(radius: number): THREE.BufferGeometry {
-  const geometry = new THREE.IcosahedronGeometry(radius, 1);
-  const position = geometry.getAttribute("position");
+/** How big a grenade is drawn (1 = about 9 cm across: a real fragmentation grenade). */
+export const GRENADE_SCALE = 1.55;
 
-  for (let i = 0; i < position.count; i++) {
-    const x = position.getX(i);
-    const y = position.getY(i);
-    const z = position.getZ(i);
-    const bump =
-      1 + 0.18 * Math.sin(x * 97 + y * 53) * Math.cos(z * 71 + x * 29);
+/** How big a smoke grenade is drawn: bigger than a grenade, so it reads at a glance. */
+export const SMOKE_SCALE = 1.9;
 
-    position.setXYZ(i, x * bump * 1.1, y * bump * 0.85, z * bump);
-  }
-
-  geometry.computeVertexNormals();
-
-  return geometry;
+/** What a grenade and a smoke canister need to be cleaned up (shared by every copy). */
+export interface GrenadeParts {
+  /** The olive-drab body of the grenade. */
+  casing: THREE.MeshStandardMaterial;
+  /** Bare steel: the spoon, the collar and the pin ring. */
+  steel: THREE.MeshStandardMaterial;
+  /** The smoke grenade's grey-green body. */
+  canister: THREE.MeshStandardMaterial;
+  /** The pale band round a smoke grenade. */
+  band: THREE.MeshStandardMaterial;
+  /** The dark fuse and cap of both grenades. */
+  cap: THREE.MeshStandardMaterial;
+  /** The yellow marking band round a frag grenade. */
+  marking: THREE.MeshStandardMaterial;
+  /**
+   * 0 grenade body, 1 fuse, 2 grenade spoon, 3 pin ring, 4 canister body, 5
+   * canister band, 6 canister cap, 7 canister spoon, 8 grenade band, 9 collar.
+   */
+  geometries: THREE.BufferGeometry[];
 }
 
-export function createRockMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color: 0x8d8b84,
-    roughness: 0.95,
-    metalness: 0,
-    flatShading: true,
-  });
+export function createGrenadeParts(): GrenadeParts {
+  // A frag grenade: a smooth olive egg, a little taller than it is wide.
+  const body = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0, -0.062),
+      new THREE.Vector2(0.022, -0.06),
+      new THREE.Vector2(0.037, -0.048),
+      new THREE.Vector2(0.045, -0.022),
+      new THREE.Vector2(0.047, 0.008),
+      new THREE.Vector2(0.043, 0.036),
+      new THREE.Vector2(0.032, 0.054),
+      new THREE.Vector2(0.021, 0.062),
+      new THREE.Vector2(0, 0.064),
+    ],
+    20,
+  );
+  // The long steel spoon, down the side from the fuse.
+  const spoon = new THREE.BoxGeometry(0.006, 0.112, 0.02);
+
+  spoon.translate(0.0485, -0.004, 0);
+
+  // The smoke grenade: a tall round-shouldered cylinder (a lathe), like the
+  // classic M18, with a pale band, a dark cap and a long spoon down its side.
+  const tube = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0, -0.085),
+      new THREE.Vector2(0.03, -0.085),
+      new THREE.Vector2(0.037, -0.076),
+      new THREE.Vector2(0.038, 0.052),
+      new THREE.Vector2(0.034, 0.072),
+      new THREE.Vector2(0.024, 0.082),
+      new THREE.Vector2(0, 0.084),
+    ],
+    18,
+  );
+  const spoonLong = new THREE.BoxGeometry(0.005, 0.15, 0.016);
+
+  spoonLong.translate(0.0405, 0.0, 0);
+
+  return {
+    casing: new THREE.MeshStandardMaterial({
+      color: 0x4e5a38,
+      roughness: 0.62,
+      metalness: 0.2,
+    }),
+    steel: new THREE.MeshStandardMaterial({
+      color: 0xa4a9ae,
+      roughness: 0.35,
+      metalness: 0.85,
+    }),
+    canister: new THREE.MeshStandardMaterial({
+      color: 0x6f7a66,
+      roughness: 0.55,
+      metalness: 0.25,
+    }),
+    band: new THREE.MeshStandardMaterial({
+      color: 0xe4e6e2,
+      roughness: 0.6,
+      metalness: 0.05,
+    }),
+    cap: new THREE.MeshStandardMaterial({
+      color: 0x24272a,
+      roughness: 0.5,
+      metalness: 0.4,
+    }),
+    marking: new THREE.MeshStandardMaterial({
+      color: 0xd2b640,
+      roughness: 0.6,
+      metalness: 0.05,
+    }),
+    geometries: [
+      body,
+      new THREE.CylinderGeometry(0.014, 0.018, 0.034, 12),
+      spoon,
+      new THREE.TorusGeometry(0.016, 0.003, 6, 14),
+      tube,
+      new THREE.CylinderGeometry(0.0392, 0.0392, 0.03, 18),
+      new THREE.CylinderGeometry(0.02, 0.026, 0.026, 14),
+      spoonLong,
+      new THREE.CylinderGeometry(0.0475, 0.0475, 0.014, 20),
+      new THREE.CylinderGeometry(0.024, 0.024, 0.009, 14),
+    ],
+  };
+}
+
+export function disposeGrenadeParts(parts: GrenadeParts): void {
+  parts.casing.dispose();
+  parts.steel.dispose();
+  parts.canister.dispose();
+  parts.band.dispose();
+  parts.cap.dispose();
+  parts.marking.dispose();
+
+  for (const geometry of parts.geometries) {
+    geometry.dispose();
+  }
+}
+
+/**
+ * A frag grenade, upright and centred on its body: an olive egg with a yellow
+ * band, a dark fuse and steel collar on top, the long spoon down one side and
+ * the pin ring (named "pin"; the hand pulls it before the throw). About 13 cm
+ * tall before GRENADE_SCALE.
+ */
+export function createGrenade(parts: GrenadeParts): THREE.Group {
+  const [casing, fuse, spoon, ring, , , , , band, collar] = parts.geometries;
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(casing, parts.casing);
+  const stripe = new THREE.Mesh(band, parts.marking);
+  const neck = new THREE.Mesh(fuse, parts.cap);
+  const rim = new THREE.Mesh(collar, parts.steel);
+  const lever = new THREE.Mesh(spoon, parts.steel);
+  const pin = new THREE.Mesh(ring, parts.steel);
+
+  stripe.position.y = 0.02;
+  neck.position.y = 0.078;
+  rim.position.y = 0.06;
+  lever.position.y = 0.0;
+  pin.position.set(-0.012, 0.094, 0);
+  pin.rotation.y = Math.PI / 2;
+  pin.name = "pin";
+
+  group.add(body, stripe, neck, rim, lever, pin);
+
+  for (const mesh of [body, stripe, neck, rim, lever, pin]) {
+    mesh.frustumCulled = false;
+  }
+
+  return group;
+}
+
+/**
+ * A smoke grenade, upright and centred on its body: a grey-green canister with
+ * rounded shoulders, a pale band, a dark cap with its fuse, the long spoon down
+ * one side and a pin ring. About 17 cm tall before SMOKE_SCALE.
+ */
+export function createSmokeCanister(parts: GrenadeParts): THREE.Group {
+  const [, fuse, , ring, tube, band, cap, spoon] = parts.geometries;
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(tube, parts.canister);
+  const stripe = new THREE.Mesh(band, parts.band);
+  const lid = new THREE.Mesh(cap, parts.cap);
+  const nozzle = new THREE.Mesh(fuse, parts.steel);
+  const lever = new THREE.Mesh(spoon, parts.steel);
+  const pin = new THREE.Mesh(ring, parts.steel);
+
+  // The band sits in the middle of the body, a darker cap over the shoulder.
+  stripe.position.y = 0.004;
+  lid.position.y = 0.088;
+  nozzle.position.y = 0.11;
+  nozzle.scale.set(0.75, 0.75, 0.75);
+  lever.position.y = 0.02;
+  pin.position.set(-0.012, 0.118, 0);
+  pin.rotation.y = Math.PI / 2;
+  // Found by name: the hand pulls it out when the grenade is equipped.
+  pin.name = "pin";
+
+  group.add(body, stripe, lid, nozzle, lever, pin);
+
+  for (const mesh of [body, stripe, lid, nozzle, lever, pin]) {
+    mesh.frustumCulled = false;
+  }
+
+  return group;
 }
 
 /**

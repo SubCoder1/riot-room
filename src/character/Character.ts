@@ -8,8 +8,8 @@ import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
 import { ClimbRig } from "./ClimbPose";
 import { VaultRig, type VaultShape } from "./VaultPose";
 import { VentRig, type VentMoveShape } from "./VentPose";
-import { RockArm } from "./RockArm";
-import type { HeldKind, RockPose } from "../inventory/RockStance";
+import { ThrowArm } from "./ThrowArm";
+import type { HeldKind, ThrowPose } from "../inventory/ThrowStance";
 
 export type CharacterMovementState =
   | "idle"
@@ -294,7 +294,7 @@ export class Character {
 
     this.applyPunchReach();
 
-    this.applyRockPose();
+    this.applyThrowPose();
 
     this.applyClimbPose(dt);
     this.applyVentMove(dt);
@@ -401,7 +401,7 @@ export class Character {
    */
 
   public dispose(): void {
-    this.rockArmInstance?.dispose();
+    this.throwArmInstance?.dispose();
     this.idleAction = null;
     this.walkAction = null;
     this.walkBackwardsAction = null;
@@ -2026,40 +2026,41 @@ export class Character {
   public aimEye: THREE.Vector3 | null = null;
 
   // ------------------------------------------------------------
-  // Rock in hand (the right hand's pocket / ready / aim / throw pose)
+  // Throwable in hand (the right hand's pocket / ready / aim / throw pose)
   // ------------------------------------------------------------
 
-  private rockArmInstance: RockArm | null = null;
+  private throwArmInstance: ThrowArm | null = null;
 
-  private get rockArm(): RockArm {
-    this.rockArmInstance ??= new RockArm(this.group, (bone, from, to) =>
+  private get throwArm(): ThrowArm {
+    this.throwArmInstance ??= new ThrowArm(this.group, (bone, from, to) =>
       this.rotateBoneBetween(bone, from, to),
     );
 
-    return this.rockArmInstance;
+    return this.throwArmInstance;
   }
-  private rockPose: RockPose | null = null;
-  private readonly rockForward = new THREE.Vector3();
-  private readonly rockAim = new THREE.Vector3();
+  private throwPose: ThrowPose | null = null;
+  private readonly throwForward = new THREE.Vector3();
+  private readonly throwAim = new THREE.Vector3();
 
   /**
-   * Sets the rock pose for this frame (null = none) and whether a rock is
-   * shown in the hand. Works for any character, so other players can show the
+   * Sets the throwing pose for this frame (null = none) and which throwable
+   * is shown in the hand. Works for any character, so other players can show the
    * same pose from what they report.
    */
-  public setRock(
-    pose: RockPose | null,
+  public setThrowable(
+    pose: ThrowPose | null,
     held: HeldKind | null,
     lit = false,
     lighting = false,
+    pinPull = 0,
   ): void {
-    this.rockPose = pose;
-    this.rockArm.setHeld(held, lit, lighting);
+    this.throwPose = pose;
+    this.throwArm.setHeld(held, lit, lighting, pinPull);
   }
 
-  /** Where a thrown rock leaves the hand. False if the model is not ready. */
-  public getRockReleasePoint(out: THREE.Vector3): boolean {
-    return this.rockArm.getReleasePoint(out);
+  /** Where a thrown item leaves the hand. False if the model is not ready. */
+  public getThrowReleasePoint(out: THREE.Vector3): boolean {
+    return this.throwArm.getReleasePoint(out);
   }
 
   // ------------------------------------------------------------
@@ -2275,31 +2276,31 @@ export class Character {
     }
   }
 
-  private applyRockPose(): void {
-    if (!this.rockPose || this.rockPose.weight < 0.002) {
+  private applyThrowPose(): void {
+    if (!this.throwPose || this.throwPose.weight < 0.002) {
       return;
     }
 
     // The way the player looks (flat), and the crosshair direction.
     this.group.getWorldQuaternion(this.pitchQuat);
-    this.rockForward
+    this.throwForward
       .set(0, 0, 1)
       .applyQuaternion(this.pitchQuat)
       .applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.bodyYawOffset);
-    this.rockForward.y = 0;
-    this.rockForward.normalize();
+    this.throwForward.y = 0;
+    this.throwForward.normalize();
 
     const pitch = THREE.MathUtils.clamp(this.aimPitch, -1.2, 1.2);
 
-    this.rockAim
-      .copy(this.rockForward)
+    this.throwAim
+      .copy(this.throwForward)
       .multiplyScalar(Math.cos(pitch))
       .add(new THREE.Vector3(0, Math.sin(pitch), 0));
 
-    this.rockArm.firstPerson = this.upperBodyFollowsLook;
-    this.swingBodyForThrow(this.rockPose, this.rockForward);
+    this.throwArm.firstPerson = this.upperBodyFollowsLook;
+    this.swingBodyForThrow(this.throwPose, this.throwForward);
 
-    this.rockArm.apply(this.rockPose, this.rockForward, this.rockAim);
+    this.throwArm.apply(this.throwPose, this.throwForward, this.throwAim);
   }
 
   /**
@@ -2307,7 +2308,7 @@ export class Character {
    * side while loading, then whips through and leans into the release. The
    * head turns back the same amount, so the view (and the crosshair) stays put.
    */
-  private swingBodyForThrow(pose: RockPose, forward: THREE.Vector3): void {
+  private swingBodyForThrow(pose: ThrowPose, forward: THREE.Vector3): void {
     const weight = pose.weight;
     // + = turn left (the side of the free arm), - = turn right (toward the throwing arm).
     const twist =
