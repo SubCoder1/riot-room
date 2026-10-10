@@ -7,6 +7,7 @@ import { limitArmReach, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
 import { ClimbRig } from "./ClimbPose";
 import { VaultRig, type VaultShape } from "./VaultPose";
+import { VentRig, type VentMoveShape } from "./VentPose";
 import { RockArm } from "./RockArm";
 import type { HeldKind, RockPose } from "../inventory/RockStance";
 
@@ -296,6 +297,13 @@ export class Character {
     this.applyRockPose();
 
     this.applyClimbPose(dt);
+    this.applyVentMove(dt);
+    this.applyVentArms();
+    if (this.legsHidden) {
+      for (const name of ["LeftUpLeg", "RightUpLeg"]) {
+        this.group.getObjectByName(name)?.scale.setScalar(0.001);
+      }
+    }
 
     this.applyVaultPose(dt);
 
@@ -2125,6 +2133,88 @@ export class Character {
   }
 
   private armsFade = 1;
+
+  private ventRigInstance: VentRig | null = null;
+  private ventMoveShape: VentMoveShape | null = null;
+  private ventMoveMix = 0;
+  private readonly ventForward = new THREE.Vector3();
+
+  /** The climb in or out through a grating (null when not doing one). */
+  public setVentMove(shape: VentMoveShape | null): void {
+    this.ventMoveShape = shape;
+  }
+
+  private applyVentMove(dt: number): void {
+    const target = this.ventMoveShape ? 1 : 0;
+
+    this.ventMoveMix +=
+      Math.sign(target - this.ventMoveMix) *
+      Math.min(dt / 0.05, Math.abs(target - this.ventMoveMix));
+
+    if (this.ventMoveMix < 0.002 || !this.ventMoveShape) {
+      return;
+    }
+
+    this.ventRigInstance ??= new VentRig(this.group, (bone, from, to) =>
+      this.rotateBoneBetween(bone, from, to),
+    );
+
+    // The way the body faces (flat).
+    this.group.getWorldQuaternion(this.pitchQuat);
+    this.ventForward.set(0, 0, 1).applyQuaternion(this.pitchQuat);
+    this.ventForward.y = 0;
+    this.ventForward.normalize();
+
+    this.ventRigInstance.applyVent(
+      this.ventMoveMix,
+      this.ventForward,
+      this.ventMoveShape,
+    );
+  }
+
+  private ventArmFade = 1;
+  private ventArmsScaled = false;
+
+  /**
+   * In a vent the hands would poke through the tunnel walls and ceiling, so in
+   * first person they draw in toward the body (0 = hidden, 1 = normal) as a wall
+   * comes within reach.
+   */
+  public setVentArmFade(fade: number): void {
+    this.ventArmFade = THREE.MathUtils.clamp(fade, 0, 1);
+  }
+
+  private legsHidden = false;
+
+  /**
+   * In first person in a vent the crouched legs would fill the view when you
+   * look down (the camera is right above them): they are drawn at no size there.
+   */
+  public setLegsHidden(hidden: boolean): void {
+    if (hidden === this.legsHidden) {
+      return;
+    }
+
+    this.legsHidden = hidden;
+
+    for (const name of ["LeftUpLeg", "RightUpLeg"]) {
+      this.group.getObjectByName(name)?.scale.setScalar(hidden ? 0.001 : 1);
+    }
+  }
+
+  private applyVentArms(): void {
+    if (!this.upperBodyFollowsLook || this.ventArmFade >= 0.999) {
+      if (this.ventArmsScaled) {
+        this.scaleArms(1);
+        this.ventArmsScaled = false;
+      }
+
+      return;
+    }
+
+    this.scaleArms(Math.max(this.ventArmFade, 0.001));
+    this.ventArmsScaled = true;
+  }
 
   private scaleArms(scale: number): void {
     for (const name of ["LeftArm", "RightArm"]) {
