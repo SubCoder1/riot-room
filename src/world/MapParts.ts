@@ -13,6 +13,8 @@ import {
   type LadderDefinition,
   type LedgeDefinition,
   type OverheadMaterial,
+  type PileDefinition,
+  type PileKind,
   type SteelKind,
   type SteelMember,
   type Vec3,
@@ -24,6 +26,7 @@ import {
   type Zone,
   type ZoneKind,
 } from "./ArenaLayout";
+import { buildBarrierShape, buildPile, type BarrierStyle } from "./PileShapes";
 
 /** A stretch along a wall or railing that is left open. */
 interface Gap {
@@ -161,6 +164,8 @@ export class MapBuilder {
         tunnels: [],
         closed: [],
       },
+      piles: [],
+      decals: [],
     };
   }
 
@@ -814,12 +819,13 @@ export class MapBuilder {
   }
 
   /**
-   * A rail fixed to the face of a wall near its top: the same long thin I-beam
-   * (6 m, 50 cm top plate 7 cm thick) as the pillar perches, running straight
-   * out of the wall into the arena. `face` is the wall's inner face (x or z,
-   * whichever axis `dir` runs along), `along` the middle of the rail along the
-   * wall, `y` the top of the plate. One bracket back to the wall. A hang point
-   * runs along its outer end.
+   * A light post against a wall near its top: one tall steel pole standing on
+   * the floor 0.5 m off the wall, rising a little above `y`, with a slim arm
+   * out of its top into the arena (`dir` is the unit x or z step away from
+   * the wall), a knee brace under the arm and a lamp hood at its tip. The top
+   * plate on the arm (30 cm wide, 7 cm thick, top at `y`) is the ledge where a
+   * light is fixed. `face` is the wall's inner face, `along` the middle of the
+   * post along the wall. A hang point sits on the arm, short of the lamp.
    */
   public createWallRail(
     id: string,
@@ -830,30 +836,36 @@ export class MapBuilder {
     y: number,
     floorY = 0,
   ): void {
-    const length = 6;
-    const width = 0.5;
+    const poleAt = 0.5;
+    const size = 0.3;
+    const start = poleAt + size / 2;
+    const length = 3.4;
+    const width = 0.3;
     const thickness = 0.07;
-    const beamDepth = 0.3;
+    const armDepth = 0.18;
     const under = y - thickness;
     const [dx, dz] = dir;
     const half = width / 2;
     const out = face + (dx !== 0 ? dx : dz) * length;
+    const from = face + (dx !== 0 ? dx : dz) * start;
     const slab: Bounds =
       dx !== 0
         ? {
-            minX: Math.min(face, out),
-            maxX: Math.max(face, out),
+            minX: Math.min(from, out),
+            maxX: Math.max(from, out),
             minZ: along - half,
             maxZ: along + half,
           }
         : {
             minX: along - half,
             maxX: along + half,
-            minZ: Math.min(face, out),
-            maxZ: Math.max(face, out),
+            minZ: Math.min(from, out),
+            maxZ: Math.max(from, out),
           };
     const at = (u: number, level: number): Vec3 =>
       dx !== 0 ? [face + dx * u, level, along] : [along, level, face + dz * u];
+    const hangAt = length - 1.0;
+    const hang = at(hangAt, 0);
 
     this.layout.platforms.push({
       kind: "box",
@@ -867,30 +879,58 @@ export class MapBuilder {
     this.layout.hangZones.push({
       id,
       name,
-      x: dx !== 0 ? out : along,
-      z: dx !== 0 ? along : out,
-      y: under - beamDepth,
+      x: hang[0],
+      z: hang[2],
+      y: under - armDepth,
       axis: dx !== 0 ? "z" : "x",
       length: width,
       floorY,
     });
+
+    // The pole, from the floor to a little over the arm.
+    const pole = at(poleAt, 0);
+
+    this.createSteelColumn(
+      `${id}-post`,
+      pole[0],
+      pole[2],
+      floorY,
+      y + 0.6,
+      size,
+      dx !== 0 ? "z" : "x",
+    );
+
+    // The arm out of the pole's top, under the plate.
     this.createSteel(
       `${id}-rail`,
       "beam",
-      at(0.05, under - beamDepth / 2),
-      at(length, under - beamDepth / 2),
-      "i",
-      width * 0.8,
-      beamDepth,
+      at(poleAt, under - armDepth / 2),
+      at(length, under - armDepth / 2),
+      "box",
+      0.16,
+      armDepth,
     );
+
+    // A knee brace from the pole up to the arm.
     this.createSteel(
       `${id}-bracket`,
       "brace",
-      at(0.05, under - beamDepth - 1.2),
-      at(1.6, under - beamDepth),
+      at(poleAt, under - armDepth - 1.0),
+      at(poleAt + 1.5, under - armDepth),
       "box",
-      0.07,
+      0.08,
       0.09,
+    );
+
+    // The lamp hood at the tip: a flat shade hanging under the end of the arm.
+    this.createSteel(
+      `${id}-lamp`,
+      "support",
+      at(length - 0.5, under - armDepth - 0.07),
+      at(length + 0.1, under - armDepth - 0.07),
+      "box",
+      0.34,
+      0.14,
     );
   }
 
@@ -1090,6 +1130,206 @@ export class MapBuilder {
     this.layout.walls.push(prop);
 
     return prop;
+  }
+
+  /**
+   * A pile of building material (bags, bricks, rubble, boards, a brick
+   * barricade) standing on a surface at `baseY`. Its pieces are drawn from the
+   * layout's `piles`, and it stops a body with hidden boxes that follow them.
+   * `touch` puts a side of the pile exactly on a wall or edge (no gap), the
+   * way a pile is stacked against a wall; the others are as given.
+   */
+  public createPile(
+    kind: PileKind,
+    id: string,
+    x: number,
+    z: number,
+    baseY: number,
+    touch: Partial<{
+      minX: number;
+      maxX: number;
+      minZ: number;
+      maxZ: number;
+    }> = {},
+    /** The way a long pile (a wall of bags, a barricade) runs. */
+    along: "x" | "z" = "x",
+  ): PileDefinition {
+    const built = buildPile(kind, id);
+    // Shapes are built running along x; turn the whole thing to run along z.
+    const shape =
+      along === "x"
+        ? built
+        : {
+            ...built,
+            width: built.depth,
+            depth: built.width,
+            elements: built.elements.map((e) => ({
+              ...e,
+              x: e.z,
+              z: e.x,
+              sx: e.sz,
+              sz: e.sx,
+            })),
+            boxes: built.boxes.map((b) => ({
+              minX: b.minZ,
+              maxX: b.maxZ,
+              minZ: b.minX,
+              maxZ: b.maxX,
+              top: b.top,
+            })),
+          };
+    let cx = x;
+    let cz = z;
+
+    // The outline of the whole pile: its first box spans it for most kinds; a
+    // barricade's boxes together span its wall, plus the bricks fallen round it.
+    const halfW = shape.width / 2;
+    const halfD = shape.depth / 2;
+
+    if (touch.minX !== undefined) cx = touch.minX + halfW;
+    if (touch.maxX !== undefined) cx = touch.maxX - halfW;
+    if (touch.minZ !== undefined) cz = touch.minZ + halfD;
+    if (touch.maxZ !== undefined) cz = touch.maxZ - halfD;
+
+    const solids: string[] = [];
+
+    shape.boxes.forEach((b, index) => {
+      const solidId = shape.boxes.length === 1 ? id : `${id}-${index + 1}`;
+
+      this.layout.walls.push({
+        kind: "box",
+        id: solidId,
+        role: "prop",
+        hidden: true,
+        minX: cx + b.minX,
+        maxX: cx + b.maxX,
+        minZ: cz + b.minZ,
+        maxZ: cz + b.maxZ,
+        bottom: baseY,
+        height: baseY + b.top,
+      });
+      solids.push(solidId);
+    });
+
+    const pile: PileDefinition = {
+      id,
+      kind,
+      x: cx,
+      z: cz,
+      baseY,
+      elements: shape.elements,
+      solids,
+    };
+
+    this.layout.piles.push(pile);
+
+    return pile;
+  }
+
+  /**
+   * Re-dresses a railing or low barrier as a stack of pipes or as brick without moving it.
+   * It keeps its footprint and its body-blocking height (a railing still
+   * cannot be vaulted); what changes is what is drawn, and the drawn height
+   * where bricks are missing (shots, grenades and sight follow the drawn
+   * profile, so a gap in the top is a real gap). Collision slices are hidden
+   * copies of the original with the new heights.
+   */
+  public restyleBarrier(id: string, style: BarrierStyle): void {
+    const solid = this.removeSolid(id);
+    const alongX = solid.maxX - solid.minX >= solid.maxZ - solid.minZ;
+    const length = alongX ? solid.maxX - solid.minX : solid.maxZ - solid.minZ;
+    const thick = alongX ? solid.maxZ - solid.minZ : solid.maxX - solid.minX;
+    const base = solid.base ?? solid.bottom ?? 0;
+    const rise = solid.height - base;
+    const shape = buildBarrierShape(style, id, length, thick, rise);
+    const cx = (solid.minX + solid.maxX) / 2;
+    const cz = (solid.minZ + solid.maxZ) / 2;
+    const lo = alongX ? solid.minX : solid.minZ;
+    const solids: string[] = [];
+
+    // The pieces are built along x: turn them to run along z when it does
+    // (mirrored across the diagonal, so the columns of the collision line up).
+    // A pipe is a cylinder along its own x: it is turned a quarter instead of
+    // swapping its sizes.
+    const elements = shape.elements.map((e) =>
+      alongX
+        ? e
+        : e.shape === "pipe"
+          ? { ...e, x: e.z, z: e.x, ry: Math.PI / 2 - e.ry }
+          : { ...e, x: e.z, z: e.x, sx: e.sz, sz: e.sx },
+    );
+
+    shape.boxes.forEach((b, index) => {
+      const a = lo + (length / 2 + b.minX);
+      const z = lo + (length / 2 + b.maxX);
+      const sliceId = shape.boxes.length === 1 ? id : `${id}~${index + 1}`;
+
+      this.layout.walls.push({
+        ...solid,
+        id: sliceId,
+        hidden: true,
+        minX: alongX ? a : solid.minX,
+        maxX: alongX ? z : solid.maxX,
+        minZ: alongX ? solid.minZ : a,
+        maxZ: alongX ? solid.maxZ : z,
+        height: base + b.top,
+      });
+      solids.push(sliceId);
+    });
+
+    this.layout.piles.push({
+      id: `${id}-${style}`,
+      kind: style === "pipes" ? "pipes" : "barricade",
+      x: cx,
+      z: cz,
+      baseY: base,
+      elements,
+      solids,
+    });
+  }
+
+  /** Takes a prop or wall out of the layout (to put a pile or a broken piece in its place). */
+  public removeSolid(id: string): BoxSolid {
+    const index = this.layout.walls.findIndex((w) => w.id === id);
+
+    if (index < 0) {
+      throw new Error(`No wall or prop called ${id}`);
+    }
+
+    return this.layout.walls.splice(index, 1)[0];
+  }
+
+  /**
+   * Breaks a wall or a block: it becomes `profile.length` slices side by side
+   * along its long side, each as high as `profile` says (a share of its height
+   * above where it stands, 1 = unbroken). A slice is never lower than
+   * `minRise` metres above its base, so a broken wall stays a wall: too tall to
+   * vault or jump, and nothing opens through it. The collision is the slices:
+   * what is missing is not in the way.
+   */
+  public breakSolid(id: string, profile: number[], minRise = 1.7): void {
+    const solid = this.removeSolid(id);
+    const alongX = solid.maxX - solid.minX >= solid.maxZ - solid.minZ;
+    const base = solid.base ?? solid.bottom ?? 0;
+    const rise = solid.height - base;
+    const length = alongX ? solid.maxX - solid.minX : solid.maxZ - solid.minZ;
+    const lo = alongX ? solid.minX : solid.minZ;
+
+    profile.forEach((share, index) => {
+      const a = lo + (length * index) / profile.length;
+      const b = lo + (length * (index + 1)) / profile.length;
+      const top = base + Math.max(rise * share, Math.min(minRise, rise));
+
+      this.layout.walls.push({
+        ...solid,
+        id: `${id}~${index + 1}`,
+        minX: alongX ? a : solid.minX,
+        maxX: alongX ? b : solid.maxX,
+        minZ: alongX ? solid.minZ : a,
+        maxZ: alongX ? solid.maxZ : b,
+        height: top,
+      });
+    });
   }
 
   /** A water or fuel tank (a cylinder) standing on a surface at `baseY`. */

@@ -16,10 +16,13 @@ import {
   type RampSolid,
   type StairsDefinition,
 } from "./ArenaLayout";
+import { createDecals, createPiles } from "./PileMeshes";
 import { createSteelStructure } from "./SteelStructure";
 import { VENT_CELL, ventBlocks, ventCeilingY, ventFloorY } from "./Vents";
 import { isBrickOuterWall, isBrickWall } from "./materials/WallSurfaces";
 import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
+import { METAL_TILE_METRES } from "./materials/MetalTexture";
+import { useWorldSpaceUv } from "./materials/WorldSpaceUv";
 
 /**
  * Graybox mesh builders. Each one turns a piece of the layout into meshes using
@@ -30,6 +33,19 @@ import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 const unitCylinder = new THREE.CylinderGeometry(1, 1, 1, 20);
 
+/** Metal parts wear the same restrained scratches and rust as the steel. */
+function worn(
+  material: THREE.MeshStandardMaterial,
+): THREE.MeshStandardMaterial {
+  material.map = industrialMaterials.metalWearMap();
+  useWorldSpaceUv(material, {
+    tileMetres: METAL_TILE_METRES,
+    macro: { frequency: 0.2, strength: 0.1 },
+  });
+
+  return material;
+}
+
 const materials = {
   ramp: new THREE.MeshStandardMaterial({
     color: 0x7d8699,
@@ -37,7 +53,9 @@ const materials = {
     side: THREE.DoubleSide,
   }),
   stairs: new THREE.MeshStandardMaterial({ color: 0x737c8f, roughness: 0.9 }),
-  railing: new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.8 }),
+  railing: worn(
+    new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.8 }),
+  ),
   // Climbable ledges stand out so they are easy to find.
   ledge: new THREE.MeshStandardMaterial({ color: 0xb0865a, roughness: 0.9 }),
   roofTop: new THREE.MeshStandardMaterial({
@@ -52,17 +70,21 @@ const materials = {
     metalness: 0.05,
     emissive: 0x1d2635,
   }),
-  steel: new THREE.MeshStandardMaterial({
-    color: 0x5a6272,
-    roughness: 0.55,
-    metalness: 0.5,
-  }),
+  steel: worn(
+    new THREE.MeshStandardMaterial({
+      color: 0x5a6272,
+      roughness: 0.55,
+      metalness: 0.5,
+    }),
+  ),
   prop: new THREE.MeshStandardMaterial({ color: 0x8c7c66, roughness: 0.9 }),
-  machinery: new THREE.MeshStandardMaterial({
-    color: 0x62707f,
-    roughness: 0.6,
-    metalness: 0.2,
-  }),
+  machinery: worn(
+    new THREE.MeshStandardMaterial({
+      color: 0x62707f,
+      roughness: 0.6,
+      metalness: 0.2,
+    }),
+  ),
   pipe: new THREE.MeshStandardMaterial({
     color: 0x7c6a55,
     roughness: 0.5,
@@ -459,11 +481,17 @@ export function createPlatform(
             ? industrialMaterials.paintedConcrete(
                 industrialMaterials.paintedVariantFor(solid.id),
               )
-            : solid.role && solid.role !== "floor"
-              ? roleMaterials[solid.role]
-              : industrialMaterials.floor(
-                  industrialMaterials.floorVariantFor(solid.id),
-                ),
+            : solid.role === "railing"
+              ? // Concrete barriers: three looks, spread by id (the slices of
+                // one barrier share its look).
+                industrialMaterials.barrier(
+                  industrialMaterials.barrierVariantFor(solid.id.split("~")[0]),
+                )
+              : solid.role && solid.role !== "floor"
+                ? roleMaterials[solid.role]
+                : industrialMaterials.floor(
+                    industrialMaterials.floorVariantFor(solid.id),
+                  ),
     solid.base ?? solid.bottom ?? 0,
   );
 
@@ -833,8 +861,14 @@ export function buildArena(layout: ArenaLayout): THREE.Group {
   }
 
   for (const wall of layout.walls) {
-    arena.add(createPlatform(wall));
+    // A pile's hidden boxes are collision only: its pieces are drawn below.
+    if (!wall.hidden) {
+      arena.add(createPlatform(wall));
+    }
   }
+
+  arena.add(createPiles(layout));
+  arena.add(createDecals(layout));
 
   for (const overhead of layout.overheads) {
     arena.add(createOverhead(overhead));

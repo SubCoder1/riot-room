@@ -3,7 +3,7 @@ import * as THREE from "three";
 import type { CombatSystem } from "./CombatSystem";
 import type { Combatant } from "./Combatant";
 import { MOLOTOV_CONFIG as C } from "./MolotovConfig";
-import type { RockWorld } from "./RockFlight";
+import type { ThrowWorld } from "./ThrowableFlight";
 
 export type FirePhase = "spreading" | "active" | "fading";
 
@@ -96,9 +96,9 @@ export class FireSystem {
   private nextId = 1;
 
   private readonly combat: CombatSystem;
-  private readonly world: RockWorld;
+  private readonly world: ThrowWorld;
 
-  constructor(combat: CombatSystem, world: RockWorld) {
+  constructor(combat: CombatSystem, world: ThrowWorld) {
     this.combat = combat;
     this.world = world;
   }

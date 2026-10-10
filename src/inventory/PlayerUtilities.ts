@@ -1,18 +1,24 @@
+import { GRENADE_CONFIG } from "../combat/GrenadeConfig";
+import { SMOKE_CONFIG } from "../combat/SmokeConfig";
+
 /**
- * A player's utilities (things they will later throw) and which one is selected.
+ * A player's utilities (things they throw) and which one is selected.
  *
  * This is only the inventory and selection foundation. Nothing here throws,
  * damages or spawns anything, and it knows nothing about punches: the FISTS
  * slot just means "no utility is in use", the fallback when nothing else is
  * equipped. Each player owns their own instance (there is no shared inventory).
  *
- * Adding a utility later (a flash, a grenade, a heal...) means adding one entry
- * to UTILITY_SLOTS. The wheel draws whatever the list says.
+ * The EMPTY slot is reserved for future equipment: it can be selected, but it
+ * holds nothing and does nothing (no throw, no punch).
+ *
+ * Adding a utility later means filling the EMPTY slot or adding one entry to
+ * UTILITY_SLOTS. The wheel draws whatever the list says.
  */
 
-export type UtilityType = "ROCKS" | "MOLOTOV" | "SMOKE" | "FISTS";
+export type UtilityType = "GRENADE" | "MOLOTOV" | "SMOKE" | "FISTS" | "EMPTY";
 
-export type UtilityIcon = "rock" | "molotov" | "smoke" | "glove";
+export type UtilityIcon = "grenade" | "molotov" | "smoke" | "glove" | "empty";
 
 export interface UtilityDefinition {
   type: UtilityType;
@@ -27,20 +33,26 @@ export interface UtilityDefinition {
   startingQuantity: number;
   /** Where the slot sits on the wheel, in degrees clockwise from the top. */
   angle: number;
+  /**
+   * A placeholder for future equipment: selectable, but holding nothing and
+   * doing nothing.
+   */
+  reserved?: boolean;
 }
 
 /**
- * The wheel's slots, in the order the mouse wheel steps through them
- * (ROCKS, MOLOTOV, SMOKE, FISTS, then back to ROCKS). FISTS is the plain
- * "no utility" slot: the existing fist combat, with no quantity.
+ * The wheel's slots, in the order the mouse wheel steps through them (GRENADE,
+ * MOLOTOV, SMOKE, FISTS, EMPTY, then back to GRENADE), evenly spaced round the
+ * wheel (72 degrees apart, the grenade at the top). FISTS is the plain "no
+ * utility" slot: the existing fist combat, with no quantity.
  */
 export const UTILITY_SLOTS: readonly UtilityDefinition[] = [
   {
-    type: "ROCKS",
-    name: "Rocks",
-    icon: "rock",
+    type: "GRENADE",
+    name: "Grenade",
+    icon: "grenade",
     counted: true,
-    startingQuantity: 3,
+    startingQuantity: GRENADE_CONFIG.GRENADE_START_QUANTITY,
     angle: 0,
   },
   {
@@ -49,15 +61,15 @@ export const UTILITY_SLOTS: readonly UtilityDefinition[] = [
     icon: "molotov",
     counted: true,
     startingQuantity: 0,
-    angle: 90,
+    angle: 72,
   },
   {
     type: "SMOKE",
     name: "Smoke",
     icon: "smoke",
     counted: true,
-    startingQuantity: 0,
-    angle: 270,
+    startingQuantity: SMOKE_CONFIG.SMOKE_START_QUANTITY,
+    angle: 144,
   },
   {
     type: "FISTS",
@@ -65,7 +77,16 @@ export const UTILITY_SLOTS: readonly UtilityDefinition[] = [
     icon: "glove",
     counted: false,
     startingQuantity: 0,
-    angle: 180,
+    angle: 216,
+  },
+  {
+    type: "EMPTY",
+    name: "Empty",
+    icon: "empty",
+    counted: false,
+    startingQuantity: 0,
+    angle: 288,
+    reserved: true,
   },
 ];
 
@@ -89,7 +110,7 @@ export class PlayerUtilities {
     // Nothing equipped to begin with: the player has their fists, as before.
     this.selectedType =
       selected ??
-      definitions.find((d) => !d.counted)?.type ??
+      definitions.find((d) => !d.counted && !d.reserved)?.type ??
       definitions[0].type;
   }
 
@@ -108,7 +129,7 @@ export class PlayerUtilities {
   }
 
   /**
-   * Gives the player some (a pickup will call this, e.g. add("ROCKS", 1)).
+   * Gives the player some (a pickup will call this, e.g. add("GRENADE", 1)).
    * Returns the new quantity; unknown or uncounted types and non-positive
    * amounts change nothing.
    */
@@ -155,11 +176,21 @@ export class PlayerUtilities {
     }
   }
 
+  /** The reserved slot is selected: hands empty, nothing to throw and nothing to punch with. */
+  public get reservedSelected(): boolean {
+    return this.definitionOf(this.selectedType)?.reserved === true;
+  }
+
   /**
    * True when the player should be punching: nothing selected (FISTS), or the
    * selected utility has run out. The existing fist combat is the fallback.
+   * The reserved slot is never this: it does nothing at all.
    */
   public get usingFists(): boolean {
+    if (this.reservedSelected) {
+      return false;
+    }
+
     const have = this.quantities.get(this.selectedType);
 
     return have === undefined || have <= 0;
@@ -167,6 +198,6 @@ export class PlayerUtilities {
 
   /** The utility that could be used right now, or null for fists. */
   public get active(): UtilityType | null {
-    return this.usingFists ? null : this.selectedType;
+    return this.usingFists || this.reservedSelected ? null : this.selectedType;
   }
 }

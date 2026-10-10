@@ -45,10 +45,15 @@ export interface BoxSolid {
   bottom?: number;
   /**
    * How high the solid stops a walking or jumping body, if more than it is
-   * drawn: a railing looks hip-high but cannot be vaulted. Shots, rocks and
+   * drawn: a railing looks hip-high but cannot be vaulted. Shots, grenades and
    * sight lines only count its drawn height.
    */
   blockTop?: number;
+  /**
+   * Collision only: something else draws it (a pile of bags, bricks, rubble or
+   * planks, whose pieces fill this box). The box is the pile's outline.
+   */
+  hidden?: boolean;
   /**
    * Drawn as tinted glass instead of its role's material. Collision is by role
    * as usual (a glass barrier stops a body like a railing, a glass roof panel
@@ -340,6 +345,73 @@ export interface VentNetwork {
   closed: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>;
 }
 
+/** What a pile of building material is made of. */
+export type PileKind =
+  | "cement"
+  | "bags"
+  | "bagwall"
+  | "bricks"
+  | "rubble"
+  | "wood"
+  | "barricade"
+  | "pipes";
+
+/** One piece of a pile (a bag, a brick, a plank or a chunk), centred on the pile. */
+export interface PileElement {
+  shape: "bag" | "brick" | "plank" | "chunk" | "pipe";
+  /** Centre, metres: x and z from the pile's centre, y above the surface it stands on. */
+  x: number;
+  y: number;
+  z: number;
+  /** Full size along each of its own axes. */
+  sx: number;
+  sy: number;
+  sz: number;
+  /** Turn (radians, XYZ order). */
+  rx: number;
+  ry: number;
+  rz: number;
+  /** 0xRRGGBB, a little different for every piece. */
+  color: number;
+}
+
+/**
+ * A pile of building material: drawn from its `elements`, stopping a body by
+ * its hidden collision boxes (listed in `solids`, which fit the pieces).
+ */
+export interface PileDefinition {
+  id: string;
+  kind: PileKind;
+  /** Centre on the surface, and the height of the surface it stands on. */
+  x: number;
+  z: number;
+  baseY: number;
+  elements: PileElement[];
+  /** Ids of its collision boxes in `ArenaLayout.walls`. */
+  solids: string[];
+}
+
+/**
+ * A flat soft mark laid on a floor: worn dirt in front of a doorway, an oil
+ * stain under machinery, dust round a pile. Drawn only; never collides.
+ */
+export interface DecalDefinition {
+  id: string;
+  kind: "wear" | "stain" | "dust";
+  x: number;
+  z: number;
+  /** Height of the floor it lies on. */
+  y: number;
+  /** Size along x and z before it is turned. */
+  width: number;
+  depth: number;
+  /** Turn about the vertical (radians). */
+  rotation: number;
+  /** 0xRRGGBB and how opaque it is at its middle (0 to 1). */
+  color: number;
+  alpha: number;
+}
+
 export interface ArenaLayout {
   width: number;
   depth: number;
@@ -367,6 +439,10 @@ export interface ArenaLayout {
   vents: VentNetwork;
   /** The ventilation system in the upper floor (along the walkways, touching the rooms). */
   upperVents: VentNetwork;
+  /** Piles of cement bags, bricks, rubble and planks (drawn from pieces). */
+  piles: PileDefinition[];
+  /** Dirt, stains and dust on floors (drawn only). */
+  decals: DecalDefinition[];
 }
 
 /** Camera yaw at (x, z) that looks toward (lookX, lookZ). */

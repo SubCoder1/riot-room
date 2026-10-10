@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { CONCRETE_TILE_METRES, type ConcreteTextures } from "./ConcreteTexture";
+import { type ConcreteTextures } from "./ConcreteTexture";
 import { useWorldSpaceUv } from "./WorldSpaceUv";
 
 /**
@@ -60,8 +60,10 @@ export function createFloorMaterial(
   });
 
   useWorldSpaceUv(material, {
-    tileMetres: CONCRETE_TILE_METRES,
+    tileMetres: textures.tileMetres,
     rotation: look.rotation,
+    // Broad dirtier and cleaner areas, so the 4 m tile never shows.
+    macro: { frequency: 0.13, strength: 0.16 },
   });
 
   return material;

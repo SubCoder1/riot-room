@@ -53,6 +53,7 @@ export function createBrickMaterial(
   useWorldSpaceUv(material, {
     tileMetres: BRICK_TILE_METRES,
     offset: look.offset,
+    macro: { frequency: 0.21, strength: 0.2, baseDirt: 0.3 },
   });
 
   return material;

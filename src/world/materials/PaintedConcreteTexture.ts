@@ -3,12 +3,14 @@ import * as THREE from "three";
 import { mulberry32, tileableNoise } from "./ConcreteTexture";
 
 /** Pixels along one side of the (square, seamless) painted-concrete textures. */
-export const PAINTED_TEXTURE_SIZE = 512;
+export const PAINTED_TEXTURE_SIZE = 768;
 
 /** Metres of wall covered by one repeat. */
-export const PAINTED_TILE_METRES = 5;
+export const PAINTED_TILE_METRES = 7.5;
 
 export interface PaintedConcreteTextures {
+  /** Metres of wall covered by one repeat of this set. */
+  tileMetres: number;
   /** Near-neutral light grey (the material colour tints it dark blue-grey). */
   color: THREE.DataTexture;
   /** Very soft orange-peel normals, so light rolls over the paint a little. */
@@ -25,15 +27,23 @@ export interface PaintedConcreteTextures {
 export function createPaintedConcreteTextures(
   size = PAINTED_TEXTURE_SIZE,
   seed = 77,
+  options: { tileMetres?: number; cracks?: number; damp?: number } = {},
 ): PaintedConcreteTextures {
+  const tileMetres = options.tileMetres ?? PAINTED_TILE_METRES;
+  // Features keep their size in metres whatever the tile (a bigger tile holds
+  // more of them and repeats less).
+  const k = tileMetres / 5;
   const random = mulberry32(seed);
-  const soft = tileableNoise(size, 3, random);
-  const blotch = tileableNoise(size, 10, random);
-  const fine = tileableNoise(size, 64, random);
-  const runs = tileableNoise(size, 2, random);
+  const soft = tileableNoise(size, Math.round(3 * k), random);
+  const blotch = tileableNoise(size, Math.round(10 * k), random);
+  const fine = tileableNoise(size, Math.round(64 * k), random);
+  const runs = tileableNoise(size, Math.round(2 * k), random);
 
   // One smooth random value per column, for the faint vertical streaks.
-  const columns = tileableNoise(size, 40, random).subarray(0, size);
+  const columns = tileableNoise(size, Math.round(40 * k), random).subarray(
+    0,
+    size,
+  );
   const color = new Uint8Array(size * size * 4);
   const rough = new Uint8Array(size * size * 4);
   const height = new Float32Array(size * size);
@@ -66,6 +76,113 @@ export function createPaintedConcreteTextures(
       rough[i * 4 + 2] = r;
       rough[i * 4 + 3] = 255;
       height[i] = fine[i] * 0.7 + grain * 0.3 + blotch[i] * 0.2;
+    }
+  }
+
+  // Weathering on top of the paint: a few water runs, damp patches and chips
+  // where the paint has come off and the grey concrete shows.
+  const damp = tileableNoise(size, Math.round(4 * k), random);
+  const stamp = (
+    cx: number,
+    cy: number,
+    radius: number,
+    value: number,
+    dent: number,
+  ): void => {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const d = Math.hypot(dx, dy) / radius;
+
+        if (d > 1 || random() < d * d * 0.5) {
+          continue;
+        }
+
+        const x = (((Math.round(cx + dx) % size) + size) % size) | 0;
+        const y = (((Math.round(cy + dy) % size) + size) % size) | 0;
+        const i = y * size + x;
+        const k = 1 - d * d;
+
+        for (let c = 0; c < 3; c++) {
+          color[i * 4 + c] = Math.max(0, color[i * 4 + c] + value * k * 255);
+        }
+
+        height[i] += dent * k;
+      }
+    }
+  };
+
+  for (let i = 0; i < size * size; i++) {
+    const wet =
+      Math.min(Math.max((damp[i] - 0.62) / 0.2, 0), 1) * (options.damp ?? 1);
+
+    if (wet > 0) {
+      for (let c = 0; c < 3; c++) {
+        color[i * 4 + c] *= 1 - 0.1 * wet;
+      }
+    }
+  }
+
+  // Runs: a thin streak down from a point, darker at its head and fading.
+  for (let n = 0; n < Math.round(12 * k * k); n++) {
+    const x0 = Math.floor(random() * size);
+    const y0 = Math.floor(random() * size);
+    const length = 50 + Math.floor(random() * 150);
+    const strength = 0.05 + random() * 0.05;
+    const wide = random() < 0.4 ? 2 : 1;
+
+    for (let t = 0; t < length; t++) {
+      const fade = 1 - t / length;
+      const wander = Math.round(Math.sin(t * 0.07 + n) * 1.5);
+
+      for (let w = 0; w < wide; w++) {
+        const x = (((x0 + wander + w) % size) + size) % size;
+        const y = (y0 + t) % size;
+        const i = y * size + x;
+
+        for (let c = 0; c < 3; c++) {
+          color[i * 4 + c] = Math.max(
+            0,
+            color[i * 4 + c] - strength * fade * 255,
+          );
+        }
+      }
+    }
+  }
+
+  // Chips: small ragged bare patches, a little darker than the paint, dented.
+  for (let n = 0; n < Math.round(24 * k * k); n++) {
+    stamp(
+      random() * size,
+      random() * size,
+      2 + Math.floor(random() * 4),
+      -0.2,
+      -0.5,
+    );
+  }
+
+  // Hairline cracks: thin dark wandering lines.
+  const crackCount = Math.round((options.cracks ?? 0) * k * k);
+
+  for (let n = 0; n < crackCount; n++) {
+    let x = random() * size;
+    let y = random() * size;
+    let angle = random() * Math.PI * 2;
+    const length = 40 + random() * 140;
+
+    for (let t = 0; t < length; t++) {
+      angle += (random() - 0.5) * 0.45;
+      x += Math.cos(angle);
+      y += Math.sin(angle);
+
+      const i =
+        (((Math.round(y) % size) + size) % size) * size +
+        (((Math.round(x) % size) + size) % size);
+
+      for (let c = 0; c < 3; c++) {
+        color[i * 4 + c] = Math.max(0, color[i * 4 + c] - 0.13 * 255);
+      }
+
+      height[i] -= 0.5;
     }
   }
 
@@ -104,6 +221,7 @@ export function createPaintedConcreteTextures(
   };
 
   return {
+    tileMetres,
     color: make(color, true),
     normal: make(normal, false),
     roughness: make(rough, false),

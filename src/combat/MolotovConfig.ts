@@ -1,11 +1,11 @@
 /**
  * All Molotov tuning lives here, so playtesting means editing this one block.
  * The flight values drive both the aim preview and the real bottle (the same
- * way the rock does), and the radius drives both the fire you see and the area
+ * way every throwable does), and the radius drives both the fire you see and the area
  * that burns you.
  */
 export const MOLOTOV_CONFIG = {
-  // ---- Flight (same model as the rock: straight at first, then an arc) ----
+  // ---- Flight (the shared model: straight at first, then an arc) ----
   MOLOTOV_THROW_SPEED: 24,
   /** Downward acceleration, m/s^2, once gravity has fully built up. */
   MOLOTOV_GRAVITY: 16,

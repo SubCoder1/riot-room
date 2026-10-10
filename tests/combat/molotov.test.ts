@@ -12,15 +12,15 @@ import {
 } from "../../src/combat/FireZones";
 import { MOLOTOV_CONFIG as C } from "../../src/combat/MolotovConfig";
 import { ProjectileSystem } from "../../src/combat/Projectiles";
+import { MOLOTOV_PROFILE } from "../../src/combat/ThrowableFlight";
 import {
-  MOLOTOV_PROFILE,
-  createRockPath,
-  traceRockPath,
-  type RockWorld,
-} from "../../src/combat/RockFlight";
+  createThrowPath,
+  traceThrowPath,
+  type ThrowWorld,
+} from "../../src/combat/ThrowableFlight";
 import { TestFighter } from "./helpers";
 
-const FLAT: RockWorld = {
+const FLAT: ThrowWorld = {
   clearFraction: () => 1,
   surfaceY: () => 0,
 };
@@ -37,7 +37,7 @@ interface Scene {
   run: (seconds: number) => void;
 }
 
-function setup(world: RockWorld = FLAT): Scene {
+function setup(world: ThrowWorld = FLAT): Scene {
   const combat = new CombatSystem();
   const thrower = new TestFighter("thrower");
   const victim = new TestFighter("victim");
@@ -52,8 +52,8 @@ function setup(world: RockWorld = FLAT): Scene {
   const fires = new FireSystem(combat, world);
   const projectiles = new ProjectileSystem(combat, world);
 
-  projectiles.onBurst = (rock, point) => {
-    fires.ignite(rock.ownerId, point);
+  projectiles.onBurst = (item, point) => {
+    fires.ignite(item.ownerId, point);
   };
 
   const run = (seconds: number): void => {
@@ -124,7 +124,7 @@ describe("Fire radius and lifecycle", () => {
   });
 
   it("is put on the surface below the impact, never in mid-air", () => {
-    const platform: RockWorld = {
+    const platform: ThrowWorld = {
       clearFraction: () => 1,
       surfaceY: (x) => (x > 5 ? 2 : 0),
     };
@@ -327,9 +327,9 @@ describe("Molotov projectile", () => {
     const scene = setup();
     const origin = new THREE.Vector3(6, 1.5, 0);
     const direction = new THREE.Vector3(0, 0.15, 1).normalize();
-    const path = createRockPath(256);
+    const path = createThrowPath(256);
 
-    traceRockPath(origin, direction, FLAT, path, 1, MOLOTOV_PROFILE);
+    traceThrowPath(origin, direction, FLAT, path, 1, MOLOTOV_PROFILE);
 
     const bottle = scene.projectiles.throwProjectile(
       "molotov",
@@ -376,12 +376,14 @@ describe("Molotov projectile", () => {
 
     expect(scene.fires.zones).toHaveLength(1);
     expect(
-      scene.events.some((e) => e.type === "hit" && e.attackId === "rock-throw"),
+      scene.events.some(
+        (e) => e.type === "hit" && e.attackId === "grenade-blast",
+      ),
     ).toBe(false);
   });
 
   it("breaks on a wall and the fire drops to the surface below", () => {
-    const wall: RockWorld = {
+    const wall: ThrowWorld = {
       clearFraction: (from, to) =>
         to.z > 6 && from.z <= 6 ? (6 - from.z) / (to.z - from.z) : 1,
       surfaceY: () => 0,
@@ -401,10 +403,11 @@ describe("Molotov projectile", () => {
     expect(scene.fires.zones[0].position.z).toBeCloseTo(6, 0);
   });
 
-  it("a rock never starts a fire", () => {
+  it("a grenade never starts a fire", () => {
     const scene = setup();
 
-    scene.projectiles.throwRock(
+    scene.projectiles.throwProjectile(
+      "grenade",
       "thrower",
       new THREE.Vector3(8, 1.5, -10),
       new THREE.Vector3(0, -0.2, 1).normalize(),

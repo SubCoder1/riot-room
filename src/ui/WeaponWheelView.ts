@@ -9,7 +9,7 @@ import type { WeaponWheel } from "../inventory/WeaponWheel";
  * Draws the weapon wheel: a screen-space overlay (not part of the 3D scene, so
  * it behaves the same in first and third person). It draws whatever slots the
  * inventory is configured with and reads quantities from it every frame, so a
- * rock picked up later shows up on the wheel by itself.
+ * grenade picked up later shows up on the wheel by itself.
  *
  * Plain inline SVG and CSS: a thin ring, one sector per slot, small line icons,
  * and the highlighted slot's name and quantity in the middle.
@@ -27,10 +27,16 @@ type Shape = [tag: string, attrs: Record<string, string>];
 
 /** Small line icons on a 32 x 32 grid centred on (0, 0). Colour comes from CSS. */
 const ICONS: Record<UtilityIcon, Shape[]> = {
-  rock: [
-    ["polygon", { points: "-12,5 -8,-6 0,-11 10,-7 13,3 6,11 -6,11" }],
-    ["polyline", { points: "-8,-6 -2,0 6,-1 10,-7" }],
-    ["polyline", { points: "-2,0 -3,11" }],
+  // A fragmentation grenade: a ribbed casing, a fuse and a lever with a pin ring.
+  grenade: [
+    ["ellipse", { cx: "0", cy: "5", rx: "9", ry: "10" }],
+    ["rect", { x: "-3.5", y: "-7", width: "7", height: "4", rx: "1" }],
+    ["path", { d: "M3.5,-6 C11,-7 13,0 11,7" }],
+    ["circle", { cx: "-7.5", cy: "-7.5", r: "2.5" }],
+    ["line", { x1: "-5", y1: "-7", x2: "-3.5", y2: "-6" }],
+    ["path", { d: "M-8.7,2 Q0,5.5 8.7,2" }],
+    ["path", { d: "M-8.2,8 Q0,11.5 8.2,8" }],
+    ["line", { x1: "0", y1: "-3", x2: "0", y2: "15" }],
   ],
   // A bottle with a rag and a flame.
   molotov: [
@@ -45,19 +51,15 @@ const ICONS: Record<UtilityIcon, Shape[]> = {
     ["line", { x1: "0", y1: "-8", x2: "0", y2: "-11" }],
     ["path", { d: "M0,-11 C-5,-14 -2,-16 -2,-19 C2,-17 5,-14 0,-11 Z" }],
   ],
-  // A round grenade with a pin ring, a lever and a puff of smoke.
+  // A smoke canister with a band and a billowing cloud over it.
   smoke: [
-    ["ellipse", { cx: "0", cy: "5", rx: "9", ry: "9" }],
-    ["rect", { x: "-3.5", y: "-6", width: "7", height: "4", rx: "1" }],
-    ["path", { d: "M3.5,-5 C10,-6 12,0 10,6" }],
-    ["circle", { cx: "-7.5", cy: "-6.5", r: "2.5" }],
-    ["line", { x1: "-5", y1: "-6", x2: "-3.5", y2: "-5" }],
-    ["path", { d: "M-8.5,3 Q0,6.5 8.5,3" }],
-    ["path", { d: "M-7,9 Q0,12.5 7,9" }],
+    ["rect", { x: "-6", y: "-1", width: "12", height: "17", rx: "2" }],
+    ["line", { x1: "-6", y1: "4", x2: "6", y2: "4" }],
+    ["line", { x1: "-6", y1: "8", x2: "6", y2: "8" }],
     [
       "path",
       {
-        d: "M-4,-9 C-8,-10 -7,-14 -3,-13 C-3,-17 3,-17 3,-13 C7,-14 8,-10 4,-9",
+        d: "M-10,-4 C-15,-5 -14,-11 -9,-10 C-9,-15 -2,-16 0,-12 C3,-16 10,-14 9,-9 C14,-9 15,-3 10,-4 Z",
       },
     ],
   ],
@@ -74,6 +76,10 @@ const ICONS: Record<UtilityIcon, Shape[]> = {
     ["path", { d: "M-8,4 L-9,13 L7,13 L6,4" }],
     ["line", { x1: "-8.5", y1: "8.5", x2: "6.5", y2: "8.5" }],
     ["path", { d: "M-4,8.5 L-2,11.5 M0,8.5 L2,11.5" }],
+  ],
+  // A reserved slot: an empty dashed ring.
+  empty: [
+    ["circle", { cx: "0", cy: "0", r: "11", "stroke-dasharray": "4 4.5" }],
   ],
 };
 
@@ -218,6 +224,10 @@ export class WeaponWheelView {
         canvas,
       );
       slot.group = group;
+
+      if (slot.definition.reserved) {
+        group.dataset.reserved = "true";
+      }
 
       const icon = svg("g", { class: "ww-icon" }, group);
 

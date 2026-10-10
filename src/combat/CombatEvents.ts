@@ -68,6 +68,23 @@ export type CombatEvent =
       z: number;
     }
   | { type: "fire-ended"; zoneId: number }
+  | {
+      type: "explosion";
+      ownerId: string;
+      x: number;
+      y: number;
+      z: number;
+      radius: number;
+    }
+  | {
+      type: "smoke-started";
+      cloudId: number;
+      ownerId: string;
+      x: number;
+      y: number;
+      z: number;
+    }
+  | { type: "smoke-ended"; cloudId: number }
   | { type: "died"; targetId: string; targetName: string }
   | { type: "respawned"; targetId: string; targetName: string };
 

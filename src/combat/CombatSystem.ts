@@ -424,9 +424,12 @@ export class CombatSystem {
   }
 
   /**
-   * Damage from the environment (a fire zone), through the same health, hit
-   * event and reaction pipeline as a punch. It has no guard: standing behind a
-   * block does nothing against it. Returns null if the target is gone or dead.
+   * Damage from the environment (a fire zone, a blast), through the same
+   * health, hit event and reaction pipeline as a punch. It has no guard of its
+   * own: standing behind a block does nothing against it unless the caller
+   * scales the damage. A blast may carry a push and a stagger (`knockback`
+   * metres along `direction`, flattened to horizontal). Returns null if the
+   * target is gone or dead.
    */
   public applyHazardDamage(input: {
     sourceId: DamageSourceId;
@@ -434,6 +437,9 @@ export class CombatSystem {
     targetId: string;
     hurtbox: HurtboxId;
     damage: number;
+    knockback?: number;
+    hitstun?: number;
+    direction?: THREE.Vector3;
   }): HitInfo | null {
     const attacker = this.combatants.find((c) => c.id === input.attackerId);
     const target = this.combatants.find((c) => c.id === input.targetId);
@@ -447,10 +453,18 @@ export class CombatSystem {
       attackerId: attacker.id,
       hurtbox: input.hurtbox,
       damage: Math.max(0, Math.round(input.damage)),
-      knockback: 0,
+      knockback: input.knockback ?? 0,
       knockbackDirection: new THREE.Vector3(0, 0, 1),
-      hitstun: 0,
+      hitstun: input.hitstun ?? 0,
     };
+
+    if (input.direction) {
+      const flat = input.direction.clone().setY(0);
+
+      if (flat.lengthSq() > 1e-8) {
+        hit.knockbackDirection = flat.normalize();
+      }
+    }
 
     this.applyDamage(attacker, target, hit, input.sourceId);
 

@@ -7,7 +7,11 @@ import { Arena } from "../world/Arena";
 import { ArenaCollision } from "../world/ArenaCollision";
 import { ArenaDebug } from "../world/ArenaDebug";
 import { CLIMB, angleBetween, ladderYaw } from "../player/Climb";
-import { ARENA_HALF_X } from "../world/ArenaLayout";
+import {
+  ARENA_HALF_X,
+  ARENA_HALF_Z,
+  PERIMETER_WALL_HEIGHT,
+} from "../world/ArenaLayout";
 import { ARENA_LAYOUT } from "../world/UpperFloorMap";
 import {
   inTunnel,
@@ -24,31 +28,37 @@ import { CombatDebug } from "../combat/CombatDebug";
 import { logCombatEvent } from "../combat/CombatLog";
 import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
-import { ProjectileSystem } from "../combat/Projectiles";
-import { ROCK_CONFIG } from "../combat/RockConfig";
+import { ProjectileSystem, PROFILES } from "../combat/Projectiles";
+import { THROW_CONFIG } from "../combat/ThrowConfig";
 import { FireSystem } from "../combat/FireZones";
+import { ExplosionSystem } from "../combat/Explosions";
+import { SmokeSystem } from "../combat/Smoke";
+import { canPerceive } from "../combat/Awareness";
 import {
-  MOLOTOV_PROFILE,
-  ROCK_PROFILE,
-  traceRockPath,
-  type RockWorld,
-} from "../combat/RockFlight";
+  perimeterClearFraction,
+  traceThrowPath,
+  type ThrowBounds,
+  type ThrowWorld,
+} from "../combat/ThrowableFlight";
 import { createCapsule, segmentCapsuleEntry } from "../combat/Shapes";
 import { TrainingDummy } from "../combat/TrainingDummy";
 import { WorldHealthBars } from "../ui/WorldHealthBars";
 import { PlayerUtilities } from "../inventory/PlayerUtilities";
-import { RockStance, type HeldKind } from "../inventory/RockStance";
+import { ThrowStance, type HeldKind } from "../inventory/ThrowStance";
 import type { UtilityType } from "../inventory/PlayerUtilities";
 import { WeaponWheel } from "../inventory/WeaponWheel";
 import { FireZoneView } from "../vfx/FireZoneView";
-import { RockAimPreview } from "../vfx/RockAimPreview";
-import { RockProjectileView } from "../vfx/RockProjectileView";
+import { ThrowAimPreview } from "../vfx/ThrowAimPreview";
+import { ThrownItemView } from "../vfx/ThrownItemView";
+import { ExplosionView } from "../vfx/ExplosionView";
+import { SmokeCloudView } from "../vfx/SmokeCloudView";
 import { WeaponWheelView } from "../ui/WeaponWheelView";
 
 /** The inventory slot behind each throwable. */
 const THROWABLE_TYPE: Record<HeldKind, UtilityType> = {
-  rock: "ROCKS",
+  grenade: "GRENADE",
   molotov: "MOLOTOV",
+  smoke: "SMOKE",
 };
 
 /** How far an opened hatch panel swings up on its hinge (radians). */
@@ -126,30 +136,46 @@ export class Game {
   private readonly weaponWheelView: WeaponWheelView;
 
   // ============================================================
-  // ROCKS (equip, aim with right click, throw with left click)
+  // THROWABLES (grenade, Molotov, smoke grenade: equip, aim with right
+  // click, throw with left click)
   // ============================================================
 
-  private readonly rockStance = new RockStance();
-  private readonly rockWorld: RockWorld = {
+  private readonly throwStance = new ThrowStance();
+  /** The outer wall: not a solid of the collision field, so thrown things check it too. */
+  private readonly throwBounds: ThrowBounds = {
+    halfX: ARENA_HALF_X,
+    halfZ: ARENA_HALF_Z,
+    height: PERIMETER_WALL_HEIGHT,
+  };
+  private readonly throwWorld: ThrowWorld = {
     clearFraction: (from, to) =>
-      this.collision.segmentClearFraction(
-        from.x,
-        from.y,
-        from.z,
-        to.x,
-        to.y,
-        to.z,
+      Math.min(
+        this.collision.segmentClearFraction(
+          from.x,
+          from.y,
+          from.z,
+          to.x,
+          to.y,
+          to.z,
+        ),
+        perimeterClearFraction(from, to, this.throwBounds),
       ),
     // Fires and landed bottles come to rest on real surfaces, not in mid-air.
     surfaceY: (x, z, fromY) => this.collision.groundHeight(x, z, fromY),
   };
   private readonly projectiles: ProjectileSystem;
   private readonly fires: FireSystem;
+  private readonly explosions: ExplosionSystem;
+  private readonly smoke: SmokeSystem;
   private readonly fireView = new FireZoneView();
-  private readonly rockView: RockProjectileView;
-  private readonly rockPreview = new RockAimPreview();
+  private readonly thrownView: ThrownItemView;
+  private readonly explosionView = new ExplosionView();
+  private readonly smokeView: SmokeCloudView;
+  private readonly throwPreview = new ThrowAimPreview();
+  /** The grey tint over the screen while the camera is inside smoke. */
+  private smokeOverlay: HTMLElement | null = null;
   private crosshair: HTMLElement | null = null;
-  /** The left click of this frame, if the rock stance did not use it. */
+  /** The left click of this frame, if the throw stance did not use it. */
   private punchClick = false;
 
   /** The "E to climb" hint, made on first use. */
@@ -164,6 +190,7 @@ export class Game {
   private readonly throwCameraDirection = new THREE.Vector3();
   private readonly throwTarget = new THREE.Vector3();
   private readonly throwProbe = new THREE.Vector3();
+  private readonly explosionPoint = new THREE.Vector3();
 
   private previousF6 = false;
   private previousF7 = false;
@@ -307,13 +334,33 @@ export class Game {
     // TEMP (testing): one Molotov to start with. Remove once pickups exist.
     this.utilities.add("MOLOTOV", 1);
 
-    this.projectiles = new ProjectileSystem(this.combat, this.rockWorld);
-    this.rockView = new RockProjectileView(this.projectiles);
-    this.fires = new FireSystem(this.combat, this.rockWorld);
+    this.projectiles = new ProjectileSystem(this.combat, this.throwWorld);
+    this.thrownView = new ThrownItemView(this.projectiles);
+    this.fires = new FireSystem(this.combat, this.throwWorld);
+    this.explosions = new ExplosionSystem(this.combat, this.throwWorld);
+    this.smoke = new SmokeSystem(this.combat, this.throwWorld);
+    this.smokeView = new SmokeCloudView(this.smoke);
     // A Molotov that breaks starts a fire where it landed.
-    this.projectiles.onBurst = (rock, point) => {
-      this.fires.ignite(rock.ownerId, point);
+    this.projectiles.onBurst = (item, point) => {
+      this.fires.ignite(item.ownerId, point);
     };
+    // A grenade whose fuse ran out explodes; a smoke grenade starts to emit.
+    // Each item is gone before this is called, so it goes off exactly once.
+    this.projectiles.onDetonate = (item, point) => {
+      if (item.kind === "grenade") {
+        this.explosions.detonate(item.ownerId, point);
+      } else if (item.kind === "smoke") {
+        this.smoke.emit(item.ownerId, point);
+      }
+    };
+    // The picture of an explosion follows the combat event, never the throw.
+    this.combat.events.subscribe((event) => {
+      if (event.type === "explosion") {
+        this.explosionView.spawn(
+          this.explosionPoint.set(event.x, event.y, event.z),
+        );
+      }
+    });
 
     this.dummy = new TrainingDummy(
       this.combat.events,
@@ -348,8 +395,10 @@ export class Game {
     this.combat.lineOfSight = (from, to) =>
       !this.collision.segmentBlocked(from.x, from.y, from.z, to.x, to.y, to.z);
 
-    // Bars hide behind cover like anything else.
-    this.enemyHealthBars.lineOfSight = this.combat.lineOfSight;
+    // Bars hide behind cover like anything else, and in thick smoke: what
+    // can't be seen through smoke can't be seen at all.
+    this.enemyHealthBars.lineOfSight = (from, to) =>
+      canPerceive(from, to, this.combat.lineOfSight, this.smoke);
 
     this.weaponWheelView = new WeaponWheelView(
       document.body,
@@ -394,9 +443,11 @@ export class Game {
     this.renderer.scene.add(this.character.group);
     this.renderer.scene.add(this.dummy.root);
     this.renderer.scene.add(this.combatDebug.group);
-    this.renderer.scene.add(this.rockView.group);
+    this.renderer.scene.add(this.thrownView.group);
     this.renderer.scene.add(this.fireView.group);
-    this.renderer.scene.add(this.rockPreview.group);
+    this.renderer.scene.add(this.explosionView.group);
+    this.renderer.scene.add(this.smokeView.group);
+    this.renderer.scene.add(this.throwPreview.group);
     this.renderer.scene.add(this.arenaDebug.group);
 
     void this.dummy.load();
@@ -490,13 +541,13 @@ export class Game {
     this.updateCrouchState();
     this.duckThroughVent();
 
-    // The weapon wheel and the rock stance come first: whether the player is
-    // aiming a rock decides if they can guard or punch this frame.
+    // The weapon wheel and the throw stance come first: whether the player is
+    // aiming a throwable decides if they can guard or punch this frame.
     this.updateWeaponWheel(dt);
     this.updateClimb();
     this.updateHatches(dt);
     this.updateGrates(dt);
-    this.updateRockStance(dt);
+    this.updateThrowStance(dt);
 
     // Holding F guards. Sprinting wins only when it changes the
     // animation to a run: Shift + W / S while standing. Fast strafing keeps the
@@ -563,7 +614,7 @@ export class Game {
         this.runPunchTimeLeft > 0 ||
         this.flyPunchActive ||
         this.player.isBlocking ||
-        this.rockStance.pointsAtCrosshair,
+        this.throwStance.pointsAtCrosshair,
       !this.player.isGrounded && !this.player.isClimbing,
       (this.punchTimeLeft > 0 || this.runPunchTimeLeft > 0) &&
         this.player.isGrounded,
@@ -586,11 +637,12 @@ export class Game {
     this.character.setLegsHidden(this.player.isInVent && !this.isThirdPerson);
     this.updateVentArms();
 
-    this.character.setRock(
-      this.rockStance.pose,
-      this.rockStance.rockVisible ? this.rockStance.heldKind : null,
-      this.rockStance.lit,
-      this.rockStance.lighting,
+    this.character.setThrowable(
+      this.throwStance.pose,
+      this.throwStance.itemVisible ? this.throwStance.heldKind : null,
+      this.throwStance.lit,
+      this.throwStance.lighting,
+      this.throwStance.pinPull,
     );
 
     this.character.update(
@@ -634,8 +686,9 @@ export class Game {
 
     this.updateCamera();
 
-    // Rocks: the throw (from the posed hand), the aim line, the rocks in flight.
-    this.updateRocks();
+    // Throwables: the throw (from the posed hand), the aim line, the items in
+    // flight, the explosions and the smoke.
+    this.updateThrowables(dt);
 
     // Health bars and damage numbers follow the heads, from the final camera.
     this.enemyHealthBars.update(dt, this.renderer.camera);
@@ -724,25 +777,27 @@ export class Game {
     this.weaponWheelView.render();
   }
 
-  /** The selected slot as something to throw, or null (fists, smoke). */
+  /** The selected slot as something to throw, or null (fists, the reserved slot). */
   private selectedThrowable(): HeldKind | null {
     const selected = this.utilities.selected;
 
-    return selected === "ROCKS"
-      ? "rock"
+    return selected === "GRENADE"
+      ? "grenade"
       : selected === "MOLOTOV"
         ? "molotov"
-        : null;
+        : selected === "SMOKE"
+          ? "smoke"
+          : null;
   }
 
-  /** Guard is the F key, and is off while a rock is being aimed or thrown. */
+  /** Guard is the F key, and is off while a throwable is being aimed or thrown. */
   private isBlockHeld(): boolean {
-    return this.input.isPressed("KeyF") && this.rockStance.canBlock;
+    return this.input.isPressed("KeyF") && this.throwStance.canBlock;
   }
 
   /**
-   * Rock states. Right click aims, left click while aiming throws (and is never
-   * also a punch), and switching away from ROCKS puts the rock back.
+   * Throw states. Right click aims, left click while aiming throws (and is never
+   * also a punch), and switching to another slot puts the item back.
    */
   /**
    * E grabs the ladder you are looking at (close, from its foot or from the top
@@ -761,7 +816,7 @@ export class Game {
     } else if (pressed && !this.player.isClimbing && this.player.enterVent()) {
       // Standing on the grating wins over a ladder that happens to be in view.
       // E on a grate: the vigilante climbs down into the vents.
-      this.rockStance.reset();
+      this.throwStance.reset();
     } else if (pressed) {
       if (this.player.isClimbing) {
         const hatch = this.player.climbLadder?.hatch;
@@ -777,7 +832,7 @@ export class Game {
         const ladder = this.player.ladderInReach();
 
         if (ladder && this.player.grabLadder()) {
-          this.rockStance.reset();
+          this.throwStance.reset();
           this.input.yaw = ladderYaw(ladder);
         }
       }
@@ -944,7 +999,7 @@ export class Game {
     }
   }
 
-  private updateRockStance(dt: number): void {
+  private updateThrowStance(dt: number): void {
     if (
       this.player.isClimbing ||
       this.player.isVaulting ||
@@ -966,11 +1021,11 @@ export class Game {
       this.player.isBlocking;
 
     const kind = this.selectedThrowable();
-    const heldType = THROWABLE_TYPE[this.rockStance.heldKind];
+    const heldType = THROWABLE_TYPE[this.throwStance.heldKind];
 
-    this.rockStance.update(dt, {
+    this.throwStance.update(dt, {
       selected: kind !== null,
-      kind: kind ?? "rock",
+      kind: kind ?? "grenade",
       count: kind ? (this.utilities.quantityOf(THROWABLE_TYPE[kind]) ?? 0) : 0,
       heldCount: this.utilities.quantityOf(heldType) ?? 0,
       aimHeld: this.input.isMouseDown(2),
@@ -978,14 +1033,18 @@ export class Game {
       armBusy,
     });
 
-    // The click goes to a punch only when the rocks did not take it and the
-    // player is not mid-aim.
+    // The click goes to a punch only when the throwable did not take it, the
+    // player is not mid-aim and the reserved (empty) slot is not selected:
+    // that slot holds nothing, so there is nothing to do with a click.
     this.punchClick =
-      click && !this.rockStance.consumedClick && this.rockStance.canPunch;
+      click &&
+      !this.throwStance.consumedClick &&
+      this.throwStance.canPunch &&
+      !this.utilities.reservedSelected;
   }
 
   /**
-   * Where a rock would leave the hand and which way it would go: from the
+   * Where a throwable would leave the hand and which way it would go: from the
    * hand toward the crosshair line (so it heads for what you are looking at,
    * not parallel to it). The preview and the real throw both use this.
    */
@@ -996,8 +1055,20 @@ export class Game {
     const eye = this.player.position;
     const aim = this.throwCameraDirection.copy(this.getAimDirection());
 
-    if (!this.character.getRockReleasePoint(this.throwOrigin)) {
+    if (!this.character.getThrowReleasePoint(this.throwOrigin)) {
       return false;
+    }
+
+    // Never start behind scenery: standing right up to a wall puts the hand
+    // beyond it, so the throw leaves from the last clear point on the way
+    // from the eye to the hand.
+    const clearToHand = this.throwWorld.clearFraction(eye, this.throwOrigin);
+
+    if (clearToHand < 1) {
+      this.throwOrigin
+        .sub(eye)
+        .multiplyScalar(Math.max(clearToHand - 0.05, 0))
+        .add(eye);
     }
 
     // Never start inside the lens (first person): use a point just ahead of it.
@@ -1008,11 +1079,11 @@ export class Game {
       this.throwOrigin.copy(camera.position).addScaledVector(aim, 0.35);
     }
 
-    const converge = ROCK_CONFIG.ROCK_CONVERGE_DISTANCE;
+    const converge = THROW_CONFIG.THROW_CONVERGE_DISTANCE;
 
     this.throwProbe.copy(eye).addScaledVector(aim, converge);
 
-    const clear = this.rockWorld.clearFraction(eye, this.throwProbe);
+    const clear = this.throwWorld.clearFraction(eye, this.throwProbe);
     const distance = THREE.MathUtils.clamp(clear * converge, 6, converge);
 
     this.throwTarget.copy(eye).addScaledVector(aim, distance);
@@ -1028,13 +1099,14 @@ export class Game {
     return true;
   }
 
-  private updateRocks(): void {
-    // The throw: the rock leaves the hand at the release point of the animation.
-    if (this.rockStance.consumeRelease() && this.computeThrow()) {
-      const kind = this.rockStance.heldKind;
+  private updateThrowables(dt: number): void {
+    // The throw: the item leaves the hand at the release point of the animation.
+    if (this.throwStance.consumeRelease() && this.computeThrow()) {
+      const kind = this.throwStance.heldKind;
       const type = THROWABLE_TYPE[kind];
 
-      // Spent when it actually leaves the hand, never when aiming starts.
+      // Spent when it actually leaves the hand, never when aiming starts, and
+      // never below zero: an empty inventory does not throw.
       if (this.utilities.remove(type)) {
         this.projectiles.throwProjectile(
           kind,
@@ -1053,39 +1125,62 @@ export class Game {
       }
     }
 
-    // The aim line (local only), from the same numbers the throw uses.
-    if (this.rockStance.isAiming && this.computeThrow()) {
-      traceRockPath(
+    // The aim line and landing ring (local only), from the same numbers the
+    // throw uses.
+    if (this.throwStance.isAiming && this.computeThrow()) {
+      traceThrowPath(
         this.throwOrigin,
         this.throwDirection,
-        this.rockWorld,
-        this.rockPreview.path,
+        this.throwWorld,
+        this.throwPreview.path,
         1,
-        this.rockStance.heldKind === "molotov" ? MOLOTOV_PROFILE : ROCK_PROFILE,
+        PROFILES[this.throwStance.heldKind],
       );
-      this.rockPreview.show(this.renderer.camera);
-    } else if (this.rockPreview.isVisible) {
-      this.rockPreview.hide();
+      this.throwPreview.show(this.renderer.camera);
+    } else if (this.throwPreview.isVisible) {
+      this.throwPreview.hide();
     }
 
-    // The crosshair gives way to the aim line while aiming a rock; a quick
-    // throw (no right click) keeps it, since that is what the rock follows.
-    const aimingRock =
-      this.rockStance.isAiming ||
-      (this.rockStance.state === "ROCK_THROWING" && this.input.isMouseDown(2));
+    // The crosshair gives way to the aim line while aiming a throwable; a
+    // quick throw (no right click) keeps it, since that is what it follows.
+    const aimingThrow =
+      this.throwStance.isAiming ||
+      (this.throwStance.state === "THROW_THROWING" &&
+        this.input.isMouseDown(2));
 
     this.crosshair ??= document.querySelector<HTMLElement>(".crosshair");
 
     if (this.crosshair) {
-      this.crosshair.style.visibility = aimingRock ? "hidden" : "";
+      this.crosshair.style.visibility = aimingThrow ? "hidden" : "";
     }
 
-    this.rockView.update();
+    this.thrownView.update();
     this.fireView.update(this.fires.zones, performance.now() / 1000);
+    this.explosionView.update(dt);
+    this.smokeView.update(this.renderer.camera, performance.now() / 1000);
+    this.updateSmokeOverlay();
+  }
+
+  /** The screen greys out as the camera goes into smoke (thick smoke hides almost everything). */
+  private updateSmokeOverlay(): void {
+    if (!this.smokeOverlay) {
+      if (this.smoke.clouds.length === 0) {
+        return;
+      }
+
+      this.smokeOverlay = document.createElement("div");
+      this.smokeOverlay.className = "smoke-overlay";
+      this.smokeOverlay.setAttribute("aria-hidden", "true");
+      document.body.appendChild(this.smokeOverlay);
+    }
+
+    const inside = this.smokeView.interior(this.renderer.camera);
+
+    this.smokeOverlay.style.opacity = String(Math.min(inside * 0.9, 0.88));
   }
 
   private updatePunchState(dt: number): void {
-    // The click was read in updateRockStance: a throw click is not a punch.
+    // The click was read in updateThrowStance: a throw click is not a punch.
     const attackClick = this.punchClick;
     const grounded = this.player.isGrounded;
     const sprintingForward =
@@ -1507,6 +1602,7 @@ export class Game {
     this.combat.update(dt);
     this.projectiles.update(dt);
     this.fires.update(dt);
+    this.smoke.update(dt);
     this.combatDebug.update(this.combat);
   }
 
@@ -1655,7 +1751,8 @@ export class Game {
     this.combat.cancelAttack("player");
     this.projectiles.clear();
     this.fires.clear();
-    this.rockStance.reset();
+    this.smoke.clear();
+    this.throwStance.reset();
     this.playerCombatant.health.reset();
 
     this.player.teleport(own.x, own.y, own.z);
@@ -2093,6 +2190,12 @@ export class Game {
 
   public dispose(): void {
     this.input.dispose();
+
+    this.thrownView.dispose();
+    this.explosionView.dispose();
+    this.smokeView.dispose();
+    this.throwPreview.dispose();
+    this.smokeOverlay?.remove();
 
     this.character.dispose();
 

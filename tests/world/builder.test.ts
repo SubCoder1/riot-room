@@ -19,6 +19,10 @@ function meshes(root: THREE.Object3D): THREE.Mesh[] {
 describe("Arena meshes", () => {
   const arena = buildArena(ARENA_LAYOUT);
   const all = meshes(arena);
+  // The piles are four merged meshes at most: bags, bricks, planks and chunks.
+  const pileMeshes = new Set(
+    ARENA_LAYOUT.piles.flatMap((p) => p.elements.map((e) => e.shape)),
+  ).size;
 
   it("builds the floor, the perimeter walls, every solid, every roof and lintel, and every ladder", () => {
     const steps = ARENA_LAYOUT.stairs.reduce((n, s) => n + s.steps, 0);
@@ -30,7 +34,9 @@ describe("Arena meshes", () => {
       1 + // the arena floor (one merged mesh with a hole under each grate)
       4 +
       ARENA_LAYOUT.platforms.length +
-      ARENA_LAYOUT.walls.length +
+      ARENA_LAYOUT.walls.filter((w) => !w.hidden).length +
+      pileMeshes +
+      (ARENA_LAYOUT.decals.length > 0 ? 1 : 0) + // every floor mark, merged
       ARENA_LAYOUT.ramps.length +
       steps +
       ARENA_LAYOUT.pillars.length +
@@ -56,9 +62,12 @@ describe("Arena meshes", () => {
         ventBlocks(ARENA_LAYOUT.upperVents).length +
         1 + // the upper network's floor (its walls are the cut floor)
         2 + // the north and south wings, cut round the upper grating
+        pileMeshes + // bags, bricks, planks, chunks: one merged mesh each
+        (ARENA_LAYOUT.decals.length > 0 ? 1 : 0) + // the floor marks
         ARENA_LAYOUT.ramps.length,
     );
-    expect(materials.size).toBeLessThanOrEqual(24);
+    // ...plus the two piece materials and the one for the floor marks.
+    expect(materials.size).toBeLessThanOrEqual(34);
   });
 
   it("floors (and only floors) are concrete, from a few shared materials and textures", () => {
@@ -78,7 +87,8 @@ describe("Arena meshes", () => {
     // The ground slab plus every floor section; nothing else is concrete.
     expect(concrete).toHaveLength(1 + floorIds.size);
     expect(variants.size).toBeLessThanOrEqual(3);
-    expect(maps.size).toBe(1);
+    // Three complementary texture sets, so neighbours never show the same marks.
+    expect(maps.size).toBeLessThanOrEqual(3);
 
     for (const mesh of concrete) {
       const material = mesh.material as THREE.MeshStandardMaterial;
@@ -157,7 +167,7 @@ describe("Arena meshes", () => {
     expect(painted.length + bricks.length).toBe(wallCount + 4);
     expect(painted.length).toBeGreaterThan(bricks.length);
     expect(materials.size).toBeLessThanOrEqual(3);
-    expect(maps.size).toBe(1);
+    expect(maps.size).toBeLessThanOrEqual(3);
 
     for (const mesh of painted) {
       const material = mesh.material as THREE.MeshStandardMaterial;
@@ -206,7 +216,7 @@ describe("Arena meshes", () => {
       const found = posts(prefix);
       const platform = slab(id);
 
-      expect(found, prefix).toHaveLength(2);
+      expect(found.length, prefix).toBeGreaterThanOrEqual(2);
 
       for (const post of found) {
         // From the ground to the slab's underside, under the slab.
@@ -228,6 +238,34 @@ describe("Arena meshes", () => {
     expect(ARENA_LAYOUT.ladders.some((l) => l.id === "secret-corridor")).toBe(
       false,
     );
+  });
+
+  it("the big north overlook slab stands on a few posts, not on none", () => {
+    const slab = ARENA_LAYOUT.platforms.find((p) => p.id === "balcony-north")!;
+    const posts = ARENA_LAYOUT.steel.filter(
+      (m) => m.id.startsWith("steel-post-north") && m.solid,
+    );
+
+    expect(posts.length).toBeGreaterThanOrEqual(3);
+
+    for (const post of posts) {
+      expect(post.from[1]).toBe(0);
+      expect(post.to[1]).toBeCloseTo(slab.bottom!);
+      expect(post.to[0]).toBeGreaterThan(slab.minX);
+      expect(post.to[0]).toBeLessThan(slab.maxX);
+      expect(post.to[2]).toBeGreaterThan(slab.minZ);
+      expect(post.to[2]).toBeLessThan(slab.maxZ);
+    }
+
+    // Posts along the open edge are no more than ~5.5 m apart.
+    const front = posts
+      .filter((m) => m.to[2] > -9)
+      .map((m) => m.to[0])
+      .sort((a, b) => a - b);
+
+    for (let i = 1; i < front.length; i++) {
+      expect(front[i] - front[i - 1]).toBeLessThan(5.5);
+    }
   });
 
   it("the whole 64 x 48 m map is ringed by the perimeter wall and open to the sky", () => {

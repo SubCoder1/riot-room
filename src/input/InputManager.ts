@@ -166,7 +166,7 @@ export class InputManager {
     this.mouseButtons.delete(event.button);
   };
 
-  // Right click is the rock-aim button; never open the browser context menu.
+  // Right click is the throw-aim button; never open the browser context menu.
   private readonly handleContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
   };

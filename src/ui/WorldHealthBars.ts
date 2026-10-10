@@ -337,8 +337,8 @@ export class WorldHealthBars {
       }
     } else if (
       event.type === "blocked" ||
-      // A guarded rock still hurts, but the guard is shown like any block.
-      (event.type === "guard-reduced" && event.attackId === "rock-throw")
+      // A guarded blast still hurts, but the guard is shown like any block.
+      (event.type === "guard-reduced" && event.attackId === "grenade-blast")
     ) {
       const bar = this.barById(event.targetId);
 

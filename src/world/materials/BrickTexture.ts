@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { mulberry32, tileableNoise } from "./ConcreteTexture";
 
 /** Pixels along one side of the (square, seamless) brick textures. */
-export const BRICK_TEXTURE_SIZE = 512;
+export const BRICK_TEXTURE_SIZE = 768;
 
 /** Metres of wall covered by one repeat: 4 bricks across and 8 courses high. */
-export const BRICK_TILE_METRES = 2;
+export const BRICK_TILE_METRES = 4;
 
 export interface BrickTextures {
   /** Dark, desaturated brown-red bricks in dark grey-brown mortar. */
@@ -17,8 +17,8 @@ export interface BrickTextures {
   roughness: THREE.DataTexture;
 }
 
-const BRICKS_ACROSS = 4;
-const COURSES = 8;
+const BRICKS_ACROSS = 8;
+const COURSES = 16;
 
 function hash(a: number, b: number): number {
   let h =
@@ -44,11 +44,11 @@ export function createBrickTextures(
   const random = mulberry32(seed);
   const brickW = size / BRICKS_ACROSS;
   const brickH = size / COURSES;
-  const mortar = Math.max(2, Math.round(size / 170));
+  const mortar = Math.max(2, Math.round(size / 330));
   // Soft grime (low frequency) and fine pitting (high frequency), both seamless.
-  const grime = tileableNoise(size, 4, random);
-  const blotch = tileableNoise(size, 16, random);
-  const pits = tileableNoise(size, 96, random);
+  const grime = tileableNoise(size, 8, random);
+  const blotch = tileableNoise(size, 32, random);
+  const pits = tileableNoise(size, 192, random);
 
   const color = new Uint8Array(size * size * 4);
   const rough = new Uint8Array(size * size * 4);
@@ -82,8 +82,26 @@ export function createBrickTextures(
       let h: number;
       let roughness: number;
 
-      if (isMortar) {
-        const m = 0.2 + wear * 0.1;
+      // Some bricks are damaged: a few are chipped at a corner (the clay
+      // core shows darker and the corner is knocked in), and one in a while is
+      // gone altogether, leaving a dark recess.
+      const damage = hash(course * 7 + 3, column * 5 + 1);
+      const missing = damage > 0.993;
+      const chipped =
+        !missing &&
+        damage > 0.94 &&
+        inBrickX < brickW * 0.34 &&
+        inCourseY < brickH * 0.45;
+
+      if (missing && !isMortar) {
+        r = 0.05;
+        g = 0.045;
+        b = 0.045;
+        h = 0.05;
+        roughness = 0.97;
+      } else if (isMortar) {
+        // Darker, dirtier mortar than before.
+        const m = 0.14 + wear * 0.09;
 
         r = m * 1.05;
         g = m;
@@ -104,6 +122,13 @@ export function createBrickTextures(
           (pits[i] - 0.5) * 0.14 +
           (blotch[i] - 0.5) * 0.08;
         roughness = 0.82 + pits[i] * 0.08 + (1 - bevel) * 0.03;
+
+        if (chipped) {
+          r *= 0.55;
+          g *= 0.55;
+          b *= 0.55;
+          h -= 0.25;
+        }
       }
 
       color[i * 4] = Math.round(Math.min(r, 1) * 255);

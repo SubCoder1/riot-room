@@ -246,6 +246,25 @@ canvas {
   fill: #e8edf5;
 }
 
+/* The reserved slot is a placeholder: visible, but plainly nothing yet. */
+.ww-slot[data-reserved="true"] {
+  opacity: 0.45;
+}
+
+/* Inside a smoke cloud the whole view greys out (opacity is set from code). */
+.smoke-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(86, 92, 100, 0.8) 0%,
+    rgba(58, 63, 70, 0.94) 100%
+  );
+  z-index: 3;
+}
+
 /* A slot with none left stays visible but quiet. */
 .ww-slot[data-empty="true"] {
   opacity: 0.6;

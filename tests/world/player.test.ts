@@ -443,7 +443,7 @@ describe("Jumping under a roof", () => {
 
 describe("Thin tops", () => {
   it("nobody can stand on a wall, a railing or a post", () => {
-    const wall = layout.walls.find((w) => w.id === "room-archive-wall-s-2")!;
+    const wall = layout.walls.find((w) => w.id === "room-archive-wall-s-1")!;
     const rail = layout.walls.find((w) => w.id === "rail-bn-front-1")!;
 
     for (const solid of [wall, rail]) {
@@ -526,8 +526,9 @@ describe("Props you can step up on", () => {
 
 describe("Low walls on the roofs", () => {
   it("a waist-high roof parapet stops a body like a wall: no jumping over, no sinking into it", () => {
-    const parapet = layout.walls.find(
-      (w) => w.id === "parapet-warehouse-north-1",
+    // (The parapet's top is chipped: any slice has the same base and edge.)
+    const parapet = layout.walls.find((w) =>
+      w.id.startsWith("parapet-warehouse-north-1"),
     )!;
     const top = parapet.base ?? parapet.bottom ?? 0;
 

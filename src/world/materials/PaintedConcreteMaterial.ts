@@ -1,9 +1,6 @@
 import * as THREE from "three";
 
-import {
-  PAINTED_TILE_METRES,
-  type PaintedConcreteTextures,
-} from "./PaintedConcreteTexture";
+import { type PaintedConcreteTextures } from "./PaintedConcreteTexture";
 import { useWorldSpaceUv } from "./WorldSpaceUv";
 
 /** Three closely related looks of the same dark painted concrete. */
@@ -60,8 +57,10 @@ export function createPaintedConcreteMaterial(
   });
 
   useWorldSpaceUv(material, {
-    tileMetres: PAINTED_TILE_METRES,
+    tileMetres: textures.tileMetres,
     offset: look.offset,
+    // Patchy fading, and grime gathered low on every wall.
+    macro: { frequency: 0.17, strength: 0.17, baseDirt: 0.24 },
   });
 
   return material;

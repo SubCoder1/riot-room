@@ -1,12 +1,14 @@
 import * as THREE from "three";
 
 /** Pixels along one side of the (square, seamless) concrete textures. */
-export const CONCRETE_TEXTURE_SIZE = 512;
+export const CONCRETE_TEXTURE_SIZE = 1024;
 
 /** Metres of floor covered by one repeat of the concrete textures. */
-export const CONCRETE_TILE_METRES = 4;
+export const CONCRETE_TILE_METRES = 8;
 
 export interface ConcreteTextures {
+  /** Metres of floor covered by one repeat of this set. */
+  tileMetres: number;
   /** Greyscale albedo (the material colour tints it). */
   color: THREE.DataTexture;
   /** Tangent-space normal map from the same surface. */
@@ -68,6 +70,135 @@ export function tileableNoise(
   return out;
 }
 
+const smooth = (a: number, b: number, x: number): number => {
+  const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
+
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Marks that sit on top of the concrete, added to the value (positive lightens,
+ * negative darkens): soft dark stains, lighter worn patches, a few short
+ * scuffs and the odd oil spot. All of them wrap at the edges, so the tile
+ * still repeats without a seam, and all are mild.
+ */
+/** Hairline cracks: thin wandering lines, now and then a short branch. */
+function addCracks(
+  marks: Float32Array,
+  size: number,
+  random: () => number,
+  count: number,
+): void {
+  const walk = (
+    x0: number,
+    y0: number,
+    angle0: number,
+    length: number,
+    depth: number,
+  ): void => {
+    let x = x0;
+    let y = y0;
+    let angle = angle0;
+
+    for (let t = 0; t < length; t++) {
+      angle += (random() - 0.5) * 0.45;
+      x += Math.cos(angle);
+      y += Math.sin(angle);
+
+      const ix = ((Math.round(x) % size) + size) % size;
+      const iy = ((Math.round(y) % size) + size) % size;
+
+      marks[iy * size + ix] -= 0.12;
+
+      if (depth < 2 && random() < 0.025) {
+        walk(
+          x,
+          y,
+          angle + (random() < 0.5 ? 1 : -1) * 0.9,
+          18 + random() * 40,
+          depth + 1,
+        );
+      }
+    }
+  };
+
+  for (let n = 0; n < count; n++) {
+    walk(
+      random() * size,
+      random() * size,
+      random() * Math.PI * 2,
+      50 + random() * 150,
+      0,
+    );
+  }
+}
+
+function weathering(
+  size: number,
+  random: () => number,
+  scale: number,
+  cracks: number,
+): Float32Array {
+  const marks = new Float32Array(size * size);
+  const stainA = tileableNoise(size, Math.round(5 * scale), random);
+  const stainB = tileableNoise(size, Math.round(11 * scale), random);
+  const worn = tileableNoise(size, Math.round(7 * scale), random);
+
+  for (let i = 0; i < marks.length; i++) {
+    const stain = smooth(0.58, 0.8, stainA[i] * 0.6 + stainB[i] * 0.4);
+    const patch = smooth(0.7, 0.86, worn[i]);
+
+    marks[i] = -0.1 * stain + 0.045 * patch;
+  }
+
+  const put = (x: number, y: number, amount: number): void => {
+    const ix = ((Math.round(x) % size) + size) % size;
+    const iy = ((Math.round(y) % size) + size) % size;
+
+    marks[iy * size + ix] += amount;
+  };
+
+  // Scuffs: short, thin streaks, mostly lighter (rubber and steel dragged on it).
+  for (let n = 0; n < Math.round(70 * scale * scale); n++) {
+    const x0 = random() * size;
+    const y0 = random() * size;
+    const angle = random() * Math.PI;
+    const length = 8 + random() * 26;
+    const amount = (random() < 0.7 ? 1 : -1) * (0.03 + random() * 0.04);
+
+    for (let t = 0; t < length; t++) {
+      const fade = 1 - Math.abs(t / length - 0.5) * 1.4;
+
+      put(
+        x0 + Math.cos(angle) * t,
+        y0 + Math.sin(angle) * t,
+        amount * Math.max(fade, 0.2),
+      );
+    }
+  }
+
+  // Oil and other dark spots.
+  for (let n = 0; n < Math.round(7 * scale * scale); n++) {
+    const cx = random() * size;
+    const cy = random() * size;
+    const radius = 5 + random() * 8;
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const d = Math.hypot(dx, dy) / radius;
+
+        if (d < 1) {
+          put(cx + dx, cy + dy, -0.14 * (1 - d * d) * (0.6 + random() * 0.4));
+        }
+      }
+    }
+  }
+
+  addCracks(marks, size, random, Math.round(cracks * scale * scale));
+
+  return marks;
+}
+
 /**
  * A seamless, subtle worn-concrete surface: soft large blotches, a medium
  * mottling, a fine grain and a few tiny pits. No joints or cracks, so a repeat
@@ -76,17 +207,22 @@ export function tileableNoise(
 export function createConcreteTextures(
   size = CONCRETE_TEXTURE_SIZE,
   seed = 1337,
+  options: { tileMetres?: number; cracks?: number } = {},
 ): ConcreteTextures {
+  const tileMetres = options.tileMetres ?? CONCRETE_TILE_METRES;
+  // Features keep their size in metres whatever the tile: a bigger tile just
+  // holds more of them (and so repeats less).
+  const scale = tileMetres / 4;
   const random = mulberry32(seed);
   const height = new Float32Array(size * size);
   // Frequency (lattice cells per tile) and weight of each layer.
   const octaves: Array<[number, number]> = [
-    [3, 0.3],
-    [6, 0.22],
-    [12, 0.18],
-    [24, 0.14],
-    [48, 0.1],
-    [96, 0.06],
+    [Math.round(3 * scale), 0.3],
+    [Math.round(6 * scale), 0.22],
+    [Math.round(12 * scale), 0.18],
+    [Math.round(24 * scale), 0.14],
+    [Math.round(48 * scale), 0.1],
+    [Math.round(96 * scale), 0.06],
   ];
   let total = 0;
 
@@ -107,6 +243,7 @@ export function createConcreteTextures(
     grain[i] = random();
   }
 
+  const marks = weathering(size, random, scale, options.cracks ?? 0);
   const color = new Uint8Array(size * size * 4);
   const normal = new Uint8Array(size * size * 4);
   const at = (x: number, y: number): number =>
@@ -116,7 +253,8 @@ export function createConcreteTextures(
     for (let x = 0; x < size; x++) {
       const i = y * size + x;
       // Mid-grey around 0.62, with the blotches and grain on top.
-      let value = 0.62 + (height[i] - 0.5) * 0.7 + (grain[i] - 0.5) * 0.09;
+      let value =
+        0.62 + (height[i] - 0.5) * 0.7 + (grain[i] - 0.5) * 0.09 + marks[i];
 
       // Rare pinpoint pits: darker, and a touch deeper in the normal map.
       const pit = grain[i] < 0.0025 ? 1 : 0;
@@ -162,5 +300,9 @@ export function createConcreteTextures(
     return texture;
   };
 
-  return { color: make(color, true), normal: make(normal, false) };
+  return {
+    tileMetres,
+    color: make(color, true),
+    normal: make(normal, false),
+  };
 }

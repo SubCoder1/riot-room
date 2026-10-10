@@ -13,6 +13,7 @@ import {
   type ArenaLayout,
 } from "./ArenaLayout";
 import { MapBuilder, bounds } from "./MapParts";
+import { addWeathering } from "./Weathering";
 
 /**
  * STAGE ONE OF THE MAP, REVISED: THE UPPER FLOOR AND THE ROOFS
@@ -1245,7 +1246,7 @@ function createUpperFloor(): ArenaLayout {
 
   // Floating slabs out in the open arena stand on a post under each outer
   // corner, up to the slab's underside: the lower south balcony, the maintenance
-  // platform and the raised north-west balcony.
+  // platform, the raised north-west balcony and the north overlook.
   for (const [id, x, z, top] of [
     ["steel-post-south-w", -4.75, 9.25, LOW - 0.5],
     ["steel-post-south-e", 4.75, 9.25, LOW - 0.5],
@@ -1253,6 +1254,13 @@ function createUpperFloor(): ArenaLayout {
     ["steel-post-maintenance-e", 12.25, -10.5, LOW - 0.5],
     ["steel-post-nw-w", -15.8, -9.8, HIGH_BALCONY - 0.5],
     ["steel-post-nw-e", -11.9, -9.8, HIGH_BALCONY - 0.5],
+    // The wide south balcony gets one more in the middle. The north overlook
+    // is a big slab (12 x 4.5 m) that had none: three posts under its open
+    // edge, just outside the ground vent (the wall behind carries the rest).
+    ["steel-post-south-m", 0, 9.25, LOW - 0.5],
+    ["steel-post-north-f1", -6.65, -7.65, F - 0.5],
+    ["steel-post-north-f2", -3.1, -7.65, F - 0.5],
+    ["steel-post-north-f3", 1.9, -7.65, F - 0.5],
   ] as const) {
     map.createSteelColumn(id, x, z, 0, top, 0.3);
   }
@@ -1362,6 +1370,81 @@ function createUpperFloor(): ArenaLayout {
     1,
     "wall",
   );
+
+  // ---------------------------------------------------- wear and building work
+  // Evidence of repair and neglect, kept small and spread thin: a few walls
+  // broken at an end or along the top, two blocks of cover with a corner gone,
+  // and a few piles of building material standing where plain crates did or
+  // against a wall. Broken walls are cut into slices that are never lower than
+  // 1.7 m (a wall stays a wall: too high to vault, nothing opens through it),
+  // and every pile's collision is the outline of its pieces.
+  //
+  // A corner of the Barracks' south wall has come down onto the west walkway.
+  map.breakSolid(
+    "room-barracks-wall-s-1",
+    [1, 1, 1, 1, 1, 1, 0.82, 0.62, 0.45],
+  );
+  map.createPile("bricks", "bricks-barracks-fall", -23.2, -2.2, F, {
+    minZ: -3.0,
+  });
+  // The Archive's south partition: an uneven top.
+  map.breakSolid("room-archive-wall-s-2", [1, 0.8, 0.62, 0.9, 0.5, 0.75]);
+  // The Hall's north wall.
+  map.breakSolid("room-hall-wall-n-2", [1, 0.78, 0.92, 0.55, 0.8]);
+  // The screen wall on the west terrace has partly collapsed.
+  map.breakSolid("nook-west-1", [1, 1, 0.66, 0.66, 0.8, 1]);
+  map.createPile("bricks", "bricks-nook-west", -26.3, 3.8, F, {
+    minX: -27.1,
+    maxZ: 5.0,
+  });
+  // The warehouse's parapet is chipped along its top.
+  map.breakSolid(
+    "parapet-warehouse-north-1",
+    [1, 1, 0.8, 0.6, 0.9, 0.55, 0.7, 1, 1, 0.85],
+    0.5,
+  );
+
+  // Two blocks of cover with a corner gone (the others stay whole).
+  map.breakSolid("cover-overlook-b", [1, 1, 0.55], 0.45);
+  map.breakSolid("cover-corner-balcony", [0.55, 1, 1], 0.45);
+
+  // One pile where a plain crate stood, on the open south plaza (not inside a
+  // room: the rooms are dressed separately).
+  {
+    const old = map.removeSolid("crates-plaza-a");
+
+    map.createPile(
+      "bricks",
+      "bricks-plaza",
+      (old.minX + old.maxX) / 2,
+      (old.minZ + old.maxZ) / 2,
+      F,
+    );
+  }
+
+  // -------------------------------------------------------- exterior barriers
+  // Most railings and barriers stay concrete (in three looks). A few are
+  // re-dressed with the same footprint and the same body-blocking height, so
+  // nothing about how they stop you changes: three as stacks of pipes, three as
+  // brick with gaps and a ragged top. Beside them some rubble and a stack of
+  // pipes by the generator.
+  for (const id of [
+    "rail-edge-north-3",
+    "rail-ne-landing-south-1",
+    "rail-sw-landing-east-1",
+  ]) {
+    map.restyleBarrier(id, "pipes");
+  }
+
+  for (const id of ["rail-be-north-1", "rail-edge-west-1", "rail-bn-east-1"]) {
+    map.restyleBarrier(id, "brick");
+  }
+
+  map.createPile("pipes", "pipes-generator", 23.6, -1.65, F, { minZ: -1.9 });
+  map.createPile("rubble", "rubble-overlook-cover", 1.2, -8.4, F, {
+    minZ: -9.1,
+  });
+  map.createPile("rubble", "rubble-balcony-east", 16.9, 8.8, F, { minZ: 8.0 });
 
   const layout = map.build();
 
@@ -1479,6 +1562,8 @@ function createUpperFloor(): ArenaLayout {
       ...ladderSpots,
     ],
   };
+
+  addWeathering(layout);
 
   layout.spawnPoints = [
     spawn(1, -10, 9, -16, 9.6), // facing the south-west staircase
