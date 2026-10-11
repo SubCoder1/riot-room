@@ -19,6 +19,8 @@ import { createIndustrialSteelMaterial } from "./SteelMaterial";
 import { createFloorMaterial, type FloorVariant } from "./FloorMaterial";
 import { createBarrierMaterial } from "./BarrierMaterial";
 import { createMetalTexture } from "./MetalTexture";
+import { createCeilingMaterial } from "./CeilingMaterial";
+import { createCeilingTextures } from "./CeilingTexture";
 
 /**
  * The map's reusable surface materials, made on first use and shared by every
@@ -66,6 +68,7 @@ export class IndustrialMaterialLibrary {
   private readonly floors = new Map<FloorVariant, THREE.MeshStandardMaterial>();
   private steelMaterial: THREE.MeshStandardMaterial | null = null;
   private metalWear: THREE.DataTexture | null = null;
+  private ceilingMaterial: THREE.MeshStandardMaterial | null = null;
   private glassMaterial: THREE.MeshStandardMaterial | null = null;
   private brickTextures: BrickTextures | null = null;
   private readonly painted = new Map<
@@ -242,6 +245,13 @@ export class IndustrialMaterialLibrary {
     return this.metalWear;
   }
 
+  /** Dark engraved-stripe concrete, shared by every ceiling and roof. */
+  public ceiling(): THREE.MeshStandardMaterial {
+    this.ceilingMaterial ??= createCeilingMaterial(createCeilingTextures());
+
+    return this.ceilingMaterial;
+  }
+
   /** The structural-steel material, shared by every beam, column, brace and truss. */
   public steel(): THREE.MeshStandardMaterial {
     this.steelMaterial ??= createIndustrialSteelMaterial(this.metalWearMap());
@@ -265,11 +275,13 @@ export class IndustrialMaterialLibrary {
         this.painted.size +
         this.barriers.size +
         (this.steelMaterial ? 1 : 0) +
+        (this.ceilingMaterial ? 1 : 0) +
         (this.glassMaterial ? 1 : 0),
       textures:
         this.floorSets.filter(Boolean).length * 2 +
         (this.brickTextures ? 3 : 0) +
         this.paintedSets.filter(Boolean).length * 3 +
+        (this.ceilingMaterial ? 3 : 0) +
         (this.metalWear ? 1 : 0),
     };
   }

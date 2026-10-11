@@ -24,7 +24,7 @@ export const BRICK_LOOKS: Record<BrickVariant, BrickLook> = {
   },
   worn: {
     name: "BrickWorn",
-    color: 0xcfc4c0,
+    color: 0xc9cbd0,
     normalScale: 1,
     offset: [0.75, 0.5],
   },

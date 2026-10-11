@@ -9,7 +9,7 @@ export const BRICK_TEXTURE_SIZE = 768;
 export const BRICK_TILE_METRES = 4;
 
 export interface BrickTextures {
-  /** Dark, desaturated brown-red bricks in dark grey-brown mortar. */
+  /** Charcoal and gunmetal grey bricks, an engraved line inside each, in near-black mortar. */
   color: THREE.DataTexture;
   /** Tangent-space normal map: bevelled bricks, recessed mortar. */
   normal: THREE.DataTexture;
@@ -34,8 +34,12 @@ function hash(a: number, b: number): number {
 
 /**
  * A seamless running-bond brick wall, 0.5 x 0.25 m bricks (stylised, readable
- * at gameplay distance): each brick a little different in tone, a dark mortar
- * line, a worn bevel and grime. Generated once at start-up, no asset to ship.
+ * at gameplay distance), in charcoal and gunmetal grey: each brick a little
+ * different in tone (cool or neutral, never bright), a deep recessed mortar
+ * line, a fine engraved groove cut just inside each brick's edge, a worn bevel,
+ * a few chipped corners and grime. The mortar and the grooves are dark and
+ * recessed in the normal map, so they stay readable in low light. Generated
+ * once at start-up, no asset to ship.
  */
 export function createBrickTextures(
   size = BRICK_TEXTURE_SIZE,
@@ -100,28 +104,40 @@ export function createBrickTextures(
         h = 0.05;
         roughness = 0.97;
       } else if (isMortar) {
-        // Darker, dirtier mortar than before.
-        const m = 0.14 + wear * 0.09;
+        // Near-black, dirty mortar, well recessed.
+        const m = 0.055 + wear * 0.05;
 
-        r = m * 1.05;
-        g = m;
-        b = m * 0.95;
+        r = m;
+        g = m * 1.02;
+        b = m * 1.06;
         h = 0;
         roughness = 0.95;
       } else {
-        // Dark desaturated brown-red: about #3a2926 on average, before lighting.
-        const base = 0.17 + tone * 0.07 + (wear - 0.5) * 0.06;
+        // Charcoal to gunmetal grey (about #3c3f45 on average, before
+        // lighting): tones that vary brick to brick, cooler or more neutral.
+        const base = 0.2 + tone * 0.085 + (wear - 0.5) * 0.06;
         const bevel = Math.min((edge - mortar / 2) / 3, 1);
+        // A fine engraved groove running just inside the edge of each brick.
+        const groove = Math.abs(edge - (mortar / 2 + 4)) < 1.2;
+        // The worn edge is a touch lighter where the brick is knocked.
+        const worn = edge < mortar / 2 + 1.5 && pits[i] > 0.62 ? 0.07 : 0;
 
-        r = base * (1.42 + warm * 0.18);
-        g = base * (1.05 - warm * 0.08);
-        b = base * (0.92 - warm * 0.08);
+        r = base * (0.97 + warm * 0.04) + worn;
+        g = base * (1.0 + warm * 0.02) + worn;
+        b = base * (1.06 + warm * 0.05) + worn;
         h =
           0.55 +
           bevel * 0.3 +
-          (pits[i] - 0.5) * 0.14 +
-          (blotch[i] - 0.5) * 0.08;
+          (pits[i] - 0.5) * 0.12 +
+          (blotch[i] - 0.5) * 0.07;
         roughness = 0.82 + pits[i] * 0.08 + (1 - bevel) * 0.03;
+
+        if (groove) {
+          r *= 0.55;
+          g *= 0.55;
+          b *= 0.57;
+          h -= 0.2;
+        }
 
         if (chipped) {
           r *= 0.55;
