@@ -14,6 +14,8 @@ import {
 } from "./ArenaLayout";
 import { MapBuilder, bounds } from "./MapParts";
 import { addWeathering } from "./Weathering";
+import { furnishHall, furnishStorageRoom, furnishYard } from "./StorageRoom";
+import { furnishWorkshop } from "./WorkshopInterior";
 
 /**
  * STAGE ONE OF THE MAP, REVISED: THE UPPER FLOOR AND THE ROOFS
@@ -247,21 +249,14 @@ function createUpperFloor(): ArenaLayout {
     bottomY: F,
     topY: ROOF_LOW,
   });
-  map.createLadder({
-    id: "ladder-roof-warehouse",
-    normal: "-x",
-    face: 18,
-    along: 15,
-    bottomY: ROOF_LOW,
-    topY: ROOF_HIGH,
-  });
+  // (The hall's roof is level with the Warehouse's now: no ladder between.)
   map.createLadder({
     id: "ladder-roof-south",
     normal: "-z",
     face: 15,
     along: 8.5,
     bottomY: F,
-    topY: ROOF_LOW,
+    topY: ROOF_HIGH,
   });
   map.createLadder({
     id: "secret-terrace",
@@ -589,27 +584,50 @@ function createUpperFloor(): ArenaLayout {
       { side: "w", at: 19.5 },
     ],
   });
+  // The whole hall is the Storage room (its workshop end, central hall and
+  // storage end are one floor): 27 m long (x -9 to 18) and 5 m to the ceiling,
+  // from the yard to the Warehouse's west wall, open end to end (only a return
+  // wall at x 6 stays, by the cabinet and rack). The roof is made of sections
+  // below (the skylight stays glazed).
   map.createRoom({
     id: "room-workshop",
-    name: "Workshop (benches and machines)",
-    bounds: bounds(6, 18, 15, Z),
+    name: "Storage room (workshop, machines and shelving)",
+    bounds: bounds(-9, 18, 15, Z),
     floorY: F,
-    walls: ["n", "s", "w"],
+    walls: ["n", "s"],
+    wallHeight: WALL_TO_HIGH,
+    roof: false,
     doors: [
+      { side: "n", at: -7.2 },
+      { side: "n", at: 1, width: 4 },
       { side: "n", at: 11.5 },
-      { side: "w", at: 21 },
     ],
   });
+  // A return wall (x 6.0, z 15.3 to 20.1): what is left of the Workshop's old
+  // west wall, holding the cabinet, the parts rack, the conduit and the cable
+  // tray. The rest of the middle is open: the storage end, the central hall and
+  // the workshop are one floor, with the shelving rows running through it.
+  map.createWall(
+    "room-workshop-wall-partition-b",
+    "z",
+    6,
+    15.3,
+    20.1,
+    F,
+    0.3,
+    WALL_TO_HIGH,
+    "wall",
+  );
+
   map.createRoom({
-    id: "room-store",
-    name: "Store (shelving)",
+    id: "room-yard",
+    name: "Yard (open floor, crates and cover)",
     bounds: bounds(-18, -9, 15, Z),
     floorY: F,
-    walls: ["n", "s", "e"],
-    doors: [
-      { side: "n", at: -13 },
-      { side: "e", at: 21 },
-    ],
+    walls: ["n", "s"],
+    // The old Store, opened up: no east wall (the hall runs straight on), a
+    // 3 m door from the walkway, and the Hall's wide opening to the west.
+    doors: [{ side: "n", at: -13, width: 3 }],
   });
   map.createRoom({
     id: "room-hall",
@@ -621,7 +639,7 @@ function createUpperFloor(): ArenaLayout {
       { side: "n", at: -26 },
       { side: "n", at: -19 },
       { side: "e", at: 13.5 },
-      { side: "e", at: 19.5 },
+      { side: "e", at: 19.5, width: 5 },
     ],
   });
 
@@ -732,9 +750,8 @@ function createUpperFloor(): ArenaLayout {
     height: 1.3,
   });
 
-  // Workshop: benches along the north, machines to the south.
-  prop("bench", "bench-ws-1", 9, 17.25, F);
-  prop("bench", "bench-ws-2", 14.6, 17.25, F);
+  // Workshop: a workbench, storage and materials (WorkshopInterior), and the
+  // two machines to the south.
   prop("machine", "machine-ws-1", 9.3, 21.3, F);
   prop("machine", "press-ws-2", 14, 21.2, F, "x", {
     width: 2,
@@ -742,19 +759,13 @@ function createUpperFloor(): ArenaLayout {
     height: 1.9,
   });
 
-  // Store: shelving rows.
-  prop("shelf", "shelf-store-1", -16.05, 18.3, F, "z", {
-    width: 3,
-    depth: 0.7,
-  });
-  prop("shelf", "shelf-store-2", -13.7, 20.45, F, "z", {
-    width: 3.7,
-    depth: 0.7,
-  });
-  prop("shelf", "shelf-store-3", -11.2, 18.2, F, "z", {
-    width: 3,
-    depth: 0.7,
-  });
+  furnishWorkshop(map, F);
+  furnishStorageRoom(map, F);
+  furnishHall(map, F);
+
+  // Yard: a few scattered props with wide lanes between them (the vent
+  // tunnel runs along x -13.6 to -12.4, left clear).
+  furnishYard(map, F);
 
   // Hall: four columns, a raised podium on the west wall.
   [
@@ -806,27 +817,24 @@ function createUpperFloor(): ArenaLayout {
     alcoveHatch,
   );
   map.createHatch("hatch-alcove", "secret-alcove", alcoveHatch, ROOF_LOW);
-  map.createRoofSection("roof-dock-a", bounds(7, 13, -24, -15), ROOF_MID);
-  map.createRoofSection("roof-dock-b", bounds(16, 22, -24, -15), ROOF_MID);
+  // (The loading dock is an open yard: it has no roof.)
   // The plaza's secret ladder climbs beside the roof: a gap in the roof lets it
   // pass instead of running into the underside.
-  map.createRoofSection(
-    "roof-plaza-a",
-    bounds(-9, -1.5, 15.6, Z),
-    ROOF_MID,
-    ROOF_THICKNESS,
-    bounds(-9, -7.5, 22.1, 23.5),
-  );
-  map.createRoofSection("roof-plaza-b", bounds(1.5, 6, 15.6, Z), ROOF_MID);
+  // The hall's roof, at the Warehouse's roof level end to end (6.5 m over the
+  // floor): the storage end, the plaza's two slabs round the skylight, and the
+  // workshop end. It is high enough to stand on a shelf and still jump.
+  map.createRoofSection("roof-storage", bounds(-9, -1.5, 15, Z), ROOF_HIGH);
+  map.createRoofSection("roof-plaza-b", bounds(1.5, 6, 15, Z), ROOF_HIGH);
+  map.createRoofSection("roof-plaza-c", bounds(-1.5, 1.5, 15, 15.6), ROOF_HIGH);
+  map.createRoofSection("room-workshop-roof", bounds(6, 18, 15, Z), ROOF_HIGH);
   (
     [
-      ["column-dock-a", 10, -15.3],
-      ["column-dock-b", 19, -15.3],
-      ["column-plaza-a", -5, 15.9],
-      ["column-plaza-b", 3.75, 15.9],
+      ["column-plaza-a", -5, 15.9, ROOF_HIGH],
+      // (Flush to the north wall, so the lane beside it is the whole lane.)
+      ["column-plaza-b", 3.75, 15.6, ROOF_HIGH],
     ] as const
-  ).forEach(([id, x, z]) => {
-    map.createColumn(id, x, z, F, ROOF_MID - ROOF_THICKNESS);
+  ).forEach(([id, x, z, roof]) => {
+    map.createColumn(id, x, z, F, roof - ROOF_THICKNESS);
   });
 
   // A catwalk joins the Server room's roof and the Break room's across the east court.
@@ -850,41 +858,23 @@ function createUpperFloor(): ArenaLayout {
     inside: -1,
   });
 
-  // Climbable steps between the roof layers.
-  map.declareLedge(
-    "ledge-roof-switch-dock",
-    bounds(7, 7, -24, -15),
-    ROOF_LOW,
-    ROOF_MID,
-  );
-  map.declareLedge(
-    "ledge-roof-store-plaza",
-    bounds(-9, -9, 15.6, Z),
-    ROOF_LOW,
-    ROOF_MID,
-  );
-  // A housing on the dock roof is a 0.75 m step: dock roof, housing, Cargo roof.
-  map.createLedge(
-    "ledge-roof-housing",
-    bounds(20, 21.9, -20.5, -18.5),
-    ROOF_MID,
-    0.75,
-  );
+  // (The steps between the roof layers: the yard roof to the hall roof is the
+  // glass cover's open pane; the dock has no roof to climb to.)
 
   // ------------------------------------------------------ rooftop machinery
-  map.createTank("tank-barracks", -28, -6.5, ROOF_LOW);
+  map.createTank("tank-barracks", -28.9, -6.5, ROOF_LOW);
   prop("vent", "vent-barracks", -24.2, -5.4, ROOF_LOW);
   prop("vent", "vent-archive", -8, -20, ROOF_LOW);
   prop("vent", "vent-server", 25, -10.6, ROOF_LOW);
-  map.createTank("tank-break", 29.2, 8, ROOF_LOW, 1);
+  map.createTank("tank-break", 28.6, 8, ROOF_LOW, 1.35, 3.9);
   prop("vent", "vent-store", -13.5, 20, ROOF_LOW);
-  prop("vent", "vent-workshop", 11, 20, ROOF_LOW);
+  prop("vent", "vent-workshop", 11, 20, ROOF_HIGH);
   prop("machine", "unit-warehouse", 25, 18, ROOF_HIGH, "x", {
     width: 3,
     depth: 2,
     height: 1.4,
   });
-  prop("vent", "vent-plaza", -7, 17.5, ROOF_MID);
+  prop("vent", "vent-plaza", -7, 17.5, ROOF_HIGH);
 
   // ------------------------------------------- ducts, pipes and steel beams
   // Overhead and drawn only, high enough to walk and jump under.
@@ -902,7 +892,7 @@ function createUpperFloor(): ArenaLayout {
       height: 0.4,
     },
   );
-  map.createIndustrialProp("bench", "duct-workshop", 12, 18.1, ROOF_LOW, "x", {
+  map.createIndustrialProp("bench", "duct-workshop", 12, 18.1, ROOF_HIGH, "x", {
     width: 10,
     depth: 0.6,
     height: 0.4,
@@ -912,19 +902,21 @@ function createUpperFloor(): ArenaLayout {
     depth: 0.4,
     height: 0.3,
   });
-  // Beams under the medium roofs: they touch the slabs' undersides.
+  // The yard's roof edge where its east wall was: a steel header the length
+  // of the opening, under the slab (drawn only).
   map.createOverhead(
-    "beam-dock-1",
-    bounds(7, 22, -19.3, -18.9),
-    ROOF_MID - ROOF_THICKNESS - 0.4,
-    ROOF_MID - ROOF_THICKNESS,
+    "beam-yard-header",
+    bounds(-9.4, -9, 15.3, 23.7),
+    ROOF_LOW - ROOF_THICKNESS - 0.45,
+    ROOF_LOW - ROOF_THICKNESS,
     "steel",
   );
+  // Beams under the medium roofs: they touch the slabs' undersides.
   map.createOverhead(
     "beam-plaza-1",
     bounds(-9, 6, 19.3, 19.7),
-    ROOF_MID - ROOF_THICKNESS - 0.4,
-    ROOF_MID - ROOF_THICKNESS,
+    ROOF_HIGH - ROOF_THICKNESS - 0.4,
+    ROOF_HIGH - ROOF_THICKNESS,
     "steel",
   );
 
@@ -951,7 +943,7 @@ function createUpperFloor(): ArenaLayout {
     },
     {
       id: "east",
-      x: 10,
+      x: 9.4,
       z: -1,
       dir: [-1, 0],
       y: 8.5,
@@ -1014,7 +1006,7 @@ function createUpperFloor(): ArenaLayout {
     "Plaza skylight beam (mid-south)",
     0,
     21.5,
-    ROOF_MID - ROOF_THICKNESS - 0.3,
+    ROOF_HIGH - ROOF_THICKNESS - 0.3,
     "x",
     5,
     F,
@@ -1024,7 +1016,6 @@ function createUpperFloor(): ArenaLayout {
   // Exposed I-beams, braces and trusses (drawn as one steel mesh). Everything is
   // either overhead, under a slab, or flush to a wall; only the six floor
   // columns are solid, and each sits in a corner against two walls.
-  const STEEL_ROOF = ROOF_MID - ROOF_THICKNESS;
 
   // (The floating balconies have no beams under them: they stand on posts.)
 
@@ -1079,8 +1070,6 @@ function createUpperFloor(): ArenaLayout {
 
   // 2. I-beam columns in outer corners, tucked against two walls: the dock's
   //    two north corners and the east and west decks' corners at the outer wall.
-  map.createSteelColumn("steel-column-dock-e", 21.8, -23.8, F, STEEL_ROOF);
-  map.createSteelColumn("steel-column-dock-w", 7.2, -23.8, F, STEEL_ROOF);
   map.createSteelColumn(
     "steel-column-deck-east-n",
     31.8,
@@ -1214,6 +1203,40 @@ function createUpperFloor(): ArenaLayout {
     8,
   );
 
+  // The hall's roof trusses: four, across its width, clear of the skylight
+  // beam and of the wall pipes.
+  const HALL_TRUSS_TOP = ROOF_HIGH - ROOF_THICKNESS - 0.15;
+
+  for (const [id, x] of [
+    ["steel-truss-hall-a", -5],
+    ["steel-truss-hall-b", 4],
+    ["steel-truss-hall-c", 10],
+    ["steel-truss-hall-d", 15.8],
+  ] as const) {
+    map.createTruss(
+      id,
+      [x, HALL_TRUSS_TOP, 15.9],
+      [x, HALL_TRUSS_TOP, 23.1],
+      0.7,
+      6,
+    );
+  }
+
+  // The hall's west end above the yard's wall: a slanted cover of tinted
+  // glass on a steel frame, from the wall top up to the hall roof, in six
+  // panes, the third one open (a way through from the yard's roof).
+  map.createGlassSlope(
+    "glass-slope-store",
+    -9,
+    -7,
+    ROOF_LOW,
+    ROOF_HIGH - ROOF_THICKNESS,
+    15.3,
+    23.7,
+    6,
+    2,
+  );
+
   // ------------------------------------------- enclosure and supported ledges
   // The service corridor between the Control room and the Barracks is walled on
   // both sides, so it gets a roof level with the Barracks'. Every other room is already roofed; the arena, the
@@ -1221,8 +1244,11 @@ function createUpperFloor(): ArenaLayout {
   // The two gaps between the medium roofs (over the dock and over the south
   // plaza) are glazed with framed reinforced glass, level with the slabs beside
   // them, so the roofline is continuous. The hang beams run under the panes.
-  map.createGlassSkylight("glass-dock", bounds(13, 16, -24, -15), ROOF_MID);
-  map.createGlassSkylight("glass-plaza", bounds(-1.5, 1.5, 15.6, 24), ROOF_MID);
+  map.createGlassSkylight(
+    "glass-plaza",
+    bounds(-1.5, 1.5, 15.6, 24),
+    ROOF_HIGH,
+  );
 
   // Glass barriers along two roof edges: the Warehouse's west edge over the
   // lower workshop roof (the ladder up from it keeps its opening), and the
@@ -1250,8 +1276,10 @@ function createUpperFloor(): ArenaLayout {
   for (const [id, x, z, top] of [
     ["steel-post-south-w", -4.75, 9.25, LOW - 0.5],
     ["steel-post-south-e", 4.75, 9.25, LOW - 0.5],
-    ["steel-post-maintenance-w", 7.75, -10.5, LOW - 0.5],
-    ["steel-post-maintenance-e", 12.25, -10.5, LOW - 0.5],
+    // (Set back under the slab, so the lane between the east post and the
+    // stairs' first step is a wide 1.45 m: a body can walk through it.)
+    ["steel-post-maintenance-w", 7.75, -11.2, LOW - 0.5],
+    ["steel-post-maintenance-e", 12.25, -11.2, LOW - 0.5],
     ["steel-post-nw-w", -15.8, -9.8, HIGH_BALCONY - 0.5],
     ["steel-post-nw-e", -11.9, -9.8, HIGH_BALCONY - 0.5],
     // The wide south balcony gets one more in the middle. The north overlook
@@ -1267,7 +1295,6 @@ function createUpperFloor(): ArenaLayout {
 
   // ---------------------------------------------------------------- ledges
   // 1.2 m: can be jumped onto today. 2.4 m (on top of a 1.2 m ledge): a later climb.
-  map.createLedge("ledge-south-plaza", bounds(0, 3.5, 18.5, 21.5), F, 1.2);
   map.createLedge("ledge-east-deck", bounds(29, X, -2.5, 0.5), F, 1.2);
   map.createLedge("ledge-west-terrace", bounds(-X, -29, -1, 3), F, 1.2);
   map.createLedge("ledge-plaza-low", bounds(12, 15, -22, -19), F, 1.2);
@@ -1283,8 +1310,7 @@ function createUpperFloor(): ArenaLayout {
   // NORTH (operations): a public ladder up the Switch room to its roof.
   // EAST (loading and machinery): a generator on the east deck.
   prop("machine", "generator-east-deck", 23.6, -2.6, F);
-  // SOUTH (workshop and storage): crate stacks hide the plaza's secret ladder.
-  prop("crateStack", "crates-plaza-a", -6, 20.4, F);
+  // SOUTH (workshop and storage): the Storage room fills the west of the plaza.
 
   // ------------------------------------------------ rooftop identity and cover
   // Service huts and units break the long roof sightlines: every roof has
@@ -1300,8 +1326,8 @@ function createUpperFloor(): ArenaLayout {
     depth: 0.75,
     height: 1.1,
   });
-  prop("vent", "unit-break", 25.2, 9.4, ROOF_LOW);
-  prop("machine", "hut-workshop", 15.2, 21, ROOF_LOW, "x", {
+  prop("vent", "unit-break", 24.2, 9.4, ROOF_LOW);
+  prop("machine", "hut-workshop", 15.0, 21, ROOF_HIGH, "x", {
     width: 3,
     depth: 2.4,
     height: 2.4,
@@ -1318,7 +1344,7 @@ function createUpperFloor(): ArenaLayout {
   });
   // Raised roof walls and tall huts stop the higher roofs from seeing over
   // everything below them (with a gap where the climb up from the alcove arrives).
-  prop("machine", "hut-plaza", -4, 21, ROOF_MID, "x", {
+  prop("machine", "hut-plaza", -4, 21, ROOF_HIGH, "x", {
     width: 2.4,
     depth: 2.4,
     height: 2.4,
@@ -1354,7 +1380,7 @@ function createUpperFloor(): ArenaLayout {
   roofWall("roofwall-store", "x", 15, -17.8, -9.2, ROOF_LOW, [
     { from: -14.5, to: -11.5 },
   ]);
-  roofWall("roofwall-workshop", "x", 15, 6.2, 16, ROOF_LOW, [
+  roofWall("roofwall-workshop", "x", 15, 6.2, 16, ROOF_HIGH, [
     { from: 7.2, to: 9.8 },
     { from: 13, to: 16 },
   ]);
@@ -1408,20 +1434,6 @@ function createUpperFloor(): ArenaLayout {
   map.breakSolid("cover-overlook-b", [1, 1, 0.55], 0.45);
   map.breakSolid("cover-corner-balcony", [0.55, 1, 1], 0.45);
 
-  // One pile where a plain crate stood, on the open south plaza (not inside a
-  // room: the rooms are dressed separately).
-  {
-    const old = map.removeSolid("crates-plaza-a");
-
-    map.createPile(
-      "bricks",
-      "bricks-plaza",
-      (old.minX + old.maxX) / 2,
-      (old.minZ + old.maxZ) / 2,
-      F,
-    );
-  }
-
   // -------------------------------------------------------- exterior barriers
   // Most railings and barriers stay concrete (in three looks). A few are
   // re-dressed with the same footprint and the same body-blocking height, so
@@ -1438,6 +1450,52 @@ function createUpperFloor(): ArenaLayout {
 
   for (const id of ["rail-be-north-1", "rail-edge-west-1", "rail-bn-east-1"]) {
     map.restyleBarrier(id, "brick");
+  }
+
+  // Most of the plain concrete barriers are straight; these have a wavy top,
+  // worn down in smooth curves, just slightly and only on three of them (a few
+  // slow waves and one shallow bite). They stay railings: never lower than 55 cm, and
+  // every part is still a wall to a body, a shot and a grenade at the height
+  // it is drawn.
+  {
+    let seed = 20240611;
+    const next = (): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+
+      return seed / 4294967296;
+    };
+
+    for (const id of [
+      "rail-edge-south-1",
+      "rail-bn-front-1",
+      "rail-bw-front-1",
+    ]) {
+      const waves = [0, 1, 2].map(() => ({
+        frequency: 1.5 + next() * 3.5,
+        phase: next() * Math.PI * 2,
+        amplitude: 0.015 + next() * 0.025,
+      }));
+      const bites = [0].map(() => ({
+        at: 0.1 + next() * 0.8,
+        width: 0.04 + next() * 0.06,
+        depth: 0.1 + next() * 0.1,
+      }));
+
+      map.curveSolid(id, (t) => {
+        let share = 0.95;
+
+        for (const w of waves) {
+          share +=
+            Math.sin(t * w.frequency * Math.PI * 2 + w.phase) * w.amplitude;
+        }
+
+        for (const bite of bites) {
+          share -= bite.depth * Math.exp(-(((t - bite.at) / bite.width) ** 2));
+        }
+
+        return share;
+      });
+    }
   }
 
   map.createPile("pipes", "pipes-generator", 23.6, -1.65, F, { minZ: -1.9 });
@@ -1503,7 +1561,7 @@ function createUpperFloor(): ArenaLayout {
   // block wide (1.2 m), grated flush in the floor over a 1.3 m crouch-only
   // tunnel. Two short routes, each a straight line in plan, from the walkway
   // ring into the rooms:
-  //   south  a straight tunnel from inside the Store (z 21) north through its
+  //   south  a straight tunnel from inside the yard (z 21) north through its
   //          door and out onto the south walkway (z 12.6), then east
   //          along the walkway to x -3.8, where you stand to look west
   //   north  an L from the north walkway (x 6.4) west along its edge to the
