@@ -16,13 +16,14 @@ const MACHINE_ID = /^generator-/;
 
 const DUST_COLORS: Record<string, { color: number; alpha: number }> = {
   cement: { color: 0xd2c9b2, alpha: 0.4 },
-  bricks: { color: 0x7d4a3a, alpha: 0.32 },
+  bricks: { color: 0x6c6f75, alpha: 0.32 },
   rubble: { color: 0x8c8d90, alpha: 0.3 },
   wood: { color: 0xb59a6e, alpha: 0.3 },
   bags: { color: 0xd2c9b2, alpha: 0.36 },
   bagwall: { color: 0xd2c9b2, alpha: 0.36 },
   pipes: { color: 0x6d6f72, alpha: 0.24 },
-  barricade: { color: 0x7d4a3a, alpha: 0.3 },
+  barricade: { color: 0x6c6f75, alpha: 0.3 },
+  fittings: { color: 0x7e8082, alpha: 0.2 },
 };
 
 function hashId(id: string): number {

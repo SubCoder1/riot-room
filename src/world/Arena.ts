@@ -48,5 +48,19 @@ export class Arena {
     const rimLight = new THREE.PointLight(0x7dd3fc, 1.2, 80, 2);
     rimLight.position.set(-12, 9, -10);
     this.group.add(rimLight);
+
+    // Task lights and pendants over work areas: short range, no shadows.
+    for (const light of this.layout.lights) {
+      const lamp = new THREE.PointLight(
+        light.color,
+        light.intensity,
+        light.distance,
+        2,
+      );
+
+      lamp.name = light.id;
+      lamp.position.set(light.x, light.y, light.z);
+      this.group.add(lamp);
+    }
   }
 }

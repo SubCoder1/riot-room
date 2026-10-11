@@ -74,7 +74,7 @@ function shade(
 }
 
 const BAG_COLORS = [0x948d7a, 0x85837a, 0x9e957d, 0x7a786f, 0x8f866b];
-const BRICK_COLORS = [0x5e3029, 0x6b392d, 0x532a25, 0x723f30, 0x5a3328];
+const BRICK_COLORS = [0x4a4d54, 0x55585f, 0x41444b, 0x5d6068, 0x4c4f56];
 const CHUNK_COLORS = [0x5a5c60, 0x6a6c6f, 0x4a4c50, 0x75767a, 0x585550];
 /** Steel pipe: bare, rusted, dark and a muted green-grey. */
 const PIPE_COLORS = [0x757e89, 0x8a5c42, 0x56616d, 0x7a8672, 0x69727c];
@@ -973,7 +973,10 @@ function bagWall(random: () => number): PileShape {
   return { ...shape, boxes: boxes.length > 0 ? boxes : shape.boxes };
 }
 
-const BUILDERS: Record<PileKind, (random: () => number) => PileShape> = {
+const BUILDERS: Record<
+  Exclude<PileKind, "fittings">,
+  (random: () => number) => PileShape
+> = {
   cement,
   bagwall: bagWall,
   bags: (random) => cement(random, true),
@@ -991,5 +994,9 @@ const BUILDERS: Record<PileKind, (random: () => number) => PileShape> = {
 
 /** The shape of the pile `id` of `kind`: the same every run. */
 export function buildPile(kind: PileKind, id: string): PileShape {
+  if (kind === "fittings") {
+    throw new Error("Fittings are given their pieces, not built.");
+  }
+
   return BUILDERS[kind](rng(hashId(`${kind}:${id}`)));
 }

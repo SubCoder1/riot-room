@@ -16,10 +16,16 @@ import {
   type RampSolid,
   type StairsDefinition,
 } from "./ArenaLayout";
+import { createCurvedTops } from "./CurvedTops";
 import { createDecals, createPiles } from "./PileMeshes";
 import { createSteelStructure } from "./SteelStructure";
+import { createTankMesh } from "./TankMesh";
 import { VENT_CELL, ventBlocks, ventCeilingY, ventFloorY } from "./Vents";
-import { isBrickOuterWall, isBrickWall } from "./materials/WallSurfaces";
+import {
+  brickGroup,
+  isBrickOuterWall,
+  isBrickWall,
+} from "./materials/WallSurfaces";
 import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
 import { METAL_TILE_METRES } from "./materials/MetalTexture";
 import { useWorldSpaceUv } from "./materials/WorldSpaceUv";
@@ -133,7 +139,8 @@ const roleMaterials: Record<
 > = {
   railing: materials.railing,
   ledge: materials.ledge,
-  roof: materials.roofTop,
+  // Roofs and ceilings: dark concrete with engraved stripes.
+  roof: industrialMaterials.ceiling(),
   catwalk: materials.steel,
   prop: materials.prop,
   machinery: materials.machinery,
@@ -475,7 +482,7 @@ export function createPlatform(
         ? materials.perch
         : solid.role === "wall" && isBrickWall(solid.id)
           ? industrialMaterials.brick(
-              industrialMaterials.brickVariantFor(solid.id),
+              industrialMaterials.brickVariantFor(brickGroup(solid.id)),
             )
           : solid.role === "wall"
             ? industrialMaterials.paintedConcrete(
@@ -790,6 +797,11 @@ export function createStairs(stairs: StairsDefinition): THREE.Group {
 }
 
 export function createPillar(solid: CylinderSolid): THREE.Mesh {
+  // The tanks on the roofs are a proper tank on a steel stand.
+  if (solid.id.startsWith("tank")) {
+    return createTankMesh(solid);
+  }
+
   const mesh = new THREE.Mesh(unitCylinder, materials.pillar);
 
   const base = solid.bottom ?? 0;
@@ -800,6 +812,53 @@ export function createPillar(solid: CylinderSolid): THREE.Mesh {
   mesh.receiveShadow = true;
 
   return mesh;
+}
+
+/** Tilted tinted-glass panes, as one mesh with a darker, bluer tint than the flat glass. */
+const tintedGlass = new THREE.MeshStandardMaterial({
+  name: "TintedGlass",
+  color: 0x3d5566,
+  roughness: 0.18,
+  metalness: 0,
+  transparent: true,
+  opacity: 0.42,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+export function createGlassPanes(layout: ArenaLayout): THREE.Group {
+  const group = new THREE.Group();
+
+  group.name = "GlassPanes";
+
+  if (layout.panes.length === 0) {
+    return group;
+  }
+
+  const positions: number[] = [];
+
+  for (const pane of layout.panes) {
+    const [a, b, c, d] = pane.corners;
+
+    for (const point of [a, b, c, a, c, d]) {
+      positions.push(point[0], point[1], point[2]);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geometry, tintedGlass);
+
+  mesh.renderOrder = 2;
+  group.add(mesh);
+
+  return group;
 }
 
 /** The whole map as one group. */
@@ -868,6 +927,8 @@ export function buildArena(layout: ArenaLayout): THREE.Group {
   }
 
   arena.add(createPiles(layout));
+  arena.add(createGlassPanes(layout));
+  arena.add(createCurvedTops(layout));
   arena.add(createDecals(layout));
 
   for (const overhead of layout.overheads) {

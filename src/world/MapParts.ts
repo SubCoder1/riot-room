@@ -12,13 +12,17 @@ import {
   type DoorDefinition,
   type LadderDefinition,
   type LedgeDefinition,
+  type LightDefinition,
+  type DecalDefinition,
   type OverheadMaterial,
   type PileDefinition,
+  type PileElement,
   type PileKind,
   type SteelKind,
   type SteelMember,
   type Vec3,
   type PartRole,
+  type FramePart,
   type RiseDirection,
   type RoomDefinition,
   type Side,
@@ -166,6 +170,9 @@ export class MapBuilder {
       },
       piles: [],
       decals: [],
+      curves: [],
+      lights: [],
+      panes: [],
     };
   }
 
@@ -719,7 +726,7 @@ export class MapBuilder {
 
   /**
    * An observation ledge on a tall narrow pillar, shaped like a steel rail: a
-   * long thin I-beam (6 m) running straight out of the side of the pillar near
+   * long thin I-beam (3.5 m) running straight out of the side of the pillar near
    * its top (`dir` is the unit x or z step out of it), with a narrow top plate
    * (50 cm wide, 7 cm thick) to stand on, held by one compact bracket. `y` is
    * the top of the plate. No ladder and no railing. A hang point runs along its
@@ -735,7 +742,7 @@ export class MapBuilder {
     floorY = 0,
   ): void {
     const pillar = 0.25;
-    const length = 6;
+    const length = 3.5;
     const width = 0.5;
     const thickness = 0.07;
     const beamDepth = 0.3;
@@ -1227,6 +1234,177 @@ export class MapBuilder {
   }
 
   /**
+   * Furniture and fittings for a room: pieces placed in world x and z (the
+   * pile's own centre is the map's origin) and a hidden collision box for each
+   * of the big things, `top` above `baseY`. Small items (tools, parts) are only
+   * drawn.
+   */
+  public createFitting(
+    id: string,
+    baseY: number,
+    elements: PileElement[],
+    boxes: Array<{
+      minX: number;
+      maxX: number;
+      minZ: number;
+      maxZ: number;
+      top: number;
+      /** Parts that stop a shot (a framework); the box still stops a body. */
+      frame?: FramePart[];
+    }>,
+  ): PileDefinition {
+    const solids: string[] = [];
+
+    boxes.forEach((b, index) => {
+      const solidId = boxes.length === 1 ? id : `${id}-${index + 1}`;
+
+      this.layout.walls.push({
+        kind: "box",
+        id: solidId,
+        role: "prop",
+        hidden: true,
+        ...(b.frame
+          ? {
+              frame: b.frame.map((part) => ({
+                ...part,
+                minY: part.minY + baseY,
+                maxY: part.maxY + baseY,
+              })),
+            }
+          : {}),
+        minX: b.minX,
+        maxX: b.maxX,
+        minZ: b.minZ,
+        maxZ: b.maxZ,
+        bottom: baseY,
+        height: baseY + b.top,
+      });
+      solids.push(solidId);
+    });
+
+    const pile: PileDefinition = {
+      id,
+      kind: "fittings",
+      x: 0,
+      z: 0,
+      baseY,
+      elements,
+      solids,
+    };
+
+    this.layout.piles.push(pile);
+
+    return pile;
+  }
+
+  /**
+   * A slanted glass cover along z: a row of panes tilted from `lowY` at x =
+   * `lowX` up to `highY` at x = `highX`, on a steel frame (a rail along every
+   * seam and a horizontal one at the top and bottom). Pane number `open`
+   * (counted along z) is left out: an open pane to go through. The panes are
+   * drawn tinted; their collision is a row of hidden slices that follow the
+   * slope, so nobody walks through a closed pane.
+   */
+  public createGlassSlope(
+    id: string,
+    lowX: number,
+    highX: number,
+    lowY: number,
+    highY: number,
+    zFrom: number,
+    zTo: number,
+    panes: number,
+    open: number,
+  ): void {
+    const step = (zTo - zFrom) / panes;
+    const rise = highY - lowY;
+    const run = highX - lowX;
+
+    for (let i = 0; i <= panes; i++) {
+      const z = zFrom + step * i;
+
+      this.createSteel(
+        `${id}-rail-${i}`,
+        "brace",
+        [lowX, lowY, z],
+        [highX, highY, z],
+        "box",
+        0.07,
+        0.09,
+      );
+    }
+
+    for (const [name, x, y] of [
+      ["low", lowX, lowY],
+      ["high", highX, highY],
+    ] as const) {
+      this.createSteel(
+        `${id}-${name}`,
+        "brace",
+        [x, y, zFrom],
+        [x, y, zTo],
+        "box",
+        0.09,
+        0.11,
+      );
+    }
+
+    for (let i = 0; i < panes; i++) {
+      if (i === open) {
+        continue;
+      }
+
+      const z0 = zFrom + step * i;
+      const z1 = z0 + step;
+
+      this.layout.panes.push({
+        id: `${id}-pane-${i + 1}`,
+        corners: [
+          [lowX, lowY, z0],
+          [highX, highY, z0],
+          [highX, highY, z1],
+          [lowX, lowY, z1],
+        ],
+      });
+
+      // Collision: slices 0.4 m wide in x, each solid from where the pane is
+      // lowest over it up to the roof (bottom is above any head below it).
+      const slices = Math.max(1, Math.ceil(Math.abs(run) / 0.4));
+
+      for (let k = 0; k < slices; k++) {
+        const xa = lowX + (run * k) / slices;
+        const xb = lowX + (run * (k + 1)) / slices;
+        const bottom = lowY + (rise * k) / slices;
+
+        this.layout.walls.push({
+          kind: "box",
+          id: `${id}-pane-${i + 1}-s${k + 1}`,
+          role: "railing",
+          glass: true,
+          hidden: true,
+          minX: Math.min(xa, xb),
+          maxX: Math.max(xa, xb),
+          minZ: z0,
+          maxZ: z1,
+          bottom,
+          height: highY,
+          blockTop: highY + 0.5,
+        });
+      }
+    }
+  }
+
+  /** A short-range point light over a work area. */
+  public addLight(light: LightDefinition): void {
+    this.layout.lights.push(light);
+  }
+
+  /** A flat mark on a floor (drawn only), such as oil or a faded line. */
+  public addDecal(decal: DecalDefinition): void {
+    this.layout.decals.push(decal);
+  }
+
+  /**
    * Re-dresses a railing or low barrier as a stack of pipes or as brick without moving it.
    * It keeps its footprint and its body-blocking height (a railing still
    * cannot be vaulted); what changes is what is drawn, and the drawn height
@@ -1300,6 +1478,68 @@ export class MapBuilder {
   }
 
   /**
+   * Gives a barrier a smoothly wavy top: `shareAt(t)` (t from 0 at the low end
+   * to 1 at the high end of its long side) is its height as a share of the
+   * original, never below `minRise` metres. It is drawn as one curved mesh, and
+   * its collision is a row of thin hidden slices under the same curve, so a
+   * body, a shot and a grenade all meet the top where it is drawn.
+   */
+  public curveSolid(
+    id: string,
+    shareAt: (t: number) => number,
+    minRise = 0.55,
+  ): void {
+    const solid = this.removeSolid(id);
+    const alongX = solid.maxX - solid.minX >= solid.maxZ - solid.minZ;
+    const base = solid.base ?? solid.bottom ?? 0;
+    const rise = solid.height - base;
+    const length = alongX ? solid.maxX - solid.minX : solid.maxZ - solid.minZ;
+    const lo = alongX ? solid.minX : solid.minZ;
+    const samples = Math.max(8, Math.ceil(length / 0.1)) + 1;
+    const floor = Math.min(minRise, rise);
+    const heights: number[] = [];
+
+    for (let i = 0; i < samples; i++) {
+      const share = shareAt(i / (samples - 1));
+
+      heights.push(base + Math.min(rise, Math.max(rise * share, floor)));
+    }
+
+    // Collision: slices about 40 cm wide, each as high as the curve's highest
+    // point over it (a body never stands inside the drawn barrier).
+    const slices = Math.max(1, Math.ceil(length / 0.4));
+
+    for (let k = 0; k < slices; k++) {
+      const from = Math.floor((k / slices) * (samples - 1));
+      const to = Math.ceil(((k + 1) / slices) * (samples - 1));
+      const a = lo + (length * k) / slices;
+      const b = lo + (length * (k + 1)) / slices;
+
+      this.layout.walls.push({
+        ...solid,
+        id: `${id}~${k + 1}`,
+        hidden: true,
+        minX: alongX ? a : solid.minX,
+        maxX: alongX ? b : solid.maxX,
+        minZ: alongX ? solid.minZ : a,
+        maxZ: alongX ? solid.maxZ : b,
+        height: Math.max(...heights.slice(from, to + 1)),
+      });
+    }
+
+    this.layout.curves.push({
+      id,
+      minX: solid.minX,
+      maxX: solid.maxX,
+      minZ: solid.minZ,
+      maxZ: solid.maxZ,
+      base,
+      alongX,
+      heights,
+    });
+  }
+
+  /**
    * Breaks a wall or a block: it becomes `profile.length` slices side by side
    * along its long side, each as high as `profile` says (a share of its height
    * above where it stands, 1 = unbroken). A slice is never lower than
@@ -1332,14 +1572,18 @@ export class MapBuilder {
     });
   }
 
-  /** A water or fuel tank (a cylinder) standing on a surface at `baseY`. */
+  /**
+   * A water tank on a steel stand, standing on a surface at `baseY`. It is one
+   * solid cylinder, as wide as the tank and as tall as the stand, the tank and
+   * its domed lid together (`height`).
+   */
   public createTank(
     id: string,
     x: number,
     z: number,
     baseY: number,
-    radius = 1.1,
-    height = 2.4,
+    radius = 1.6,
+    height = 4.4,
   ): void {
     this.layout.pillars.push({
       kind: "cylinder",

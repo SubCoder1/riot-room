@@ -844,7 +844,19 @@ export class ArenaCollision {
         // A little tolerance so grazing a top edge is not a block.
         if (
           this.solidHeight(solid, x, z, 0) > y + 0.02 &&
-          this.solidBottom(solid) <= y
+          this.solidBottom(solid) <= y &&
+          // A framework (a loaded shelf) stops a line only inside its parts.
+          (solid.kind !== "box" ||
+            !solid.frame ||
+            solid.frame.some(
+              (part) =>
+                x >= part.minX &&
+                x <= part.maxX &&
+                z >= part.minZ &&
+                z <= part.maxZ &&
+                y >= part.minY &&
+                y <= part.maxY,
+            ))
         ) {
           return i === 0 ? 0 : (i - 1) / samples;
         }

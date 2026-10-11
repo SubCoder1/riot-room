@@ -60,11 +60,28 @@ export interface BoxSolid {
    * holds you up like a roof).
    */
   glass?: boolean;
+  /**
+   * For shots, grenades and sight lines only: the box is a framework (a loaded
+   * shelving unit), and a line is stopped only inside one of these parts, so it
+   * passes through the open gaps. A walking body still treats the whole box as
+   * solid.
+   */
+  frame?: FramePart[];
   minX: number;
   maxX: number;
   minZ: number;
   maxZ: number;
   height: number;
+}
+
+/** One solid piece of a framework: its box, with heights above the world's floor. */
+export interface FramePart {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  minY: number;
+  maxY: number;
 }
 
 /** An inclined surface that rises from the floor to `height` along `direction`. */
@@ -354,7 +371,8 @@ export type PileKind =
   | "rubble"
   | "wood"
   | "barricade"
-  | "pipes";
+  | "pipes"
+  | "fittings";
 
 /** One piece of a pile (a bag, a brick, a plank or a chunk), centred on the pile. */
 export interface PileElement {
@@ -443,6 +461,46 @@ export interface ArenaLayout {
   piles: PileDefinition[];
   /** Dirt, stains and dust on floors (drawn only). */
   decals: DecalDefinition[];
+  /** Barriers with a wavy top (drawn as one mesh; their slices are the collision). */
+  curves: CurvedTopDefinition[];
+  /** Small local lights over work areas (no shadows, short range). */
+  lights: LightDefinition[];
+  /** Slanted panes of tinted glass (drawn; their collision is hidden boxes). */
+  panes: GlassPaneDefinition[];
+}
+
+/** One tilted pane of tinted glass: four corners, in order round its edge. */
+export interface GlassPaneDefinition {
+  id: string;
+  corners: [Vec3, Vec3, Vec3, Vec3];
+}
+
+/** A short-range point light: a task light or a pendant lamp. */
+export interface LightDefinition {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  /** 0xRRGGBB. */
+  color: number;
+  intensity: number;
+  /** Range in metres: nothing is lit beyond it. */
+  distance: number;
+}
+
+/**
+ * A barrier whose top follows a curve: `heights` are the absolute tops, evenly
+ * spaced from the low end to the high end of its long side (x when `alongX`).
+ */
+export interface CurvedTopDefinition {
+  id: string;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  base: number;
+  alongX: boolean;
+  heights: number[];
 }
 
 /** Camera yaw at (x, z) that looks toward (lookX, lookZ). */
