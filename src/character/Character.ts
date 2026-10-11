@@ -2304,18 +2304,19 @@ export class Character {
   }
 
   /**
-   * Puts the body into the throw: the torso turns back toward the throwing
-   * side while loading, then whips through and leans into the release. The
+   * Puts the body into the throw: the torso holds still while aiming, turns
+   * back toward the throwing side in the wind-up, then whips through and leans
+   * into the release. The
    * head turns back the same amount, so the view (and the crosshair) stays put.
    */
   private swingBodyForThrow(pose: ThrowPose, forward: THREE.Vector3): void {
     const weight = pose.weight;
     // + = turn left (the side of the free arm), - = turn right (toward the throwing arm).
-    const twist =
-      weight * (pose.aim * -0.4 + pose.windup * -1.0 + pose.release * 0.9);
+    // The body holds still while aiming (no twist, no lean): it only swings
+    // for the wind-up and the throw itself.
+    const twist = weight * (pose.windup * -1.0 + pose.release * 0.9);
     // + = lean back, - = lean forward.
-    const lean =
-      weight * (pose.aim * 0.05 + pose.windup * 0.22 - pose.release * 0.42);
+    const lean = weight * (pose.windup * 0.22 - pose.release * 0.42);
 
     if (Math.abs(twist) < 1e-3 && Math.abs(lean) < 1e-3) {
       return;

@@ -1154,7 +1154,7 @@ export class Game {
       this.crosshair.style.visibility = aimingThrow ? "hidden" : "";
     }
 
-    this.thrownView.update();
+    this.thrownView.update(this.renderer.camera.position);
     this.fireView.update(this.fires.zones, performance.now() / 1000);
     this.explosionView.update(dt);
     this.smokeView.update(this.renderer.camera, performance.now() / 1000);

@@ -36,6 +36,8 @@ interface Frame {
 
 /** A grenade is drawn a little smaller in the hand than in flight. */
 const HELD_GRENADE = 0.78;
+/** First person: looking up past this (radians, about 24 degrees) hides the held item. */
+const HIDE_ITEM_PITCH = 0.42;
 /** The held item sits this far beyond the wrist bone, along the forearm. */
 const HELD_OFFSET = 0.09;
 
@@ -198,6 +200,17 @@ export class ThrowArm {
     forward: THREE.Vector3,
     aim: THREE.Vector3,
   ): void {
+    // First person, looking well up: the item in the hand would sit right in
+    // front of the lens, a huge dark shape across the view. Aiming high shows
+    // the sky and the crosshair, not the grenade, so it is not drawn.
+    if (this.firstPerson && this.holder) {
+      const pitch = Math.asin(Math.min(1, Math.max(-1, aim.y)));
+
+      if (pitch > HIDE_ITEM_PITCH) {
+        this.holder.visible = false;
+      }
+    }
+
     if (pose.weight < 0.002) {
       return;
     }

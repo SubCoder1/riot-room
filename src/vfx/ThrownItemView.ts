@@ -16,6 +16,13 @@ import {
   flickerFlame,
 } from "./ThrowableMeshes";
 
+/**
+ * An item closer to the camera than this is not drawn: it would fill the
+ * screen (a grenade released straight up leaves the hand right at the lens,
+ * and comes back down past it). Metres.
+ */
+const NEAR_CAMERA = 1.1;
+
 /** Radians of tumble per metre flown (about one turn a second at throwing speed). */
 const BOTTLE_TUMBLE_PER_METRE = 0.26;
 /** A grenade tumbles a little faster than a bottle: it is small and dense. */
@@ -56,8 +63,9 @@ export class ThrownItemView {
     }
   }
 
-  public update(): void {
+  public update(eye?: THREE.Vector3): void {
     const time = performance.now() / 1000;
+    const nearSquared = NEAR_CAMERA * NEAR_CAMERA;
     let grenades = 0;
     let canisters = 0;
     let bottles = 0;
@@ -70,7 +78,8 @@ export class ThrownItemView {
           continue;
         }
 
-        bottle.visible = true;
+        bottle.visible =
+          !eye || item.position.distanceToSquared(eye) > nearSquared;
         bottle.scale.setScalar(BOTTLE_SCALE);
         bottle.position.copy(item.position);
         // A slow, steady tumble end over end around the line of flight, with
@@ -96,7 +105,7 @@ export class ThrownItemView {
         continue;
       }
 
-      mesh.visible = true;
+      mesh.visible = !eye || item.position.distanceToSquared(eye) > nearSquared;
       mesh.position.copy(item.position);
 
       if (item.resting) {
