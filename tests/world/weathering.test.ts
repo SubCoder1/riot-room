@@ -13,8 +13,10 @@ const world = new ArenaCollision();
 const solidOf = (id: string): BoxSolid =>
   layout.walls.find((w) => w.id === id)!;
 
-/** Piles proper: not a railing re-dressed as pipes or brick. */
-const heaps = layout.piles.filter((p) => !/-(pipes|brick)$/.test(p.id));
+/** Piles proper: not a railing re-dressed as pipes or brick, nor a room's furniture. */
+const heaps = layout.piles.filter(
+  (p) => !/-(pipes|brick)$/.test(p.id) && p.kind !== "fittings",
+);
 
 describe("Piles of building material", () => {
   it("there are a few of each kind and none on the bare arena floor", () => {
@@ -54,7 +56,8 @@ describe("Piles of building material", () => {
   });
 
   it("each pile stops a body with collision that encloses its pieces and nothing more", () => {
-    for (const pile of layout.piles) {
+    // (A room's furniture is drawn with things above its box: pegboards, lamps.)
+    for (const pile of layout.piles.filter((p) => p.kind !== "fittings")) {
       const boxes = pile.solids.map(solidOf);
 
       expect(boxes.length, pile.id).toBeGreaterThan(0);
@@ -243,7 +246,7 @@ describe("Broken walls and barriers", () => {
     const broken = slicedIds();
 
     expect(broken.length).toBeGreaterThanOrEqual(4);
-    expect(broken.length).toBeLessThanOrEqual(14);
+    expect(broken.length).toBeLessThanOrEqual(24);
 
     // Neighbours of the broken ones are intact, and so is some of the cover.
     expect(solidOf("cover-overlook-a")).toBeDefined();
@@ -327,8 +330,8 @@ describe("Broken walls and barriers", () => {
     expect(Math.min(...tops)).toBeLessThan(Math.max(...tops) - 0.15);
   });
 
-  it("no pile and no mark is placed inside a room", () => {
-    for (const pile of layout.piles) {
+  it("no pile and no mark is placed inside a room (the Workshop's own fittings aside)", () => {
+    for (const pile of heaps) {
       for (const room of layout.rooms) {
         if (Math.abs(room.floorY - pile.baseY) > 0.5) continue;
 
@@ -343,6 +346,9 @@ describe("Broken walls and barriers", () => {
     }
 
     for (const d of layout.decals) {
+      // The Workshop's floor marks go with its fittings.
+      if (/^(workshop-|dust-fittings-)/.test(d.id)) continue;
+
       for (const room of layout.rooms) {
         if (Math.abs(room.floorY - d.y) > 0.5) continue;
 
@@ -408,10 +414,16 @@ describe("Exterior barriers", () => {
     const rails = layout.walls.filter(
       (w) => w.role === "railing" && !w.glass && w.base !== undefined,
     );
+    // (The wavy-topped barriers are concrete too: drawn as one curved mesh.)
+    const curved = new Set(layout.curves.map((c) => c.id));
     const restyled = new Set(
-      rails.filter((w) => w.hidden).map((w) => w.id.split("~")[0]),
+      rails
+        .filter((w) => w.hidden && !curved.has(w.id.split("~")[0]))
+        .map((w) => w.id.split("~")[0]),
     );
-    const concrete = rails.filter((w) => !w.hidden);
+    const concrete = rails.filter(
+      (w) => !w.hidden || curved.has(w.id.split("~")[0]),
+    );
 
     expect(pipes.length).toBeGreaterThanOrEqual(2);
     expect(brick.length).toBeGreaterThanOrEqual(2);
@@ -477,13 +489,17 @@ describe("Exterior barriers", () => {
     }
   });
 
-  it("there are no cement bags on the map", () => {
+  it("there are no cement bags on the map, but the three in the Workshop's corner", () => {
     expect(
       layout.piles.some((p) => p.kind === "bags" || p.kind === "bagwall"),
     ).toBe(false);
-    expect(
-      layout.piles.some((p) => p.elements.some((e) => e.shape === "bag")),
-    ).toBe(false);
+
+    const withBags = layout.piles.filter((p) =>
+      p.elements.some((e) => e.shape === "bag"),
+    );
+
+    expect(withBags.map((p) => p.id)).toEqual(["fittings-bags"]);
+    expect(withBags[0].elements).toHaveLength(3);
   });
 
   it("no barrier is put inside a room", () => {

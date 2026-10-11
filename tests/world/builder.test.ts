@@ -36,7 +36,9 @@ describe("Arena meshes", () => {
       ARENA_LAYOUT.platforms.length +
       ARENA_LAYOUT.walls.filter((w) => !w.hidden).length +
       pileMeshes +
+      ARENA_LAYOUT.curves.length + // a wavy-topped barrier is one mesh
       (ARENA_LAYOUT.decals.length > 0 ? 1 : 0) + // every floor mark, merged
+      (ARENA_LAYOUT.panes.length > 0 ? 1 : 0) + // the slanted glass, merged
       ARENA_LAYOUT.ramps.length +
       steps +
       ARENA_LAYOUT.pillars.length +
@@ -54,16 +56,18 @@ describe("Arena meshes", () => {
     const geometries = new Set(all.map((m) => m.geometry));
     const materials = new Set(all.map((m) => m.material));
 
-    // One box, one cylinder (the tanks), the merged steel, the merged floor, the
+    // One box, the two tanks (one merged mesh each), the merged steel, the merged floor, the
     // vent floor and walls, a merged grate each, and a wedge per ramp.
     expect(geometries.size).toBe(
-      6 +
+      7 +
         ventBlocks(ARENA_LAYOUT.vents).length +
         ventBlocks(ARENA_LAYOUT.upperVents).length +
         1 + // the upper network's floor (its walls are the cut floor)
         2 + // the north and south wings, cut round the upper grating
         pileMeshes + // bags, bricks, planks, chunks: one merged mesh each
+        ARENA_LAYOUT.curves.length + // a geometry per wavy-topped barrier
         (ARENA_LAYOUT.decals.length > 0 ? 1 : 0) + // the floor marks
+        (ARENA_LAYOUT.panes.length > 0 ? 1 : 0) + // the slanted glass
         ARENA_LAYOUT.ramps.length,
     );
     // ...plus the two piece materials and the one for the floor marks.

@@ -361,9 +361,9 @@ describe("The upper-floor vents", () => {
     }
   });
 
-  it("south: runs from inside the Store straight out to the south walkway", () => {
-    expect(inRoom("room-store").length).toBeGreaterThan(0);
-    // On the walkway between the arena and the Store (z 12 to 15).
+  it("south: runs from inside the yard straight out to the south walkway", () => {
+    expect(inRoom("room-yard").length).toBeGreaterThan(0);
+    // On the walkway between the arena and the yard (z 12 to 15).
     expect(
       blocks.some((b) => b.minZ >= 12 && b.maxZ <= 15 && b.maxX < -9),
     ).toBe(true);
@@ -402,7 +402,7 @@ describe("The upper-floor vents", () => {
   });
 
   it("the south route: the vigilante goes down in the Store and comes up on the walkway", () => {
-    const from = centre(inRoom("room-store").slice(-1)[0]);
+    const from = centre(inRoom("room-yard").slice(-1)[0]);
     const p = spawnPlayer(from.x, 4, from.z);
 
     p.step(0.3);

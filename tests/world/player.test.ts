@@ -444,7 +444,7 @@ describe("Jumping under a roof", () => {
 describe("Thin tops", () => {
   it("nobody can stand on a wall, a railing or a post", () => {
     const wall = layout.walls.find((w) => w.id === "room-archive-wall-s-1")!;
-    const rail = layout.walls.find((w) => w.id === "rail-bn-front-1")!;
+    const rail = layout.walls.find((w) => w.id === "rail-bw-east-1")!;
 
     for (const solid of [wall, rail]) {
       const x = (solid.minX + solid.maxX) / 2;

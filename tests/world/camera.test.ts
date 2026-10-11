@@ -44,7 +44,7 @@ describe("Camera stays out of scenery", () => {
   });
 
   it("a camera above a railing is left alone", () => {
-    const rail = ARENA_LAYOUT.walls.find((w) => w.id === "rail-bn-front-1")!;
+    const rail = ARENA_LAYOUT.walls.find((w) => w.id === "rail-bw-east-1")!;
     const x = (rail.minX + rail.maxX) / 2;
     const z = (rail.minZ + rail.maxZ) / 2;
 

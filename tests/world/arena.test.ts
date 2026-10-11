@@ -127,6 +127,22 @@ describe("Ground and walls", () => {
           PLAYER_RADIUS * 2 + 0.6,
         );
 
+        // A doorway shut by a roller shutter (the hall's wide north door).
+        if (room.id === "room-workshop" && door.side === "n" && door.at === 1) {
+          expect(
+            layout.walls.some((w) => w.id === "fittings-hall-shutter"),
+          ).toBe(true);
+          continue;
+        }
+
+        // The Hall's wide opening to the yard, filled by a loaded shelving unit.
+        if (room.id === "room-hall" && door.side === "e" && door.at === 19.5) {
+          expect(
+            layout.walls.some((w) => w.id.startsWith("fittings-yard-stock")),
+          ).toBe(true);
+          continue;
+        }
+
         const horizontal = door.side === "n" || door.side === "s";
         const edge =
           door.side === "n"
