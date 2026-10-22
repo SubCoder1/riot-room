@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createGrenade, createGrenadeParts } from "../vfx/ThrowableMeshes";
 
 import { Renderer } from "../rendering/Renderer";
 import { InputManager } from "../input/InputManager";
@@ -13,6 +14,7 @@ import {
   PERIMETER_WALL_HEIGHT,
 } from "../world/ArenaLayout";
 import { ARENA_LAYOUT } from "../world/UpperFloorMap";
+import { GeneratorFuel } from "../world/GeneratorFuel";
 import {
   inTunnel,
   ventCeilingY,
@@ -30,7 +32,7 @@ import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
 import { ProjectileSystem, PROFILES } from "../combat/Projectiles";
 import { THROW_CONFIG } from "../combat/ThrowConfig";
-import { FireSystem } from "../combat/FireZones";
+import { FireSystem, fireIntensity, fireRadius } from "../combat/FireZones";
 import { ExplosionSystem } from "../combat/Explosions";
 import { SmokeSystem } from "../combat/Smoke";
 import { canPerceive } from "../combat/Awareness";
@@ -185,7 +187,53 @@ export class Game {
 
   /** Roof hatches that have been opened this round (they stay open). */
   private readonly openHatches = new Set<string>();
+
+  /** The fuel in each generator, by its layout id. */
+  private readonly generatorFuel = new Map<string, GeneratorFuel>(
+    ARENA_LAYOUT.generators.map((g) => [
+      g.id,
+      new GeneratorFuel(g.capacity, g.startFuel),
+    ]),
+  );
+  /**
+   * Grenades lying on the spawn-area workbenches: each one's drawn model and
+   * when it is back (ms; 0 = there now).
+   */
+  private readonly pickupState = new Map<
+    string,
+    { mesh: THREE.Object3D; readyAt: number }
+  >();
+  /** A short message after adding fuel, and when it goes away (ms). */
+  private fuelNotice = "";
+  private fuelNoticeUntil = 0;
   private readonly throwOrigin = new THREE.Vector3();
+  /**
+   * The glow of a lit Molotov in hand: one warm light that follows the flame.
+   * It is always in the scene (at no strength when nothing burns), so lighting
+   * it never changes the number of lights and never stalls a frame.
+   */
+  private readonly flameLight = new THREE.PointLight(0xff9a3c, 0, 8, 2);
+  private readonly flamePosition = new THREE.Vector3();
+  /**
+   * The flash of a grenade going off: one warm light kept in the scene at no
+   * strength, moved to each blast and let die away in under a second (so a
+   * blast never adds a light or stalls a frame).
+   */
+  private readonly blastLight = new THREE.PointLight(0xffb066, 0, 18, 2);
+  private blastAge = Number.POSITIVE_INFINITY;
+  /**
+   * The glow of fires burning after a Molotov is thrown: a few warm lights kept
+   * in the scene at no strength, given to the nearest fires (so the number of
+   * lights never changes, and lighting a fire never stalls a frame).
+   */
+  private readonly fireLights = Array.from(
+    { length: 4 },
+    () => new THREE.PointLight(0xff8a30, 0, 10, 2),
+  );
+  private readonly fireGlow: Array<{
+    position: THREE.Vector3;
+    strength: number;
+  }> = [];
   private readonly throwDirection = new THREE.Vector3();
   private readonly throwCameraDirection = new THREE.Vector3();
   private readonly throwTarget = new THREE.Vector3();
@@ -331,8 +379,9 @@ export class Game {
 
     this.combat.register(this.playerCombatant);
 
-    // TEMP (testing): one Molotov to start with. Remove once pickups exist.
-    this.utilities.add("MOLOTOV", 1);
+    // (Every thug starts with one grenade, one smoke grenade and one Molotov:
+    // the utilities' starting quantities. Nothing else is added here.)
+    this.createPickups();
 
     this.projectiles = new ProjectileSystem(this.combat, this.throwWorld);
     this.thrownView = new ThrownItemView(this.projectiles);
@@ -359,6 +408,8 @@ export class Game {
         this.explosionView.spawn(
           this.explosionPoint.set(event.x, event.y, event.z),
         );
+        this.blastLight.position.set(event.x, event.y + 0.8, event.z);
+        this.blastAge = 0;
       }
     });
 
@@ -423,6 +474,11 @@ export class Game {
     // ----------------------------------------------------------
 
     this.renderer.scene.add(this.arena.group);
+    this.renderer.scene.add(
+      this.flameLight,
+      this.blastLight,
+      ...this.fireLights,
+    );
 
     // ----------------------------------------------------------
     // Add complete character
@@ -444,6 +500,8 @@ export class Game {
     this.renderer.scene.add(this.dummy.root);
     this.renderer.scene.add(this.combatDebug.group);
     this.renderer.scene.add(this.thrownView.group);
+    this.fireView.surfaceY = (x, z, fromY) =>
+      this.collision.groundHeight(x, z, fromY);
     this.renderer.scene.add(this.fireView.group);
     this.renderer.scene.add(this.explosionView.group);
     this.renderer.scene.add(this.smokeView.group);
@@ -697,6 +755,10 @@ export class Game {
     // Render
     // ----------------------------------------------------------
 
+    this.arena.update(dt);
+    this.updateFlameLight();
+    this.updateFireLights();
+    this.updateBlastLight(dt);
     this.renderer.render();
 
     // ----------------------------------------------------------
@@ -828,10 +890,20 @@ export class Game {
         } else {
           this.player.releaseLadder();
         }
+      } else if (this.takePickupIfNear()) {
+        // Took a grenade off a workbench.
+      } else if (this.addFuelIfNear()) {
+        // Poured a bottle into a generator's filler cap.
       } else {
         const ladder = this.player.ladderInReach();
 
-        if (ladder && this.player.grabLadder()) {
+        if (
+          ladder &&
+          this.player.grabLadder({
+            up: this.input.isPressed("KeyW"),
+            down: this.input.isPressed("KeyS"),
+          })
+        ) {
           this.throwStance.reset();
           this.input.yaw = ladderYaw(ladder);
         }
@@ -870,15 +942,189 @@ export class Game {
             : ""
         : this.player.ventEntryInReach()
           ? "E  Enter vent"
-          : this.player.ladderInReach()
-            ? "E  Climb"
-            : "";
+          : this.pickupPrompt()
+            ? this.pickupPrompt()
+            : this.fuelPrompt()
+              ? this.fuelPrompt()
+              : this.player.ladderInReach()
+                ? "E  Climb"
+                : "";
 
     if (this.climbPrompt.textContent !== text) {
       this.climbPrompt.textContent = text;
     }
 
     this.climbPrompt.style.visibility = text ? "visible" : "hidden";
+  }
+
+  /** The most grenades a player may carry (a pickup gives none past this). */
+  private static readonly GRENADE_CARRY_MAX = 5;
+
+  /** Draws every pickup in the layout as its real item model. */
+  private createPickups(): void {
+    const parts = createGrenadeParts();
+
+    for (const pickup of ARENA_LAYOUT.pickups) {
+      const mesh = createGrenade(parts);
+
+      mesh.position.set(pickup.x, pickup.y + 0.07, pickup.z);
+      mesh.rotation.set(0, pickup.x * 3.1, 0);
+      mesh.name = pickup.id;
+      this.arena.group.add(mesh);
+      this.pickupState.set(pickup.id, { mesh, readyAt: 0 });
+    }
+  }
+
+  /** Brings back any pickup whose time is up. */
+  private updatePickups(): void {
+    const now = performance.now();
+
+    for (const state of this.pickupState.values()) {
+      if (state.readyAt > 0 && now >= state.readyAt) {
+        state.readyAt = 0;
+        state.mesh.visible = true;
+      }
+    }
+  }
+
+  /** The nearest pickup that is there and within reach, if any. */
+  private pickupInReach(): (typeof ARENA_LAYOUT.pickups)[number] | null {
+    const feetY = this.player.position.y - this.player.eyeHeight;
+    let best: (typeof ARENA_LAYOUT.pickups)[number] | null = null;
+    let bestDistance = 1.5;
+
+    for (const pickup of ARENA_LAYOUT.pickups) {
+      if ((this.pickupState.get(pickup.id)?.readyAt ?? 0) > 0) {
+        continue;
+      }
+
+      const rise = pickup.y - feetY;
+      const distance = Math.hypot(
+        this.player.position.x - pickup.x,
+        this.player.position.z - pickup.z,
+      );
+
+      if (rise > 0.2 && rise < 1.8 && distance < bestDistance) {
+        best = pickup;
+        bestDistance = distance;
+      }
+    }
+
+    return best;
+  }
+
+  /** The prompt at a pickup ("" away from any). */
+  private pickupPrompt(): string {
+    this.updatePickups();
+
+    const pickup = this.pickupInReach();
+
+    if (!pickup || this.player.isClimbing) {
+      return "";
+    }
+
+    const have = this.utilities.quantityOf(pickup.type) ?? 0;
+
+    return have >= Game.GRENADE_CARRY_MAX
+      ? `Grenades full  ·  ${have} / ${Game.GRENADE_CARRY_MAX}`
+      : `E  Take grenade  ·  ${have} / ${Game.GRENADE_CARRY_MAX}`;
+  }
+
+  /** E at a pickup: adds it to the player's utilities and hides it for a while. */
+  private takePickupIfNear(): boolean {
+    const pickup = this.pickupInReach();
+
+    if (!pickup) {
+      return false;
+    }
+
+    const have = this.utilities.quantityOf(pickup.type) ?? 0;
+
+    if (have >= Game.GRENADE_CARRY_MAX) {
+      return true;
+    }
+
+    this.utilities.add(
+      pickup.type,
+      Math.min(pickup.amount, Game.GRENADE_CARRY_MAX - have),
+    );
+
+    const state = this.pickupState.get(pickup.id);
+
+    if (state) {
+      state.mesh.visible = false;
+      state.readyAt = performance.now() + pickup.respawn * 1000;
+    }
+
+    return true;
+  }
+
+  /** The generator whose filler cap the player is standing at, if any. */
+  private generatorInReach(): { id: string; name: string } | null {
+    const feetY = this.player.position.y - this.player.eyeHeight;
+
+    for (const g of ARENA_LAYOUT.generators) {
+      const dx = this.player.position.x - g.x;
+      const dz = this.player.position.z - g.z;
+      const rise = g.y - feetY;
+
+      if (Math.hypot(dx, dz) <= 1.7 && rise > 0.2 && rise < 2.4) {
+        return { id: g.id, name: g.name };
+      }
+    }
+
+    return null;
+  }
+
+  /** The prompt at a generator's filler cap ("" away from any). */
+  private fuelPrompt(): string {
+    if (performance.now() < this.fuelNoticeUntil) {
+      return this.fuelNotice;
+    }
+
+    const near = this.generatorInReach();
+    const fuel = near ? this.generatorFuel.get(near.id) : undefined;
+
+    if (!near || !fuel || this.player.isClimbing) {
+      return "";
+    }
+
+    const level = `${Math.round(fuel.level)} / ${fuel.capacity}`;
+
+    if (fuel.isFull) {
+      return `${near.name}  ·  full  ${level}`;
+    }
+
+    return (this.utilities.quantityOf("MOLOTOV") ?? 0) > 0
+      ? `E  Add fuel (uses a Molotov)  ·  ${level}`
+      : `${near.name}  ·  needs a Molotov to add fuel  ·  ${level}`;
+  }
+
+  /** E at a filler cap: pours a Molotov's petrol in. True if at one. */
+  private addFuelIfNear(): boolean {
+    const near = this.generatorInReach();
+    const fuel = near ? this.generatorFuel.get(near.id) : undefined;
+
+    if (!near || !fuel) {
+      return false;
+    }
+
+    const have = this.utilities.quantityOf("MOLOTOV") ?? 0;
+    const result = fuel.fill(have);
+
+    if (result.ok) {
+      this.utilities.remove("MOLOTOV", 1);
+      this.fuelNotice = `Fuel added  +${result.added}  ·  ${Math.round(result.level)} / ${fuel.capacity}`;
+    } else {
+      this.fuelNotice =
+        result.reason === "full"
+          ? `${near.name}  ·  already full`
+          : `${near.name}  ·  no petrol: needs a Molotov`;
+    }
+
+    this.fuelNoticeUntil = performance.now() + 1800;
+
+    return true;
   }
 
   /** Opens or shuts a roof hatch: its solid goes (or comes back) and its panel is hidden (or shown). */
@@ -1097,6 +1343,96 @@ export class Game {
     this.throwDirection.normalize();
 
     return true;
+  }
+
+  /** A lit Molotov in hand lights what is round it, flickering with the flame. */
+  private updateFlameLight(): void {
+    if (!this.character.getHeldFlame(this.flamePosition)) {
+      this.flameLight.intensity = 0;
+      this.arena.setHeldLight(null, 0);
+
+      return;
+    }
+
+    const t = performance.now() / 1000;
+    const flicker = 0.8 + 0.15 * Math.sin(t * 31) + 0.08 * Math.sin(t * 53);
+
+    // Held out a little from the flame, so the hands near it are warmed, not blown out.
+    this.flameLight.position.copy(this.flamePosition);
+    this.flameLight.position.y += 0.35;
+    this.flameLight.intensity = 0.5 * flicker;
+    // The rain shows in it too, as it does in the lamps' light.
+    this.arena.setHeldLight(this.flameLight.position, 0.5 * flicker);
+  }
+
+  /** The blast's flash: a hard white-orange spike that dies away quickly. */
+  private updateBlastLight(dt: number): void {
+    if (this.blastAge > 1.1) {
+      this.blastLight.intensity = 0;
+
+      return;
+    }
+
+    this.blastAge += dt;
+
+    const rise = Math.min(this.blastAge / 0.04, 1);
+    const fall = Math.exp(-this.blastAge * 5.5);
+
+    this.blastLight.intensity = 260 * rise * fall;
+    // From near-white at the flash to a deep orange as it dies.
+    this.blastLight.color.setRGB(
+      1,
+      0.78 - 0.3 * Math.min(this.blastAge, 1),
+      0.5 - 0.35 * Math.min(this.blastAge, 1),
+    );
+  }
+
+  /** Every fire burning lights what is round it: the nearest few get real lights. */
+  private updateFireLights(): void {
+    const t = performance.now() / 1000;
+    const eye = this.player.position;
+    const burning = this.fires.zones
+      .map((zone) => ({
+        zone,
+        strength: fireIntensity(zone.age),
+        distance: zone.position.distanceTo(eye),
+      }))
+      .filter((f) => f.strength > 0)
+      .sort((a, b) => a.distance - b.distance);
+
+    this.fireGlow.length = 0;
+
+    this.fireLights.forEach((light, i) => {
+      const fire = burning[i];
+
+      if (!fire) {
+        light.intensity = 0;
+
+        return;
+      }
+
+      const flicker =
+        0.82 +
+        0.14 * Math.sin(t * 17 + fire.zone.seed * 9) +
+        0.08 * Math.sin(t * 41 + fire.zone.seed * 5);
+
+      // The light grows and shrinks with the fire: its reach follows the
+      // burning radius, and it sinks as the tongues die back.
+      const radius = fireRadius(fire.zone.age);
+
+      light.position.copy(fire.zone.position);
+      light.position.y += 0.4 + 0.5 * fire.strength;
+      light.distance = 3 + radius * 3.2;
+      light.intensity =
+        26 * fire.strength * flicker * (0.4 + 0.6 * (radius / 3));
+      this.fireGlow.push({
+        position: light.position,
+        strength: 0.9 * fire.strength * flicker,
+      });
+    });
+
+    // The rain shows in the fires' light as it does in the lamps'.
+    this.arena.setFireLights(this.fireGlow);
   }
 
   private updateThrowables(dt: number): void {
@@ -2199,6 +2535,10 @@ export class Game {
 
     this.character.dispose();
 
+    this.arena.dispose();
+    this.flameLight.removeFromParent();
+    this.blastLight.removeFromParent();
+    this.fireLights.forEach((light) => light.removeFromParent());
     this.renderer.dispose();
   }
 }

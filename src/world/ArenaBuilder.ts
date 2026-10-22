@@ -25,6 +25,7 @@ import {
   brickGroup,
   isBrickOuterWall,
   isBrickWall,
+  rawSurfaceFor,
 } from "./materials/WallSurfaces";
 import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
 import { METAL_TILE_METRES } from "./materials/MetalTexture";
@@ -58,7 +59,14 @@ const materials = {
     roughness: 0.9,
     side: THREE.DoubleSide,
   }),
-  stairs: new THREE.MeshStandardMaterial({ color: 0x737c8f, roughness: 0.9 }),
+  // Worn dark steel treads: scuffed and a little paler where they are used.
+  stairs: worn(
+    new THREE.MeshStandardMaterial({
+      color: 0x5b6472,
+      roughness: 0.78,
+      metalness: 0.3,
+    }),
+  ),
   railing: worn(
     new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.8 }),
   ),
@@ -67,14 +75,6 @@ const materials = {
   roofTop: new THREE.MeshStandardMaterial({
     color: 0x3c4658,
     roughness: 0.95,
-  }),
-  // The observation perches: dark blue-grey plate, matte, with a little glow so
-  // the underside and the edges read as steel and not as black.
-  perch: new THREE.MeshStandardMaterial({
-    color: 0x5a667c,
-    roughness: 0.85,
-    metalness: 0.05,
-    emissive: 0x1d2635,
   }),
   steel: worn(
     new THREE.MeshStandardMaterial({
@@ -118,16 +118,16 @@ const materials = {
     emissive: 0x16303f,
   }),
   roof: new THREE.MeshStandardMaterial({
-    color: 0x4a566b,
-    roughness: 0.95,
-    emissive: 0x1a2130,
+    color: 0x3e4756,
+    roughness: 0.97,
+    emissive: 0x07090d,
   }),
   ladder: new THREE.MeshStandardMaterial({
-    color: 0xf0c04a,
-    roughness: 0.6,
+    color: 0xb08a2e,
+    roughness: 0.7,
     metalness: 0.1,
-    // A faint glow so a ladder reads in the dark, from above as well as below.
-    emissive: 0x5a4208,
+    // A trace of glow so a ladder is still found in the dark.
+    emissive: 0x1a1304,
   }),
   pillar: new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
 };
@@ -199,18 +199,18 @@ function mergedBoxes(
 
 const ventInterior = new THREE.MeshStandardMaterial({
   name: "VentInterior",
-  color: 0x28303c,
+  color: 0x1c1d20,
   roughness: 0.85,
   metalness: 0.2,
-  emissive: 0x0a0f16,
+  emissive: 0x000000,
 });
 
 const ventBars = new THREE.MeshStandardMaterial({
   name: "VentGrate",
-  color: 0x6b7587,
-  roughness: 0.55,
-  metalness: 0.6,
-  emissive: 0x10151c,
+  color: 0x34363a,
+  roughness: 0.6,
+  metalness: 0.5,
+  emissive: 0x000000,
 });
 
 /**
@@ -478,8 +478,8 @@ export function createPlatform(
     solid.height,
     solid.glass
       ? industrialMaterials.glass()
-      : solid.id.startsWith("hang-perch-") && solid.id.endsWith("-deck")
-        ? materials.perch
+      : rawSurfaceFor(solid.id)
+        ? industrialMaterials.raw(rawSurfaceFor(solid.id)!)
         : solid.role === "wall" && isBrickWall(solid.id)
           ? industrialMaterials.brick(
               industrialMaterials.brickVariantFor(brickGroup(solid.id)),

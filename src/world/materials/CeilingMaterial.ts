@@ -21,7 +21,7 @@ export function createCeilingMaterial(
     roughnessMap: textures.roughness,
     roughness: 1,
     metalness: 0,
-    emissive: new THREE.Color(0x6d737d),
+    emissive: new THREE.Color(0x1f2328),
     emissiveMap: textures.color,
   });
 

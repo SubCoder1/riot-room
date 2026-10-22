@@ -1,7 +1,16 @@
 import * as THREE from "three";
 
 import { buildArena } from "./ArenaBuilder";
-import type { ArenaLayout } from "./ArenaLayout";
+import { createFacilityPoster } from "./FacilityPoster";
+import { ARENA_HALF_X, ARENA_HALF_Z, type ArenaLayout } from "./ArenaLayout";
+import { createFixtureGlow } from "./LightGlow";
+import { MAX_LIGHTS, RESERVED_LIGHTS } from "./Rain";
+import { createPuddles } from "./Puddles";
+import { createSky } from "./Sky";
+import { Moths } from "./Moths";
+import { NightAtmosphere, type Halogen } from "./NightAtmosphere";
+import { FLICKERING, nightLights } from "./NightLights";
+import { createRain } from "./Rain";
 import { ARENA_LAYOUT } from "./UpperFloorMap";
 
 /**
@@ -13,6 +22,13 @@ export class Arena {
   public readonly group: THREE.Group;
 
   private readonly layout: ArenaLayout;
+  private atmosphere: NightAtmosphere | null = null;
+  private moths: Moths | null = null;
+  private rainLights: {
+    uPos: { value: THREE.Vector4[] };
+    uCol: { value: THREE.Vector4[] };
+  } | null = null;
+  private time = 0;
 
   constructor(layout: ArenaLayout = ARENA_LAYOUT) {
     this.layout = layout;
@@ -20,15 +36,101 @@ export class Arena {
     this.buildArena();
   }
 
+  /**
+   * A light carried by the player (a lit Molotov), for the rain to show in as it
+   * does in the lamps' light. `null` puts it out. It uses the last slot of the
+   * rain's light list, which the map's own lamps never reach.
+   */
+  public setHeldLight(position: THREE.Vector3 | null, strength: number): void {
+    if (!this.rainLights) {
+      return;
+    }
+
+    const last = MAX_LIGHTS - 1;
+
+    if (!position) {
+      this.rainLights.uCol.value[last].set(0, 0, 0, 0);
+
+      return;
+    }
+
+    this.rainLights.uPos.value[last].set(
+      position.x,
+      position.y,
+      position.z,
+      6.5,
+    );
+    this.rainLights.uCol.value[last].set(
+      strength,
+      strength * 0.6,
+      strength * 0.25,
+      0,
+    );
+  }
+
+  /**
+   * Fires burning in the arena (up to five), for the rain to show in. Each is a
+   * position and a strength (0 puts it out); slots beyond the list are cleared.
+   */
+  public setFireLights(
+    fires: ReadonlyArray<{ position: THREE.Vector3; strength: number }>,
+  ): void {
+    if (!this.rainLights) {
+      return;
+    }
+
+    const first = MAX_LIGHTS - RESERVED_LIGHTS;
+
+    for (let i = 0; i < RESERVED_LIGHTS - 1; i++) {
+      const fire = fires[i];
+      const slot = first + i;
+
+      if (!fire || fire.strength <= 0) {
+        this.rainLights.uCol.value[slot].set(0, 0, 0, 0);
+
+        continue;
+      }
+
+      this.rainLights.uPos.value[slot].set(
+        fire.position.x,
+        fire.position.y,
+        fire.position.z,
+        10,
+      );
+      this.rainLights.uCol.value[slot].set(
+        fire.strength,
+        fire.strength * 0.5,
+        fire.strength * 0.18,
+        0,
+      );
+    }
+  }
+
+  /** Advances the night's flicker and lightning. */
+  public update(dt: number): void {
+    this.time += dt;
+    this.atmosphere?.update(dt);
+    this.moths?.update(this.time);
+  }
+
+  /** Puts the lights back to their base values. */
+  public dispose(): void {
+    this.atmosphere?.dispose();
+    this.moths?.dispose();
+  }
+
   private buildArena(): void {
     this.group.add(buildArena(this.layout));
 
-    const ambientLight = new THREE.HemisphereLight(0xdfeeff, 0x111827, 1.3);
+    // A pitch-black night: only a trace of sky light, so rooms and shadowed
+    // corners stay dark and the halogen lamps carry the scene.
+    const ambientLight = new THREE.HemisphereLight(0x24304a, 0x030509, 0.5);
     ambientLight.position.set(0, 8, 0);
     this.group.add(ambientLight);
 
-    // The map is 64 x 48 m, so the key light's shadow box has to cover it.
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    // A faint cold sky glow with shadows, so it never leaks through roofs.
+    // The map is 64 x 48 m, so the shadow box has to cover it.
+    const keyLight = new THREE.DirectionalLight(0x7487ad, 0.22);
     keyLight.position.set(18, 40, 22);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(4096, 4096);
@@ -38,19 +140,74 @@ export class Arena {
     keyLight.shadow.camera.bottom = -36;
     keyLight.shadow.camera.near = 1;
     keyLight.shadow.camera.far = 110;
+    // One 4096 map over 84 m: without a bias the flat tops of ducts and
+    // roofs shimmer (shadow acne), worst when a flash brightens the light.
+    keyLight.shadow.bias = -0.0004;
+    keyLight.shadow.normalBias = 0.06;
     this.group.add(keyLight);
 
-    // A soft fill from the other side so shaded faces and ramps stay readable.
-    const fillLight = new THREE.DirectionalLight(0x9db4d6, 0.6);
-    fillLight.position.set(-16, 14, -12);
-    this.group.add(fillLight);
+    const flickering: THREE.Light[] = [];
+    const halogens: Halogen[] = [];
+    const mothLamps: Array<{ position: THREE.Vector3; aim: THREE.Vector3 }> =
+      [];
 
-    const rimLight = new THREE.PointLight(0x7dd3fc, 1.2, 80, 2);
-    rimLight.position.set(-12, 9, -10);
-    this.group.add(rimLight);
+    // The site plans on the spawn-area walls.
+    for (const poster of this.layout.posters) {
+      const mesh = createFacilityPoster(this.layout, poster);
+
+      if (mesh) {
+        this.group.add(mesh);
+      }
+    }
 
     // Task lights and pendants over work areas: short range, no shadows.
-    for (const light of this.layout.lights) {
+    const lights = nightLights(this.layout);
+
+    for (const light of lights) {
+      if (light.target) {
+        // A floodlight: a cone aimed at its target, with a soft edge.
+        const spot = new THREE.SpotLight(
+          light.color,
+          light.intensity,
+          light.distance,
+          light.angle ?? 0.8,
+          0.65,
+          2,
+        );
+
+        spot.name = light.id;
+        spot.position.set(light.x, light.y, light.z);
+        spot.target.position.set(
+          light.target.x,
+          light.target.y,
+          light.target.z,
+        );
+        spot.castShadow = light.castShadow === true;
+
+        if (spot.castShadow) {
+          spot.shadow.mapSize.set(512, 512);
+          spot.shadow.camera.near = 0.5;
+          spot.shadow.camera.far = light.distance;
+          spot.shadow.bias = -0.0005;
+        }
+
+        this.group.add(spot);
+        mothLamps.push({
+          position: spot.position.clone(),
+          aim: spot.target.position.clone(),
+        });
+
+        const glow = createFixtureGlow(light);
+
+        if (glow) {
+          this.group.add(glow);
+          halogens.push({ light: spot, glow });
+        }
+
+        this.group.add(spot.target);
+        continue;
+      }
+
       const lamp = new THREE.PointLight(
         light.color,
         light.intensity,
@@ -59,8 +216,42 @@ export class Arena {
       );
 
       lamp.name = light.id;
+
+      if (FLICKERING.has(light.id)) {
+        flickering.push(lamp);
+      }
+
       lamp.position.set(light.x, light.y, light.z);
       this.group.add(lamp);
     }
+
+    const rain = createRain(this.layout, lights, ARENA_HALF_X, ARENA_HALF_Z);
+
+    this.group.add(rain);
+    this.rainLights = (rain.material as THREE.ShaderMaterial)
+      .uniforms as unknown as typeof this.rainLights;
+    this.group.add(
+      createPuddles(
+        this.layout,
+        lights,
+        (rain.material as THREE.ShaderMaterial).uniforms,
+        ARENA_HALF_X,
+        ARENA_HALF_Z,
+      ),
+    );
+    const sky = createSky();
+
+    this.group.add(sky.mesh);
+    this.moths = new Moths(mothLamps);
+    this.group.add(this.moths.group);
+    this.atmosphere = new NightAtmosphere(
+      keyLight,
+      ambientLight,
+      (rain.material as THREE.ShaderMaterial).uniforms.uFlash,
+      flickering,
+      halogens,
+      undefined,
+      sky,
+    );
   }
 }

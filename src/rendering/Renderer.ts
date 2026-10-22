@@ -16,9 +16,9 @@ export class Renderer {
 
     this.scene = new THREE.Scene();
 
-    this.scene.background = new THREE.Color(0x0b1020);
+    this.scene.background = new THREE.Color(0x02040a);
 
-    this.scene.fog = new THREE.Fog(0x0b1020, 60, 150);
+    this.scene.fog = new THREE.Fog(0x02040a, 45, 130);
 
     // ----------------------------------------
     // SIZE
