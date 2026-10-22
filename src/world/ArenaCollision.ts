@@ -116,9 +116,21 @@ export class ArenaCollision {
   public readonly halfZ = ARENA_HALF_Z;
 
   private readonly solids: Solid[];
+  /** Props that stop shots and throws but never a body (see ArenaLayout.shotSolids). */
+  private readonly shotSolids: BoxSolid[];
 
   /** Solids that are open (a hatch that has been opened): they are not there. */
   private readonly opened = new Set<Solid>();
+
+  /**
+   * The roof pieces around a hatch hole, with the hole and the hatch panel:
+   * a body whose centre is over an open hole drops through it instead of
+   * being pushed out by the hole's edges (the hole is narrower than a body).
+   */
+  private readonly holeEdges = new Map<
+    Solid,
+    { minX: number; maxX: number; minZ: number; maxZ: number; panel: Solid }
+  >();
 
   /** Walls, railings, posts and lids too narrow to stand on: they block, but are no floor. */
   private readonly thin = new Set<Solid>();
@@ -140,6 +152,7 @@ export class ArenaCollision {
 
   constructor(layout: ArenaLayout = ARENA_LAYOUT) {
     this.solids = allSolids(layout);
+    this.shotSolids = layout.shotSolids ?? [];
 
     for (const solid of this.solids) {
       // Walls, railings, hatch lids and tall posts too narrow to stand on. A low
@@ -182,6 +195,30 @@ export class ArenaCollision {
 
       if (lid) {
         this.opened.add(lid);
+      }
+    }
+
+    for (const hatch of layout.hatches) {
+      const panel = this.solids.find((s) => s.id === hatch.id);
+
+      if (!panel) {
+        continue;
+      }
+
+      for (const solid of this.solids) {
+        if (
+          solid.kind === "box" &&
+          solid !== panel &&
+          // The roof pieces round the hole, and the lid standing at its edge.
+          (solid.id === `${hatch.id}-lid` ||
+            Math.abs(solid.height - hatch.top) < 1e-6) &&
+          solid.minX <= hatch.maxX + 0.02 &&
+          solid.maxX >= hatch.minX - 0.02 &&
+          solid.minZ <= hatch.maxZ + 0.02 &&
+          solid.maxZ >= hatch.minZ - 0.02
+        ) {
+          this.holeEdges.set(solid, { ...hatch, panel });
+        }
       }
     }
 
@@ -314,6 +351,20 @@ export class ArenaCollision {
     const drawn = this.solidHeight(solid, x, z, margin);
 
     if (drawn === NO_SURFACE) {
+      return false;
+    }
+
+    // Over an open hatch hole: the body goes down through it.
+    const edge = this.holeEdges.get(solid);
+
+    if (
+      edge &&
+      this.opened.has(edge.panel) &&
+      x > edge.minX &&
+      x < edge.maxX &&
+      z > edge.minZ &&
+      z < edge.maxZ
+    ) {
       return false;
     }
 
@@ -839,6 +890,19 @@ export class ArenaCollision {
       const x = ax + (bx - ax) * t;
       const y = ay + (by - ay) * t;
       const z = az + (bz - az) * t;
+
+      for (const prop of this.shotSolids) {
+        if (
+          x >= prop.minX &&
+          x <= prop.maxX &&
+          z >= prop.minZ &&
+          z <= prop.maxZ &&
+          y >= (prop.bottom ?? 0) &&
+          y <= prop.height
+        ) {
+          return i === 0 ? 0 : (i - 1) / samples;
+        }
+      }
 
       for (const solid of this.near(x, z, 0)) {
         // A little tolerance so grazing a top edge is not a block.

@@ -23,6 +23,9 @@ import {
   type Vec3,
   type PartRole,
   type FramePart,
+  type GeneratorDefinition,
+  type PickupDefinition,
+  type PosterDefinition,
   type RiseDirection,
   type RoomDefinition,
   type Side,
@@ -172,6 +175,10 @@ export class MapBuilder {
       decals: [],
       curves: [],
       lights: [],
+      generators: [],
+      pickups: [],
+      posters: [],
+      shotSolids: [],
       panes: [],
     };
   }
@@ -725,223 +732,6 @@ export class MapBuilder {
   }
 
   /**
-   * An observation ledge on a tall narrow pillar, shaped like a steel rail: a
-   * long thin I-beam (3.5 m) running straight out of the side of the pillar near
-   * its top (`dir` is the unit x or z step out of it), with a narrow top plate
-   * (50 cm wide, 7 cm thick) to stand on, held by one compact bracket. `y` is
-   * the top of the plate. No ladder and no railing. A hang point runs along its
-   * outer end.
-   */
-  public createPerch(
-    id: string,
-    name: string,
-    pillarX: number,
-    pillarZ: number,
-    dir: readonly [number, number],
-    y: number,
-    floorY = 0,
-  ): void {
-    const pillar = 0.25;
-    const length = 3.5;
-    const width = 0.5;
-    const thickness = 0.07;
-    const beamDepth = 0.3;
-    const under = y - thickness;
-    const [dx, dz] = dir;
-    const face = pillar / 2;
-    const half = width / 2;
-    const end = face + length;
-    const slab: Bounds =
-      dx !== 0
-        ? {
-            minX: Math.min(pillarX + dx * face, pillarX + dx * end),
-            maxX: Math.max(pillarX + dx * face, pillarX + dx * end),
-            minZ: pillarZ - half,
-            maxZ: pillarZ + half,
-          }
-        : {
-            minX: pillarX - half,
-            maxX: pillarX + half,
-            minZ: Math.min(pillarZ + dz * face, pillarZ + dz * end),
-            maxZ: Math.max(pillarZ + dz * face, pillarZ + dz * end),
-          };
-    const at = (u: number, level: number): Vec3 => [
-      pillarX + dx * u,
-      level,
-      pillarZ + dz * u,
-    ];
-
-    // The tall narrow pillar, a little over the rail.
-    this.createColumn(
-      `${id}-pillar`,
-      pillarX,
-      pillarZ,
-      floorY,
-      y + 0.3,
-      pillar,
-    );
-
-    // The thin top plate: the surface you stand on.
-    this.layout.platforms.push({
-      kind: "box",
-      id: `${id}-deck`,
-      role: "catwalk",
-      ...slab,
-      base: under,
-      bottom: under,
-      height: y,
-    });
-    this.layout.hangZones.push({
-      id,
-      name,
-      x: pillarX + dx * end,
-      z: pillarZ + dz * end,
-      y: under - beamDepth,
-      axis: dx !== 0 ? "z" : "x",
-      length: width,
-      floorY,
-    });
-
-    // The I-beam under the plate: top flange, web and bottom flange, like a rail.
-    this.createSteel(
-      `${id}-rail`,
-      "beam",
-      at(0, under - beamDepth / 2),
-      at(end, under - beamDepth / 2),
-      "i",
-      width * 0.8,
-      beamDepth,
-    );
-
-    // One compact bracket: from the pillar, 1.2 m down, out along the rail.
-    this.createSteel(
-      `${id}-bracket`,
-      "brace",
-      at(face, under - beamDepth - 1.2),
-      at(face + 1.6, under - beamDepth),
-      "box",
-      0.07,
-      0.09,
-    );
-  }
-
-  /**
-   * A light post against a wall near its top: one tall steel pole standing on
-   * the floor 0.5 m off the wall, rising a little above `y`, with a slim arm
-   * out of its top into the arena (`dir` is the unit x or z step away from
-   * the wall), a knee brace under the arm and a lamp hood at its tip. The top
-   * plate on the arm (30 cm wide, 7 cm thick, top at `y`) is the ledge where a
-   * light is fixed. `face` is the wall's inner face, `along` the middle of the
-   * post along the wall. A hang point sits on the arm, short of the lamp.
-   */
-  public createWallRail(
-    id: string,
-    name: string,
-    face: number,
-    along: number,
-    dir: readonly [number, number],
-    y: number,
-    floorY = 0,
-  ): void {
-    const poleAt = 0.5;
-    const size = 0.3;
-    const start = poleAt + size / 2;
-    const length = 3.4;
-    const width = 0.3;
-    const thickness = 0.07;
-    const armDepth = 0.18;
-    const under = y - thickness;
-    const [dx, dz] = dir;
-    const half = width / 2;
-    const out = face + (dx !== 0 ? dx : dz) * length;
-    const from = face + (dx !== 0 ? dx : dz) * start;
-    const slab: Bounds =
-      dx !== 0
-        ? {
-            minX: Math.min(from, out),
-            maxX: Math.max(from, out),
-            minZ: along - half,
-            maxZ: along + half,
-          }
-        : {
-            minX: along - half,
-            maxX: along + half,
-            minZ: Math.min(from, out),
-            maxZ: Math.max(from, out),
-          };
-    const at = (u: number, level: number): Vec3 =>
-      dx !== 0 ? [face + dx * u, level, along] : [along, level, face + dz * u];
-    const hangAt = length - 1.0;
-    const hang = at(hangAt, 0);
-
-    this.layout.platforms.push({
-      kind: "box",
-      id: `${id}-deck`,
-      role: "catwalk",
-      ...slab,
-      base: under,
-      bottom: under,
-      height: y,
-    });
-    this.layout.hangZones.push({
-      id,
-      name,
-      x: hang[0],
-      z: hang[2],
-      y: under - armDepth,
-      axis: dx !== 0 ? "z" : "x",
-      length: width,
-      floorY,
-    });
-
-    // The pole, from the floor to a little over the arm.
-    const pole = at(poleAt, 0);
-
-    this.createSteelColumn(
-      `${id}-post`,
-      pole[0],
-      pole[2],
-      floorY,
-      y + 0.6,
-      size,
-      dx !== 0 ? "z" : "x",
-    );
-
-    // The arm out of the pole's top, under the plate.
-    this.createSteel(
-      `${id}-rail`,
-      "beam",
-      at(poleAt, under - armDepth / 2),
-      at(length, under - armDepth / 2),
-      "box",
-      0.16,
-      armDepth,
-    );
-
-    // A knee brace from the pole up to the arm.
-    this.createSteel(
-      `${id}-bracket`,
-      "brace",
-      at(poleAt, under - armDepth - 1.0),
-      at(poleAt + 1.5, under - armDepth),
-      "box",
-      0.08,
-      0.09,
-    );
-
-    // The lamp hood at the tip: a flat shade hanging under the end of the arm.
-    this.createSteel(
-      `${id}-lamp`,
-      "support",
-      at(length - 0.5, under - armDepth - 0.07),
-      at(length + 0.1, under - armDepth - 0.07),
-      "box",
-      0.34,
-      0.14,
-    );
-  }
-
-  /**
    * A Warren truss under a flat roof: a top chord at the roof's underside, a
    * bottom chord `rise` below it, and diagonals zig-zagging between, with a post
    * at each end. Runs from `from` to `to` (same height), flush to what holds it.
@@ -1249,6 +1039,8 @@ export class MapBuilder {
       minZ: number;
       maxZ: number;
       top: number;
+      /** Underside above `baseY` (default: it stands on it): for a part that hangs. */
+      bottom?: number;
       /** Parts that stop a shot (a framework); the box still stops a body. */
       frame?: FramePart[];
     }>,
@@ -1276,8 +1068,11 @@ export class MapBuilder {
         maxX: b.maxX,
         minZ: b.minZ,
         maxZ: b.maxZ,
-        bottom: baseY,
-        height: baseY + b.top,
+        bottom: baseY + (b.bottom ?? 0),
+        // A body standing on top needs 1.8 m under a 3.8 m ceiling: a piece of
+        // furniture a body can climb onto is never 1.9 to 2.1 m, or it would
+        // put a head into the roof and be thrown out. (Its drawing is unchanged.)
+        height: baseY + (b.top > 1.9 && b.top <= 2.1 ? 1.9 : b.top),
       });
       solids.push(solidId);
     });
@@ -1301,7 +1096,7 @@ export class MapBuilder {
    * A slanted glass cover along z: a row of panes tilted from `lowY` at x =
    * `lowX` up to `highY` at x = `highX`, on a steel frame (a rail along every
    * seam and a horizontal one at the top and bottom). Pane number `open`
-   * (counted along z) is left out: an open pane to go through. The panes are
+   * (counted along z; or a list of them) is left out: an open pane to go through. The panes are
    * drawn tinted; their collision is a row of hidden slices that follow the
    * slope, so nobody walks through a closed pane.
    */
@@ -1314,8 +1109,10 @@ export class MapBuilder {
     zFrom: number,
     zTo: number,
     panes: number,
-    open: number,
+    open: number | number[],
+    solid = true,
   ): void {
+    const openPanes = new Set(Array.isArray(open) ? open : [open]);
     const step = (zTo - zFrom) / panes;
     const rise = highY - lowY;
     const run = highX - lowX;
@@ -1350,7 +1147,7 @@ export class MapBuilder {
     }
 
     for (let i = 0; i < panes; i++) {
-      if (i === open) {
+      if (openPanes.has(i)) {
         continue;
       }
 
@@ -1366,6 +1163,11 @@ export class MapBuilder {
           [lowX, lowY, z1],
         ],
       });
+
+      // A cover that is only drawn has no collision at all.
+      if (!solid) {
+        continue;
+      }
 
       // Collision: slices 0.4 m wide in x, each solid from where the pane is
       // lowest over it up to the roof (bottom is above any head below it).
@@ -1394,9 +1196,57 @@ export class MapBuilder {
     }
   }
 
-  /** A short-range point light over a work area. */
+  /** A short-range point light over a work area (or a focused floodlight). */
   public addLight(light: LightDefinition): void {
     this.layout.lights.push(light);
+  }
+
+  /** A pickup lying at (x, y, z) that adds to a player's utility. */
+  public addPickup(pickup: PickupDefinition): void {
+    this.layout.pickups.push(pickup);
+  }
+
+  /**
+   * Makes a small drawn prop stop shots, throws and sight (not bodies): one
+   * block from `bottom` to `top` above `baseY`.
+   */
+  public addShotBlock(
+    id: string,
+    baseY: number,
+    minX: number,
+    maxX: number,
+    minZ: number,
+    maxZ: number,
+    top: number,
+    bottom = 0,
+  ): void {
+    (this.layout.shotSolids ??= []).push({
+      kind: "box",
+      id,
+      role: "prop",
+      hidden: true,
+      minX,
+      maxX,
+      minZ,
+      maxZ,
+      bottom: baseY + bottom,
+      height: baseY + top,
+    });
+  }
+
+  /** A site plan poster on a wall. */
+  public addPoster(poster: PosterDefinition): void {
+    this.layout.posters.push(poster);
+  }
+
+  /** The staircases defined so far (to dress their steps). */
+  public getStairs(): readonly StairsDefinition[] {
+    return this.layout.stairs;
+  }
+
+  /** A generator with a filler cap at (x, y, z) that players can fuel. */
+  public addGenerator(generator: GeneratorDefinition): void {
+    this.layout.generators.push(generator);
   }
 
   /** A flat mark on a floor (drawn only), such as oil or a faded line. */
@@ -1432,7 +1282,7 @@ export class MapBuilder {
     const elements = shape.elements.map((e) =>
       alongX
         ? e
-        : e.shape === "pipe"
+        : e.shape === "pipe" || e.shape === "cable"
           ? { ...e, x: e.z, z: e.x, ry: Math.PI / 2 - e.ry }
           : { ...e, x: e.z, z: e.x, sx: e.sz, sz: e.sx },
     );

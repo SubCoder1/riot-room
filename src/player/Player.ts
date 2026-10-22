@@ -551,6 +551,9 @@ export class Player {
 
   /** The ladder being climbed, if any. */
   private ladder: LadderDefinition | null = null;
+  /** A climbing key held since the grab (ignored until it is released). */
+  private climbHeldUp = false;
+  private climbHeldDown = false;
 
   public setLadders(ladders: readonly LadderDefinition[]): void {
     this.ladders = ladders;
@@ -607,7 +610,7 @@ export class Player {
   }
 
   /** Grabs the ladder in reach. Returns false if there is none. */
-  public grabLadder(): boolean {
+  public grabLadder(held: { up?: boolean; down?: boolean } = {}): boolean {
     const ladder = this.ladderInReach();
 
     if (!ladder) {
@@ -621,6 +624,12 @@ export class Player {
     );
 
     this.ladder = ladder;
+    // A key already down keeps climbing (W held to walk up to the foot goes
+    // straight up). Only the key that would carry the player off the end they
+    // grabbed at is ignored until released: W at the top, S at the bottom, so
+    // E there does not snap them back out.
+    this.climbHeldUp = held.up === true && feet >= ladder.topY - 0.3;
+    this.climbHeldDown = held.down === true && feet <= ladder.bottomY + 0.3;
     this.position.set(spot.x, feet + this.eyeHeight, spot.z);
     this.velocity.set(0, 0, 0);
     this.grounded = false;
@@ -657,8 +666,15 @@ export class Player {
   /** One frame on a ladder: W / S climb, Space jumps off, the top steps onto the floor. */
   private updateClimb(dt: number, input: InputManager): void {
     const ladder = this.ladder!;
+    const wDown = input.isPressed("KeyW");
+    const sDown = input.isPressed("KeyS");
+
+    this.climbHeldUp = this.climbHeldUp && wDown;
+    this.climbHeldDown = this.climbHeldDown && sDown;
+
     const up =
-      (input.isPressed("KeyW") ? 1 : 0) - (input.isPressed("KeyS") ? 1 : 0);
+      (wDown && !this.climbHeldUp ? 1 : 0) -
+      (sDown && !this.climbHeldDown ? 1 : 0);
     const before = this.position.y - this.eyeHeight;
     let feet = before + up * CLIMB.SPEED * dt;
 

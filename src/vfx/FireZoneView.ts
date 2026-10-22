@@ -1,6 +1,12 @@
 import * as THREE from "three";
 
-import { fireIntensity, fireRadius, type FireZone } from "../combat/FireZones";
+import {
+  fireIntensity,
+  fireDyingFactor,
+  fireRadius,
+  FIRE_SPREAD_DONE,
+  type FireZone,
+} from "../combat/FireZones";
 import { MOLOTOV_CONFIG } from "../combat/MolotovConfig";
 import {
   FLAME_INNER_BOTTOM,
@@ -105,6 +111,14 @@ export class FireZoneView {
   private readonly color = new THREE.Color();
   private readonly euler = new THREE.Euler();
 
+  /**
+   * Height of the surface at (x, z) as seen from `fromY`: each tongue of flame
+   * stands on it, so a fire that spreads past the edge of a table or crate
+   * burns on the floor beyond instead of hanging in the air.
+   */
+  public surfaceY: ((x: number, z: number, fromY: number) => number) | null =
+    null;
+
   constructor() {
     for (let i = 0; i < MOLOTOV_CONFIG.MOLOTOV_MAX_ZONES; i++) {
       this.entries.push(this.createEntry());
@@ -157,15 +171,18 @@ export class FireZoneView {
   }
 
   private draw(entry: Entry, zone: FireZone, time: number): void {
-    const radius = fireRadius(zone.age);
+    // Tongues stay where they stand once the fire has spread: in the fade they
+    // only die out, they never slide inward with the shrinking burn radius.
+    const radius = fireRadius(Math.min(zone.age, FIRE_SPREAD_DONE));
     const intensity = fireIntensity(zone.age);
     const seed = zone.seed;
 
     entry.group.position.copy(zone.position);
 
     // The glow covers exactly the gameplay radius.
-    entry.glow.scale.setScalar(Math.max(radius, 0.01));
-    this.glowMaterial.opacity = 0.2 + 0.8 * intensity;
+    // (The flat glow disc is not drawn: it hung in the air over uneven ground
+    // and showed as a hard-edged ring. The fire's light does its job.)
+    entry.glow.visible = false;
 
     for (let i = 0; i < FLAMES; i++) {
       const angle = hash(seed, i, 0) * Math.PI * 2;
@@ -179,8 +196,15 @@ export class FireZoneView {
           Math.sin(time * (6 + hash(seed, i, 2) * 6) + hash(seed, i, 3) * 6.28);
       // Flames come and go a little, leaving gaps.
       const alive = 0.5 + 0.5 * Math.sin(time * 1.7 + hash(seed, i, 4) * 6.28);
+      // As the fire dies the tongues go out one at a time, each at its own
+      // moment, sinking and guttering first; the last few are low and ragged.
+      const dying = fireDyingFactor(zone.age, hash(seed, i, 30));
+      const gutter =
+        dying < 1 ? 0.75 + 0.25 * Math.sin(time * 23 + i * 3.1) : 1;
       const height =
         (0.4 + 0.6 * hash(seed, i, 5)) *
+        dying *
+        gutter *
         intensity *
         flicker *
         (0.55 + 0.45 * alive);
@@ -188,11 +212,23 @@ export class FireZoneView {
       // Tongues lean and sway a little, each in its own rhythm.
       const sway = hash(seed, i, 9) * 6.28;
 
-      this.position.set(
-        Math.cos(angle) * along * radius,
-        0,
-        Math.sin(angle) * along * radius,
-      );
+      const fx = Math.cos(angle) * along * radius;
+      const fz = Math.sin(angle) * along * radius;
+      const ground = this.surfaceY
+        ? Math.min(
+            Math.max(
+              this.surfaceY(
+                zone.position.x + fx,
+                zone.position.z + fz,
+                zone.position.y + 0.5,
+              ) - zone.position.y,
+              -2,
+            ),
+            0.6,
+          )
+        : 0;
+
+      this.position.set(fx, ground, fz);
       this.euler.set(
         0.18 * Math.sin(time * 3 + sway),
         hash(seed, i, 7) * 6.28,

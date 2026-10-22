@@ -74,6 +74,27 @@ export function fireIntensity(age: number): number {
   return clamp01(age / 0.25);
 }
 
+/**
+ * 0 to 1: how much of a single tongue of flame is left. While the fire burns
+ * it is 1; in the fade each tongue (given a number `rank` in 0 to 1) goes out
+ * at its own moment, the highest ranks first, so the fire thins out and dies
+ * in patches instead of shrinking evenly.
+ */
+export function fireDyingFactor(age: number, rank: number): number {
+  if (age < ACTIVE_END) {
+    return 1;
+  }
+
+  const progress = clamp01((age - ACTIVE_END) / C.MOLOTOV_FIRE_FADE_TIME);
+  // Tongue `rank` starts to sink when progress passes (1 - rank) * 0.7.
+  const start = (1 - rank) * 0.7;
+
+  return 1 - clamp01((progress - start) / 0.3);
+}
+
+/** Age at which the fire has finished spreading (its drawn tongues stop moving). */
+export const FIRE_SPREAD_DONE = SPREAD_END;
+
 /** Seconds from ignition until the fire is gone. */
 export const FIRE_LIFETIME = LIFE;
 

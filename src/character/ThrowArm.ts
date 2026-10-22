@@ -168,6 +168,27 @@ export class ThrowArm {
   }
 
   /**
+   * Where the lit Molotov's flame is in the world, for the light it gives. False
+   * when no Molotov is held or it is not lit.
+   */
+  public getHeldFlame(out: THREE.Vector3): boolean {
+    const flame = this.bottle?.getObjectByName("flame");
+
+    if (
+      this.heldKind !== "molotov" ||
+      !this.bottle?.visible ||
+      !flame?.visible
+    ) {
+      return false;
+    }
+
+    flame.updateWorldMatrix(true, false);
+    flame.getWorldPosition(out);
+
+    return true;
+  }
+
+  /**
    * Where a thrown item leaves the hand: the held item's position. False if
    * the model is not ready.
    */

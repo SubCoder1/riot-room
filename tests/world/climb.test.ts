@@ -8,8 +8,8 @@ import {
   ladderYaw,
 } from "../../src/player/Climb";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
-import { ladderBody } from "../../src/world/ArenaLayout";
-import { NORTH, spawnPlayer } from "./playerHarness";
+import { ROOF_HIGH, ladderBody } from "../../src/world/ArenaLayout";
+import { NORTH, spawnPlayer, world } from "./playerHarness";
 
 const ladders = ARENA_LAYOUT.ladders;
 
@@ -384,6 +384,82 @@ describe("Grabbing on the move, and solid ladders", () => {
     for (const ladder of ladders) {
       expect(ladderBody(ladder).height, ladder.id).toBeLessThan(ladder.topY);
       expect(ladderBody(ladder).bottom, ladder.id).toBe(ladder.bottomY);
+    }
+  });
+});
+
+describe("Grabbing a ladder at the top while holding W", () => {
+  it("does not carry the player straight back out; S then climbs down", () => {
+    const ladder = ladders[0];
+    const p = spawnPlayer(
+      ladder.exit.x,
+      ladder.topY,
+      ladder.exit.z,
+      ladderYaw(ladder) + Math.PI,
+    );
+
+    p.step(0.05);
+    p.input.keys.add("KeyW");
+
+    const grabbed = p.player.grabLadder({ up: true });
+
+    if (grabbed) {
+      p.step(1);
+
+      // Still on the ladder with W held the whole time.
+      expect(p.player.isClimbing).toBe(true);
+
+      p.input.keys.clear();
+      p.input.keys.add("KeyS");
+      p.step(0.5);
+
+      expect(p.feet()).toBeLessThan(ladder.topY - 0.5);
+    }
+  });
+});
+
+describe("Open hatch", () => {
+  it("a body over the open hole drops through it", () => {
+    const hatch = ARENA_LAYOUT.hatches[0];
+    const x = (hatch.minX + hatch.maxX) / 2;
+    const z = (hatch.minZ + hatch.maxZ) / 2;
+    const p = spawnPlayer(x, hatch.top, z, 0);
+
+    // Shut: the panel holds the player up.
+    p.step(1);
+    expect(p.feet()).toBeCloseTo(hatch.top, 1);
+
+    world.setOpen(hatch.id, true);
+    p.step(3);
+    world.setOpen(hatch.id, false);
+
+    expect(p.feet()).toBeLessThan(hatch.top - 2);
+  });
+});
+
+describe("Grabbing a ladder at its foot while holding W", () => {
+  it("climbs on at once, with no second tap", () => {
+    const { p } = atFoot(0);
+
+    p.input.keys.add("KeyW");
+    expect(p.player.grabLadder({ up: true })).toBe(true);
+    p.step(1);
+
+    expect(p.feet()).toBeGreaterThan(CLIMB.SPEED * 0.9);
+  });
+});
+
+describe("The storage rooftop", () => {
+  it("is open to the Warehouse's roof: a walker crosses x 18 at the same height", () => {
+    for (const z of [16.8, 17.2, 23, 23.3]) {
+      const p = spawnPlayer(14, ROOF_HIGH, z, -Math.PI / 2);
+
+      p.step(0.2);
+      p.input.keys.add("KeyW");
+      p.step(3);
+
+      expect(p.player.position.x, `z ${z}`).toBeGreaterThan(20);
+      expect(p.feet(), `z ${z}`).toBeCloseTo(ROOF_HIGH, 1);
     }
   });
 });

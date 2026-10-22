@@ -5,6 +5,9 @@
  * that burns you.
  */
 export const MOLOTOV_CONFIG = {
+  /** How many a player starts with. */
+  MOLOTOV_START_QUANTITY: 1,
+
   // ---- Flight (the shared model: straight at first, then an arc) ----
   MOLOTOV_THROW_SPEED: 24,
   /** Downward acceleration, m/s^2, once gravity has fully built up. */
@@ -27,7 +30,7 @@ export const MOLOTOV_CONFIG = {
   /** Seconds the fire stays at full size, counted from when it is fully spread. */
   MOLOTOV_DURATION: 7.0,
   /** Seconds the fire shrinks and fades out at the end (it burns, then is removed). */
-  MOLOTOV_FIRE_FADE_TIME: 0.8,
+  MOLOTOV_FIRE_FADE_TIME: 1.8,
   /** At most this many fires exist at once (the oldest is put out first). */
   MOLOTOV_MAX_ZONES: 8,
 

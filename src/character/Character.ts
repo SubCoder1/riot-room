@@ -2058,6 +2058,11 @@ export class Character {
     this.throwArm.setHeld(held, lit, lighting, pinPull);
   }
 
+  /** Where the held lit Molotov's flame is (for its light). False if none is lit. */
+  public getHeldFlame(out: THREE.Vector3): boolean {
+    return this.throwArm.getHeldFlame(out);
+  }
+
   /** Where a thrown item leaves the hand. False if the model is not ready. */
   public getThrowReleasePoint(out: THREE.Vector3): boolean {
     return this.throwArm.getReleasePoint(out);
