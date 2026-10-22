@@ -1,4 +1,5 @@
 import { GRENADE_CONFIG } from "../combat/GrenadeConfig";
+import { MOLOTOV_CONFIG } from "../combat/MolotovConfig";
 import { SMOKE_CONFIG } from "../combat/SmokeConfig";
 
 /**
@@ -60,7 +61,7 @@ export const UTILITY_SLOTS: readonly UtilityDefinition[] = [
     name: "Molotov",
     icon: "molotov",
     counted: true,
-    startingQuantity: 0,
+    startingQuantity: MOLOTOV_CONFIG.MOLOTOV_START_QUANTITY,
     angle: 72,
   },
   {

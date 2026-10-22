@@ -21,6 +21,12 @@ import { createBarrierMaterial } from "./BarrierMaterial";
 import { createMetalTexture } from "./MetalTexture";
 import { createCeilingMaterial } from "./CeilingMaterial";
 import { createCeilingTextures } from "./CeilingTexture";
+import {
+  createBlockworkTextures,
+  createFormworkTextures,
+  createRawMaterial,
+  type RawSurface,
+} from "./RawConcrete";
 
 /**
  * The map's reusable surface materials, made on first use and shared by every
@@ -76,6 +82,7 @@ export class IndustrialMaterialLibrary {
     THREE.MeshStandardMaterial
   >();
   private readonly bricks = new Map<BrickVariant, THREE.MeshStandardMaterial>();
+  private readonly raws = new Map<RawSurface, THREE.MeshStandardMaterial>();
 
   /** One of the three floor-concrete texture sets (made on first use). */
   public concrete(index = 0): ConcreteTextures {
@@ -155,6 +162,26 @@ export class IndustrialMaterialLibrary {
     }
 
     return (hash >>> 0) % 100 < 55 ? "dark" : "worn";
+  }
+
+  /**
+   * An unfinished surface: exposed blockwork or board-formed cast concrete
+   * (each made once, on first use).
+   */
+  public raw(kind: RawSurface): THREE.MeshStandardMaterial {
+    let material = this.raws.get(kind);
+
+    if (!material) {
+      material = createRawMaterial(
+        kind,
+        kind === "blockwork"
+          ? createBlockworkTextures()
+          : createFormworkTextures(),
+      );
+      this.raws.set(kind, material);
+    }
+
+    return material;
   }
 
   /** One of the three painted-concrete texture sets (made on first use). */
@@ -272,6 +299,7 @@ export class IndustrialMaterialLibrary {
       materials:
         this.floors.size +
         this.bricks.size +
+        this.raws.size +
         this.painted.size +
         this.barriers.size +
         (this.steelMaterial ? 1 : 0) +

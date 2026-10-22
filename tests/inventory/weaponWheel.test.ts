@@ -75,14 +75,16 @@ describe("PlayerUtilities", () => {
     expect(utilities.remove("EMPTY")).toBe(false);
   });
 
-  it("starts with the configured grenades and smoke grenades, no molotovs; Fists has no quantity", () => {
+  it("starts with exactly one grenade, one smoke grenade and one molotov; Fists has no quantity", () => {
     expect(utilities.quantityOf("GRENADE")).toBe(
       GRENADE_CONFIG.GRENADE_START_QUANTITY,
     );
     expect(utilities.quantityOf("SMOKE")).toBe(
       SMOKE_CONFIG.SMOKE_START_QUANTITY,
     );
-    expect(utilities.quantityOf("MOLOTOV")).toBe(0);
+    expect(utilities.quantityOf("GRENADE")).toBe(1);
+    expect(utilities.quantityOf("SMOKE")).toBe(1);
+    expect(utilities.quantityOf("MOLOTOV")).toBe(1);
     expect(utilities.quantityOf("FISTS")).toBeNull();
   });
 
@@ -96,7 +98,7 @@ describe("PlayerUtilities", () => {
     utilities.add("SMOKE", 4);
 
     expect(utilities.quantityOf("GRENADE")).toBe(grenades + 2);
-    expect(utilities.quantityOf("MOLOTOV")).toBe(1);
+    expect(utilities.quantityOf("MOLOTOV")).toBe(2);
     expect(utilities.quantityOf("SMOKE")).toBe(smoke + 4);
   });
 
@@ -107,7 +109,7 @@ describe("PlayerUtilities", () => {
     expect(utilities.remove("GRENADE")).toBe(true);
     expect(utilities.quantityOf("GRENADE")).toBe(grenades - 1);
     expect(utilities.quantityOf("SMOKE")).toBe(smoke);
-    expect(utilities.quantityOf("MOLOTOV")).toBe(0);
+    expect(utilities.quantityOf("MOLOTOV")).toBe(1);
   });
 
   it("add and remove ignore nonsense and never go below zero", () => {
@@ -139,6 +141,7 @@ describe("PlayerUtilities", () => {
   });
 
   it("selecting Fists, or a utility with none left, falls back to fists", () => {
+    utilities.remove("MOLOTOV", 1); // (the test starts with none)
     utilities.select("GRENADE");
     expect(utilities.usingFists).toBe(false);
     expect(utilities.active).toBe("GRENADE");
@@ -370,6 +373,7 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
   });
 
   it("choosing Fists returns the player to fists; a utility with none left does too", () => {
+    utilities.remove("MOLOTOV", 1); // (the test starts with none)
     utilities.select("GRENADE");
     expect(utilities.usingFists).toBe(false);
 

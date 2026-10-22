@@ -52,3 +52,39 @@ const SHARED_BRICK: Readonly<Record<string, string>> = {
 export function isBrickOuterWall(side: string): boolean {
   return BRICK_OUTER_WALLS.includes(side);
 }
+
+/**
+ * Parts of the building that were never finished. Exposed blockwork: the
+ * rooftop walls that were laid but never rendered, and a stack of blocks
+ * waiting beside them. Board-formed cast concrete: the bare columns, the
+ * stair and plant bulkheads on the roofs, and the cast ledges. Matched by the
+ * start of a piece's id.
+ */
+const BLOCKWORK_PREFIXES: readonly string[] = [
+  "roofwall-archive",
+  "roofwall-server",
+  "roofwall-break",
+  "roofwall-armory",
+  "ledge-west-terrace",
+  "ledge-plaza-low",
+];
+
+const FORMWORK_PREFIXES: readonly string[] = [
+  "column-hall-",
+  "column-plaza-",
+  "hut-",
+  "ledge-east-deck",
+  "ledge-plaza-high",
+];
+
+export function rawSurfaceFor(id: string): "blockwork" | "formwork" | null {
+  if (BLOCKWORK_PREFIXES.some((prefix) => id.startsWith(prefix))) {
+    return "blockwork";
+  }
+
+  if (FORMWORK_PREFIXES.some((prefix) => id.startsWith(prefix))) {
+    return "formwork";
+  }
+
+  return null;
+}

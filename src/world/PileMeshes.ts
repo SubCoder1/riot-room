@@ -33,6 +33,14 @@ const pipeMaterial = new THREE.MeshStandardMaterial({
   metalness: 0.55,
 });
 
+/** Insulated cable: dull rubber, not shiny metal. */
+const cableMaterial = new THREE.MeshStandardMaterial({
+  name: "PileCables",
+  vertexColors: true,
+  roughness: 0.88,
+  metalness: 0,
+});
+
 const pieceMaterial = new THREE.MeshStandardMaterial({
   name: "PilePieces",
   vertexColors: true,
@@ -119,6 +127,15 @@ function pipeGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
+/** A 1 x 1 x 1 closed cylinder lying along x: a length of cable. */
+function cableGeometry(): THREE.BufferGeometry {
+  const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, false);
+
+  geometry.rotateZ(Math.PI / 2);
+
+  return geometry;
+}
+
 function brickGeometry(): THREE.BufferGeometry {
   return new THREE.BoxGeometry(1, 1, 1, 1, 1, 1);
 }
@@ -170,7 +187,11 @@ function placed(
 
     shade.copy(color).multiplyScalar(k);
 
-    if (element.shape === "pipe") {
+    if (element.shape === "cable") {
+      // Plain, even insulation: no rims and no banding, so a run built from
+      // many short pieces reads as one smooth cable.
+      shade.copy(color).multiplyScalar(0.95);
+    } else if (element.shape === "pipe") {
       const radial = Math.hypot(position.getY(i), position.getZ(i));
 
       if (Math.abs(x) > 0.495) {
@@ -241,6 +262,7 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
     plank: plankGeometry(),
     chunk: chunkGeometry(),
     pipe: pipeGeometry(),
+    cable: cableGeometry(),
   };
   const parts: Record<keyof typeof sources, THREE.BufferGeometry[]> = {
     bag: [],
@@ -248,6 +270,7 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
     plank: [],
     chunk: [],
     pipe: [],
+    cable: [],
   };
 
   group.name = "BuildingMaterial";
@@ -286,7 +309,9 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
         ? rubbleMaterial
         : shape === "pipe"
           ? pipeMaterial
-          : pieceMaterial,
+          : shape === "cable"
+            ? cableMaterial
+            : pieceMaterial,
     );
 
     mesh.name = `Piles-${shape}`;

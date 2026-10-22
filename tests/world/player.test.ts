@@ -35,9 +35,9 @@ describe("Player on the map", () => {
     expect(feet()).toBeCloseTo(0);
   });
 
-  it("walks up the south-west staircase to the landing, grounded the whole way", () => {
-    // In the pocket at the foot of the stairs (low end), facing north.
-    const p = spawnPlayer(-16, 0, 10.6, NORTH);
+  it("walks up the north-west spawn staircase to the walkway, grounded the whole way", () => {
+    // At the foot of the stairs (low end), facing east.
+    const p = spawnPlayer(-29.5, 0, -15.8, EAST);
     let airborne = 0;
 
     walk(p, 6, false, () => {
@@ -46,12 +46,12 @@ describe("Player on the map", () => {
 
     expect(p.feet()).toBeCloseTo(UPPER, 2);
     expect(p.player.isGrounded).toBe(true);
-    expect(p.player.position.z).toBeLessThan(-3.2); // on the landing
+    expect(p.player.position.x).toBeGreaterThan(-21); // on the first floor
     expect(airborne).toBeLessThan(6);
   });
 
-  it("sprints up the north-east staircase to the landing, grounded the whole way", () => {
-    const p = spawnPlayer(15.5, 0, -10.8, SOUTH);
+  it("sprints up the north-east spawn staircase to the dock, grounded the whole way", () => {
+    const p = spawnPlayer(30.6, 0, -14.3, WEST);
     let airborne = 0;
 
     walk(p, 6, true, () => {
@@ -60,12 +60,12 @@ describe("Player on the map", () => {
 
     expect(p.feet()).toBeCloseTo(UPPER, 2);
     expect(p.player.isGrounded).toBe(true);
-    expect(p.player.position.z).toBeGreaterThan(2.4);
+    expect(p.player.position.x).toBeLessThan(22);
     expect(airborne).toBeLessThan(6);
   });
 
   it("walks back down a staircase without a fall", () => {
-    const p = spawnPlayer(-16, UPPER, -5, SOUTH);
+    const p = spawnPlayer(-19.5, UPPER, -15.8, WEST);
     let airborne = 0;
 
     walk(p, 6, false, () => {
@@ -316,45 +316,6 @@ describe("Player on the map", () => {
     expect(up.player.position.z).toBeGreaterThan(3);
   });
 
-  it.each(["west", "east", "north", "south"])(
-    "stands, crouches and walks along the %s perch, and drops off its outer edge to a lower surface",
-    (name) => {
-      const deck = layout.platforms.find(
-        (p) => p.id === `hang-perch-${name}-deck`,
-      )!;
-      const cx = (deck.minX + deck.maxX) / 2;
-      const cz = (deck.minZ + deck.maxZ) / 2;
-      const zone = layout.hangZones.find((z) => z.id === `hang-perch-${name}`)!;
-      // Put the character on the ledge (it is reached by grapple, not walked to).
-      const p = spawnPlayer(cx, deck.height, cz, yawFor(0, 1));
-
-      p.step(0.5);
-      expect(p.player.isGrounded, name).toBe(true);
-      expect(p.feet(), name).toBeCloseTo(deck.height, 2);
-
-      // Crouching on it keeps the character on it.
-      p.input.keys.add("KeyC");
-      p.step(0.6);
-      expect(p.player.isGrounded, name).toBe(true);
-      expect(p.feet(), name).toBeCloseTo(deck.height, 2);
-      p.input.keys.clear();
-      p.step(0.4);
-
-      // Walking out to the outer edge, then off it, drops to the arena floor.
-      const outX = zone.x - cx;
-      const outZ = zone.z - cz;
-
-      p.input.yaw = yawFor(outX, outZ);
-      p.input.keys.add("KeyW");
-      p.step(3);
-      p.input.keys.clear();
-      p.step(3);
-      expect(p.player.isGrounded, name).toBe(true);
-      // It drops to a lower surface (a walkway, a roof or the floor).
-      expect(p.feet(), name).toBeLessThan(deck.height - 1.5);
-    },
-  );
-
   it("can never leave the map, even sprinting into a wall for a long time", () => {
     for (const yaw of [NORTH, SOUTH, EAST, WEST, yawFor(1, 1), yawFor(-1, 1)]) {
       const p = spawnPlayer(1, 0, 1, yaw);
@@ -496,6 +457,30 @@ describe("Props you can step up on", () => {
     expect(posts.groundHeight(0, 0, 7)).toBe(4);
   });
 
+  it("a floodlight service platform (1.2 m up) can be jumped onto from the walkway, and stood and crouched on", () => {
+    const platform = layout.walls.find(
+      (w) => w.id === "support-north-2-platform",
+    )!;
+    const x = (platform.minX + platform.maxX) / 2;
+    const p = spawnPlayer(x, UPPER, platform.maxZ + 1.4, NORTH);
+
+    p.input.keys.add("KeyW");
+    p.step(0.4);
+    p.input.jumpQueued = true;
+    p.step(0.7);
+    p.input.keys.clear();
+    p.step(0.8);
+
+    expect(p.feet()).toBeCloseTo(platform.height, 1);
+    expect(p.player.isGrounded).toBe(true);
+
+    // Crouching on it keeps the character on it.
+    p.input.keys.add("KeyC");
+    p.step(0.6);
+    expect(p.player.isGrounded).toBe(true);
+    expect(p.feet()).toBeCloseTo(platform.height, 1);
+  });
+
   it("a crate can be jumped onto from the floor, a 2 m rack cannot", () => {
     const jumpOnto = (x: number, z: number, feet: number, yaw: number) => {
       const p = spawnPlayer(x, feet, z, yaw);
@@ -509,8 +494,8 @@ describe("Props you can step up on", () => {
 
       return p.feet();
     };
-    // The Cargo office's crate (1 m) from the west, and a Server room rack (2 m).
-    const crate = layout.walls.find((w) => w.id === "crate-cargo-d")!;
+    // The north-east spawn area's crate (1 m) from the west, and a Server room rack (2 m).
+    const crate = layout.walls.find((w) => w.id === "crate-spawn-ne-d")!;
     const rack = layout.walls.find((w) => w.id === "rack-server-3")!;
     const crateTop = crate.height;
     const rackTop = rack.height;

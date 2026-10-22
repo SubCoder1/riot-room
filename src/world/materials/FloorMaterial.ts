@@ -22,21 +22,21 @@ interface FloorLook {
 export const FLOOR_LOOKS: Record<FloorVariant, FloorLook> = {
   dark: {
     name: "FloorConcreteDark",
-    color: 0x62666b,
+    color: 0x6c6964,
     roughness: 0.92,
     normalScale: 0.55,
     rotation: 0,
   },
   medium: {
     name: "FloorConcreteMedium",
-    color: 0x72767b,
+    color: 0x7b7770,
     roughness: 0.88,
     normalScale: 0.6,
     rotation: Math.PI / 2,
   },
   worn: {
     name: "FloorConcreteWorn",
-    color: 0x696b70,
+    color: 0x726f69,
     roughness: 0.82,
     normalScale: 0.85,
     rotation: Math.PI,

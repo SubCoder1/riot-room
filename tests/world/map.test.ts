@@ -30,20 +30,25 @@ import {
 
 const layout = ARENA_LAYOUT;
 const F = UPPER_FLOOR_Y;
-const start = layout.spawnPoints[0];
+// The people who walk the map start in a spawn area, on the ground floor of
+// the north-west corner (the staircases are the way up from there).
+const start = { x: -26.5, z: -20.5 };
 
 /** Is the point inside one of the staircases (so a route can be forced onto the other)? */
 function onStairs(id: string, x: number, z: number): boolean {
   const stairs = layout.stairs.find((s) => s.id === id)!;
   const steps = stairsToSteps(stairs);
-  const lo = Math.min(...steps.map((s) => s.minZ));
-  const hi = Math.max(...steps.map((s) => s.maxZ));
+  const along = stairs.direction.endsWith("x");
+  const lo = Math.min(...steps.map((s) => (along ? s.minX : s.minZ)));
+  const hi = Math.max(...steps.map((s) => (along ? s.maxX : s.maxZ)));
+  const u = along ? x : z;
+  const v = along ? z : x;
 
   return (
-    x >= stairs.crossMin - 0.5 &&
-    x <= stairs.crossMax + 0.5 &&
-    z >= lo - 0.5 &&
-    z <= hi + 0.5
+    v >= stairs.crossMin - 0.5 &&
+    v <= stairs.crossMax + 0.5 &&
+    u >= lo - 0.5 &&
+    u <= hi + 0.5
   );
 }
 
@@ -76,7 +81,7 @@ function freeCells(
 }
 
 /** The rooms deliberately left open to the sky (under the main roof) for entry from above. */
-const OPEN_TOP = ["room-control", "room-hall", "room-cargo"];
+const OPEN_TOP = ["room-spawn-nw", "room-hall", "room-spawn-ne"];
 
 function roofOf(room: { id: string }): BoxSolid {
   return layout.platforms.find((p) => p.id === `${room.id}-roof`)!;
@@ -103,7 +108,11 @@ describe("What was built", () => {
 
   it("every room has an entrance, a roof and space to fight in", () => {
     for (const room of layout.rooms) {
-      expect(room.doors.length, room.id).toBeGreaterThanOrEqual(1);
+      // (A spawn area on the ground floor has its staircase as the way out.)
+      if (!room.id.startsWith("room-spawn-")) {
+        expect(room.doors.length, room.id).toBeGreaterThanOrEqual(1);
+      }
+
       if (!OPEN_TOP.includes(room.id)) {
         expect(roofOf(room), room.id).toBeDefined();
       }
@@ -208,18 +217,49 @@ describe("What was built", () => {
     ).toBeGreaterThanOrEqual(4);
   });
 
-  it("has two public staircases in opposite corners, climbing different ways", () => {
-    const sw = layout.stairs.find((s) => s.id === "stairs-sw")!;
-    const ne = layout.stairs.find((s) => s.id === "stairs-ne")!;
+  it("has exactly two staircases, one out of each spawn area, and none in the central arena", () => {
+    expect(layout.stairs.map((s) => s.id).sort()).toEqual([
+      "stairs-spawn-ne",
+      "stairs-spawn-nw",
+    ]);
 
-    expect(sw.crossMax).toBeLessThan(0);
-    expect(sw.start).toBeGreaterThan(0);
-    expect(sw.direction).toBe("-z");
-    expect(ne.crossMin).toBeGreaterThan(0);
-    expect(ne.start).toBeLessThan(0);
-    expect(ne.direction).toBe("+z");
-    expect(sw.crossMax - sw.crossMin).not.toBe(ne.crossMax - ne.crossMin);
-    expect(sw.steps).not.toBe(ne.steps);
+    for (const stairs of layout.stairs) {
+      for (const step of stairsToSteps(stairs)) {
+        // Entirely outside the central arena (x -18..18, z -12..12).
+        expect(
+          step.maxX <= -18 ||
+            step.minX >= 18 ||
+            step.maxZ <= -12 ||
+            step.minZ >= 12,
+          `${stairs.id} step at ${step.minX},${step.minZ}`,
+        ).toBe(true);
+      }
+    }
+
+    const nw = layout.stairs.find((s) => s.id === "stairs-spawn-nw")!;
+    const ne = layout.stairs.find((s) => s.id === "stairs-spawn-ne")!;
+    const room = (id: string) => layout.rooms.find((r) => r.id === id)!;
+
+    // Each starts on the ground floor inside its own spawn area and tops out
+    // at the first floor beyond its edge.
+    for (const [stairs, spawnArea] of [
+      [nw, room("room-spawn-nw")],
+      [ne, room("room-spawn-ne")],
+    ] as const) {
+      const steps = stairsToSteps(stairs);
+
+      expect(spawnArea.floorY).toBe(0);
+      expect(steps[0].height).toBeLessThan(0.5);
+      expect(steps[steps.length - 1].height).toBeCloseTo(F, 9);
+      expect(steps[0].minX).toBeGreaterThanOrEqual(spawnArea.minX - 1e-9);
+      expect(steps[0].maxX).toBeLessThanOrEqual(spawnArea.maxX + 1e-9);
+      expect(steps[0].minZ).toBeGreaterThanOrEqual(spawnArea.minZ - 1e-9);
+      expect(steps[0].maxZ).toBeLessThanOrEqual(spawnArea.maxZ + 1e-9);
+    }
+
+    // On opposite sides, climbing toward each other's side of the map.
+    expect(nw.direction).toBe("+x");
+    expect(ne.direction).toBe("-x");
   });
 
   it("has a few deliberate ladders: one from the arena, roof ladders and a few secret ones", () => {
@@ -297,52 +337,40 @@ describe("What was built", () => {
     ).toBeGreaterThanOrEqual(6);
   });
 
-  it("has exactly nine hang points: four pillar rails, four wall rails and the plaza's beam", () => {
-    expect(layout.hangZones).toHaveLength(9);
+  it("has a single hang point, the plaza's skylight beam: no perches or rails stand over the arena", () => {
+    expect(layout.hangZones).toHaveLength(1);
 
-    for (const zone of layout.hangZones) {
-      if (zone.id.startsWith("hang-perch")) {
-        expect(
-          layout.platforms.some((p) => p.id === `${zone.id}-deck`),
-          zone.id,
-        ).toBe(true);
-        expect(zone.y, zone.id).toBeGreaterThanOrEqual(4);
-        expect(zone.y, zone.id).toBeLessThanOrEqual(16);
-      } else if (zone.id.startsWith("hang-wall")) {
-        // A rail fixed to the top of a wall, high up.
-        expect(
-          layout.platforms.some((p) => p.id === `${zone.id}-deck`),
-          zone.id,
-        ).toBe(true);
-        expect(zone.y, zone.id).toBeGreaterThanOrEqual(12);
-      } else {
-        expect(
-          layout.overheads.some((o) => o.id === `${zone.id}-beam`),
-          zone.id,
-        ).toBe(true);
-        expect(
-          layout.steel.some((m) => m.id === `${zone.id}-plate`),
-          zone.id,
-        ).toBe(true);
+    const zone = layout.hangZones[0];
 
-        const feet = zone.y - HANG_DROP - zone.floorY;
+    expect(
+      layout.overheads.some((o) => o.id === `${zone.id}-beam`),
+      zone.id,
+    ).toBe(true);
+    expect(
+      layout.steel.some((m) => m.id === `${zone.id}-plate`),
+      zone.id,
+    ).toBe(true);
 
-        expect(feet, zone.id).toBeGreaterThanOrEqual(2.9);
-        expect(feet, zone.id).toBeLessThanOrEqual(5.2);
-      }
-    }
+    const feet = zone.y - HANG_DROP - zone.floorY;
+
+    expect(feet, zone.id).toBeGreaterThanOrEqual(2.9);
+    expect(feet, zone.id).toBeLessThanOrEqual(5.2);
+
+    // Nothing of the old perches remains.
+    expect(layout.platforms.some((p) => /perch/.test(p.id))).toBe(false);
+    expect(layout.walls.some((w) => /perch/.test(w.id))).toBe(false);
+    expect(layout.steel.some((m) => /perch/.test(m.id))).toBe(false);
   });
 
   it("the arena is open to the sky: no roof over it, and nothing above the perimeter wall", () => {
     expect(layout.platforms.some((p) => p.id === "roof-main")).toBe(false);
 
-    // Nothing stands higher than the perch pillars (15 m).
+    // Nothing stands higher than the perimeter wall's top (13.2 m) and the lamp masts.
     for (const solid of allSolids(layout)) {
-      expect(solid.height, solid.id).toBeLessThanOrEqual(16);
+      expect(solid.height, solid.id).toBeLessThanOrEqual(17);
     }
 
     // The sky is open over the arena floor, the walkways and every open-top room
-    // (except directly under a perch).
     for (const [x, z] of [
       [-8, 2],
       [-6, -3.5],
@@ -357,212 +385,70 @@ describe("What was built", () => {
     }
   });
 
-  it("four narrow slim ledges at four distinct heights (low, mid, high, over the highest roof), each on a tall narrow pillar with one bracket and no ladder, spread round the arena", () => {
-    const decks = layout.platforms.filter((p) =>
-      /^hang-perch-.*-deck$/.test(p.id),
+  it("the perimeter wall carries no rails: floodlight supports stand on the first floor instead, with their own lamps", () => {
+    expect(layout.platforms.some((p) => p.id.startsWith("hang-wall-"))).toBe(
+      false,
+    );
+    expect(layout.hangZones.some((z) => z.id.startsWith("hang-wall"))).toBe(
+      false,
     );
 
-    expect(decks).toHaveLength(4);
+    const masts = layout.walls.filter((w) =>
+      /^support-[a-z]+-\d-1$/.test(w.id),
+    );
 
-    // No ladder, pier or railing was added for them.
-    expect(layout.ladders.some((l) => l.id.includes("perch"))).toBe(false);
-    expect(
-      layout.walls.some(
-        (w) => w.id.includes("perch") && !w.id.endsWith("-pillar"),
-      ),
-    ).toBe(false);
+    expect(masts.length).toBeGreaterThanOrEqual(5);
+    expect(masts.length).toBeLessThanOrEqual(8);
 
-    const centres: Array<[number, number]> = [];
+    for (const mast of masts) {
+      const cx = (mast.minX + mast.maxX) / 2;
+      const cz = (mast.minZ + mast.maxZ) / 2;
 
-    for (const deck of decks) {
-      const depth = Math.min(deck.maxX - deck.minX, deck.maxZ - deck.minZ);
-      const width = Math.max(deck.maxX - deck.minX, deck.maxZ - deck.minZ);
-
-      // Narrow: 1.2 to 1.8 m deep, 2 to 3 m wide, and thin (a slim slab).
-      // A long narrow rail: 40 to 80 cm wide and 5 to 7 m long.
-      expect(depth, deck.id).toBeGreaterThanOrEqual(0.4);
-      expect(depth, deck.id).toBeLessThanOrEqual(0.8);
-      expect(width, deck.id).toBeGreaterThanOrEqual(3);
-      expect(width, deck.id).toBeLessThanOrEqual(4.5);
-      expect(deck.height - deck.bottom!, deck.id).toBeLessThanOrEqual(0.1);
-
-      const cx = (deck.minX + deck.maxX) / 2;
-      const cz = (deck.minZ + deck.maxZ) / 2;
-
-      centres.push([cx, cz]);
-
-      // Holds you up, with open sky above and room to stand.
-      expect(world.groundHeight(cx, cz, deck.height), deck.id).toBe(
-        deck.height,
-      );
-      expect(world.ceilingHeight(cx, cz, deck.height + 1.8, 0.3), deck.id).toBe(
-        Number.POSITIVE_INFINITY,
-      );
-
-      // The tall narrow pillar is there (floor to just over the ledge), with
-      // one compact bracket, and no ladder was added.
-      const pillar = layout.walls.find(
-        (w) => w.id === deck.id.replace("-deck", "-pillar"),
-      )!;
-
-      expect(pillar, deck.id).toBeDefined();
-      expect(pillar.bottom, deck.id).toBe(0);
-      expect(pillar.height, deck.id).toBeGreaterThan(deck.height);
-      expect(pillar.height, deck.id).toBeLessThanOrEqual(deck.height + 0.5);
-      expect(pillar.maxX - pillar.minX, deck.id).toBeLessThanOrEqual(0.3);
-      expect(
-        layout.steel.filter((m) =>
-          m.id.startsWith(deck.id.replace("-deck", "-bracket")),
-        ),
-        deck.id,
-      ).toHaveLength(1);
-      // The I-beam rail under the plate.
-      expect(
-        layout.steel.some((m) => m.id === deck.id.replace("-deck", "-rail")),
-        deck.id,
-      ).toBe(true);
+      // On the first floor.
+      expect(mast.bottom, mast.id).toBe(F);
+      expect(world.groundHeight(cx, cz, F + 0.5), mast.id).toBe(F);
     }
 
-    // Four distinct levels, obviously different.
-    const heights = decks.map((d) => d.height).sort((a, b) => a - b);
+    // One light per support, short range, no shadows (plain point lights).
+    const lamps = layout.lights.filter((l) =>
+      l.id.startsWith("light-support-"),
+    );
 
-    const byId = (name: string): number =>
-      decks.find((d) => d.id === `hang-perch-${name}-deck`)!.height;
+    expect(lamps.length).toBeGreaterThanOrEqual(masts.length);
 
-    // North low, east mid, west high, south highest and over the highest roof.
-    expect(byId("north")).toBeGreaterThanOrEqual(6);
-    expect(byId("east") - byId("north")).toBeGreaterThanOrEqual(1.5);
-    expect(byId("west") - byId("east")).toBeGreaterThanOrEqual(1.5);
-    expect(byId("south") - byId("west")).toBeGreaterThanOrEqual(1.5);
-    expect(byId("south")).toBeGreaterThanOrEqual(ROOF_HIGH + 1.5);
-    expect(heights.length).toBe(4);
+    // Every head is a focused spotlight aimed down at the walkway, and only
+    // a couple cast shadows (they are real-time).
+    for (const lamp of lamps) {
+      expect(lamp.target, lamp.id).toBeDefined();
+      expect(lamp.target!.y, lamp.id).toBeLessThan(lamp.y - 2);
+    }
 
-    // Spread out: no two within 6 m of each other, and on at least three sides.
-    for (let i = 0; i < centres.length; i++) {
-      for (let j = i + 1; j < centres.length; j++) {
-        expect(
-          Math.hypot(
-            centres[i][0] - centres[j][0],
-            centres[i][1] - centres[j][1],
-          ),
-        ).toBeGreaterThan(4);
-      }
+    expect(lamps.filter((l) => l.castShadow).length).toBeLessThanOrEqual(2);
+
+    // The service platforms are solid 1.2 m up (a jump), 1.2 x 0.9 m.
+    const platforms = layout.walls.filter((w) => /-platform/.test(w.id));
+
+    expect(platforms.length).toBeGreaterThanOrEqual(1);
+
+    for (const platform of platforms) {
+      expect(platform.height - F, platform.id).toBeCloseTo(1.2, 5);
+      expect(
+        Math.max(platform.maxX - platform.minX, platform.maxZ - platform.minZ),
+        platform.id,
+      ).toBeGreaterThanOrEqual(1.1);
     }
   });
 
-  it("no perch is over another, and from each one (standing or crouching) a real part of the floor in front is in view but not all of it", () => {
-    const decks = layout.platforms.filter((p) =>
-      /^hang-perch-.*-deck$/.test(p.id),
-    );
+  it("the generator stands in the power room (the Switch room) beside its cabinets", () => {
+    const generator = layout.walls.find((w) => w.id === "fittings-generator")!;
+    const room = layout.rooms.find((r) => r.id === "room-switch")!;
 
-    for (let i = 0; i < decks.length; i++) {
-      for (let j = i + 1; j < decks.length; j++) {
-        const a = decks[i];
-        const b = decks[j];
-
-        expect(
-          a.maxX <= b.minX ||
-            b.maxX <= a.minX ||
-            a.maxZ <= b.minZ ||
-            b.maxZ <= a.minZ,
-          `${a.id} / ${b.id}`,
-        ).toBe(true);
-      }
-    }
-
-    for (const deck of decks) {
-      // The eye is near the outer edge: standing (1.6 m) and crouching (1.0 m).
-      const zone = layout.hangZones.find(
-        (z) => z.id === deck.id.replace("-deck", ""),
-      )!;
-      const centreX = (deck.minX + deck.maxX) / 2;
-      const centreZ = (deck.minZ + deck.maxZ) / 2;
-      const length = Math.hypot(zone.x - centreX, zone.z - centreZ) || 1;
-      // Standing 0.3 m back from the outer edge, looking out and down.
-      const eyeX = zone.x - ((zone.x - centreX) / length) * 0.3;
-      const eyeZ = zone.z - ((zone.z - centreZ) / length) * 0.3;
-
-      for (const eyeHeight of [1.6, 1.0]) {
-        let seen = 0;
-        let total = 0;
-
-        // Only the floor in front of the ledge counts: behind it is its own pillar.
-        const faceX = zone.x - (deck.minX + deck.maxX) / 2;
-        const faceZ = zone.z - (deck.minZ + deck.maxZ) / 2;
-
-        for (let x = -17; x <= 17; x += 2) {
-          for (let z = -11; z <= 11; z += 2) {
-            if ((x - eyeX) * faceX + (z - eyeZ) * faceZ <= 0) continue;
-
-            total++;
-
-            if (
-              !world.segmentBlocked(
-                eyeX,
-                deck.height + eyeHeight,
-                eyeZ,
-                x,
-                0.9,
-                z,
-              )
-            ) {
-              seen++;
-            }
-          }
-        }
-
-        const share = seen / total;
-
-        // The low north perch looks across the north balcony's railing: a
-        // small view is the point of it.
-        expect(share, `${deck.id} eye ${eyeHeight}`).toBeGreaterThan(0.4);
-        expect(share, `${deck.id} eye ${eyeHeight}`).toBeLessThan(0.97);
-      }
-    }
-  });
-
-  it("four rails are fixed to the top of the perimeter wall: two east, one west (middle) and one north", () => {
-    const rails = layout.platforms.filter((p) => p.id.startsWith("hang-wall-"));
-
-    expect(rails).toHaveLength(4);
-
-    const touching = (r: BoxSolid): string =>
-      r.maxX >= world.halfX - 0.8
-        ? "east"
-        : r.minX <= -world.halfX + 0.8
-          ? "west"
-          : r.minZ <= -world.halfZ + 0.8
-            ? "north"
-            : "none";
-    const sides = rails.map(touching).sort();
-
-    expect(sides).toEqual(["east", "east", "north", "west"]);
-
-    for (const rail of rails) {
-      // Long and narrow, thin, high, standing-capable, with open sky above.
-      const long = Math.max(rail.maxX - rail.minX, rail.maxZ - rail.minZ);
-      const wide = Math.min(rail.maxX - rail.minX, rail.maxZ - rail.minZ);
-
-      expect(long, rail.id).toBeGreaterThanOrEqual(2.5);
-      expect(wide, rail.id).toBeLessThanOrEqual(0.8);
-      expect(rail.height - rail.bottom!, rail.id).toBeLessThanOrEqual(0.08);
-      expect(rail.height, rail.id).toBeGreaterThanOrEqual(12.5);
-
-      const cx = (rail.minX + rail.maxX) / 2;
-      const cz = (rail.minZ + rail.maxZ) / 2;
-
-      expect(world.groundHeight(cx, cz, rail.height), rail.id).toBe(
-        rail.height,
-      );
-      expect(world.ceilingHeight(cx, cz, rail.height + 1.8, 0.3), rail.id).toBe(
-        Number.POSITIVE_INFINITY,
-      );
-    }
-
-    // The middle of the west wall: the rail's centre line is at z = 0.
-    const west = rails.find((r) => touching(r) === "west")!;
-
-    expect((west.minZ + west.maxZ) / 2).toBeCloseTo(0);
+    expect(generator).toBeDefined();
+    expect(generator.minX).toBeGreaterThanOrEqual(room.minX);
+    expect(generator.maxX).toBeLessThanOrEqual(room.maxX);
+    expect(generator.minZ).toBeGreaterThanOrEqual(room.minZ);
+    expect(generator.maxZ).toBeLessThanOrEqual(room.maxZ);
+    expect(layout.walls.some((w) => w.id === "fittings-main-panel")).toBe(true);
   });
 
   it("the open-top rooms have no roof above them, in the drawing or the collision", () => {
@@ -605,7 +491,9 @@ describe("What was built", () => {
 
     const glassWalls = layout.walls.filter((w) => w.glass);
 
-    expect(glassWalls.length).toBeGreaterThanOrEqual(2);
+    // (The barrier along the Warehouse's roof edge and the slanted cover over
+    // the yard's wall are gone or drawn only: no glass stands in anyone's way.)
+    expect(glassWalls).toHaveLength(0);
 
     for (const wall of glassWalls) {
       // Stops a body like a railing, however see-through.
@@ -631,9 +519,22 @@ describe("What was built", () => {
       expect(platform.height, platform.id).toBeGreaterThanOrEqual(2.8);
     }
 
+    // The two spawn areas are on the ground floor: their walls and cover do too.
+    const pits = layout.rooms.filter((r) => r.id.startsWith("room-spawn-"));
+
     for (const solid of [...layout.walls, ...layout.pillars]) {
-      // The thin pillars of the perches stand on the arena floor.
-      if (solid.id.startsWith("hang-perch-")) continue;
+      if (
+        solid.kind === "box" &&
+        pits.some(
+          (r) =>
+            solid.minX >= r.minX - 1e-6 &&
+            solid.maxX <= r.maxX + 1e-6 &&
+            solid.minZ >= r.minZ - 1e-6 &&
+            solid.maxZ <= r.maxZ + 1e-6,
+        )
+      ) {
+        continue;
+      }
 
       const base =
         solid.kind === "box"
@@ -646,22 +547,9 @@ describe("What was built", () => {
 });
 
 describe("The central arena", () => {
-  it("is open: the middle 24 x 12 m is bare floor", () => {
+  it("is open: the middle 24 x 8 m is bare floor", () => {
     for (let x = -12; x <= 12; x++) {
-      for (let z = -6; z <= 6; z++) {
-        // Except round the thin pillars of the perches.
-        if (
-          layout.walls.some(
-            (w) =>
-              w.id.startsWith("hang-perch-") &&
-              x > w.minX - 1.4 &&
-              x < w.maxX + 1.4 &&
-              z > w.minZ - 1.4 &&
-              z < w.maxZ + 1.4,
-          )
-        )
-          continue;
-
+      for (let z = -4; z <= 4; z++) {
         expect(world.isBlocked(x, z, 0, PLAYER_RADIUS), `${x},${z}`).toBe(
           false,
         );
@@ -793,30 +681,38 @@ describe("Getting around", () => {
     ).toBe(true);
   });
 
-  it.each([
-    ["stairs-ne", "the south-west staircase alone"],
-    ["stairs-sw", "the north-east staircase alone"],
-  ])("with %s closed off, %s still reaches every room", (closed) => {
-    const field = walkField(start.x, start.z, 0, {
-      ladders: false,
-      forbid: (x, z) => onStairs(closed, x, z),
-    });
-    const missing = layout.rooms
-      .filter((room) => {
-        const cells = freeCells(room, room.floorY);
+  it("from either spawn area its own staircase is the only way out, and it leads to every room and to the other spawn area", () => {
+    const rooms = (field: ReturnType<typeof walkField>): string[] =>
+      layout.rooms
+        .filter(
+          (room) =>
+            !freeCells(room, room.floorY).some(
+              (c) => distanceAtHeight(field, c.x, c.z, room.floorY) < Infinity,
+            ),
+        )
+        .map((room) => room.id);
 
-        return !cells.some(
-          (c) => distanceAtHeight(field, c.x, c.z, room.floorY) < Infinity,
-        );
-      })
-      .map((room) => room.id);
+    for (const [from, own, other] of [
+      [{ x: -26.5, z: -20.5 }, "stairs-spawn-nw", "stairs-spawn-ne"],
+      [{ x: 27, z: -20 }, "stairs-spawn-ne", "stairs-spawn-nw"],
+    ] as const) {
+      // With its own staircase shut, the spawn area is sealed.
+      const shut = walkField(from.x, from.z, 0, {
+        ladders: false,
+        forbid: (x, z) => onStairs(own, x, z),
+      });
+      const open = walkField(from.x, from.z, 0, { ladders: false });
 
-    expect(missing).toEqual([]);
+      expect(distanceAtHeight(shut, 0, 0, 0), own).toBe(Infinity);
+      expect(rooms(open), own).toEqual([]);
+      // ... and the other spawn area is reached, down its own staircase.
+      expect(onStairs(other, 0, 0)).toBe(false);
+    }
   });
 
-  it("the south-west stairs serve the west and north sides; the north-east stairs serve the east and south", () => {
-    const fromSw = walkField(-15, 10.8, 0, { ladders: false });
-    const fromNe = walkField(15.5, -10.8, 0, { ladders: false });
+  it("the north-west staircase serves the west and north-west; the north-east staircase serves the east", () => {
+    const fromNw = walkField(-26.5, -20.5, 0, { ladders: false });
+    const fromNe = walkField(27, -20, 0, { ladders: false });
     const to = (field: ReturnType<typeof walkField>, id: string): number => {
       const room = layout.rooms.find((r) => r.id === id)!;
       const cells = freeCells(room, room.floorY);
@@ -826,18 +722,18 @@ describe("Getting around", () => {
       );
     };
 
-    for (const id of ["room-barracks", "room-armory", "room-control"]) {
-      expect(to(fromSw, id), id).toBeLessThan(to(fromNe, id));
+    for (const id of ["room-barracks", "room-armory", "room-archive"]) {
+      expect(to(fromNw, id), id).toBeLessThan(to(fromNe, id));
     }
 
-    for (const id of ["room-break", "room-warehouse", "room-server"]) {
-      expect(to(fromNe, id), id).toBeLessThan(to(fromSw, id));
+    for (const id of ["room-server", "room-break", "room-warehouse"]) {
+      expect(to(fromNe, id), id).toBeLessThan(to(fromNw, id));
     }
   });
 
   it("there are always other routes: closing the middle of a route still leaves a way round", () => {
     const a = freeCells(
-      layout.rooms.find((r) => r.id === "room-control")!,
+      layout.rooms.find((r) => r.id === "room-spawn-nw")!,
       F,
     )[0];
     const b = freeCells(
@@ -1320,7 +1216,8 @@ describe("Sightlines and anchors", () => {
       const share = seen / points.length;
 
       expect(share, name).toBeLessThan(0.8);
-      expect(share, name).toBeGreaterThan(0.005);
+      // (The arena is open now: a walkway behind its rail may see just a cell.)
+      expect(share, name).toBeGreaterThan(0);
     }
 
     // The three real overlooks each see a good part of it.

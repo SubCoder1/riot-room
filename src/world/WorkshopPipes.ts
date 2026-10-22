@@ -30,7 +30,8 @@ const HOSE = 0x15171a;
 const CONDUIT = 0x3c424b;
 export const FLANGE = 0x5a636e;
 const PLATE = 0x353b46;
-const YELLOW = 0xb09128;
+/** A muted blue-grey accent (yellow is kept for interactive objects). */
+const ACCENT = 0x5a667a;
 export const RED = 0x7a2a22;
 const LABEL = 0xc9c6b4;
 const DARK = 0x23262c;
@@ -154,7 +155,7 @@ export class Network {
 
   /** A yellow identification band. */
   public band(at: Vec3, dir: Vec3, d: number): void {
-    this.collar(at, dir, d, 0.14, YELLOW, 1.1);
+    this.collar(at, dir, d, 0.14, ACCENT, 1.1);
   }
 
   /** A small label plate on the front face of a pipe. */

@@ -376,7 +376,7 @@ export type PileKind =
 
 /** One piece of a pile (a bag, a brick, a plank or a chunk), centred on the pile. */
 export interface PileElement {
-  shape: "bag" | "brick" | "plank" | "chunk" | "pipe";
+  shape: "bag" | "brick" | "plank" | "chunk" | "pipe" | "cable";
   /** Centre, metres: x and z from the pile's centre, y above the surface it stands on. */
   x: number;
   y: number;
@@ -465,6 +465,18 @@ export interface ArenaLayout {
   curves: CurvedTopDefinition[];
   /** Small local lights over work areas (no shadows, short range). */
   lights: LightDefinition[];
+  /** Fuel-powered generators players can refuel. */
+  generators: GeneratorDefinition[];
+  /** Items lying where players take them (none yet: an armory will use this). */
+  pickups: PickupDefinition[];
+  /** Site plans on the spawn-area walls. */
+  posters: PosterDefinition[];
+  /**
+   * Blocks that stop a shot, a throw or a line of sight but never a body: the
+   * small drawn props (a chair, a bucket, a cable reel) that are not worth a
+   * collision box a player would have to walk round.
+   */
+  shotSolids?: BoxSolid[];
   /** Slanted panes of tinted glass (drawn; their collision is hidden boxes). */
   panes: GlassPaneDefinition[];
 }
@@ -486,6 +498,55 @@ export interface LightDefinition {
   intensity: number;
   /** Range in metres: nothing is lit beyond it. */
   distance: number;
+  /**
+   * A focused floodlight instead of a point light: it points at `target` and
+   * lights a cone of `angle` radians (default 0.8). No shadows unless asked.
+   */
+  target?: { x: number; y: number; z: number };
+  angle?: number;
+  castShadow?: boolean;
+}
+
+/** A site plan hung on a wall: drawn from the layout when the arena is built. */
+export interface PosterDefinition {
+  id: string;
+  /** Centre of the poster, and how big it is. */
+  x: number;
+  y: number;
+  z: number;
+  width: number;
+  height: number;
+  /** The unit step out from the wall it hangs on. */
+  nx: number;
+  nz: number;
+  /** Which spawn area this one is in (its "you are here"). */
+  here: "nw" | "ne";
+}
+
+/** An item lying on a surface that a player can take (it comes back later). */
+export interface PickupDefinition {
+  id: string;
+  /** Which of the player's utilities it adds to. */
+  type: "GRENADE" | "SMOKE" | "MOLOTOV";
+  x: number;
+  y: number;
+  z: number;
+  amount: number;
+  /** Seconds until it is there again after it is taken. */
+  respawn: number;
+}
+
+/** A fuel-powered generator with a filler cap a player can pour into. */
+export interface GeneratorDefinition {
+  id: string;
+  name: string;
+  /** The filler cap: where a player stands near to add fuel. */
+  x: number;
+  y: number;
+  z: number;
+  /** How much fuel it holds, and how much it starts with. */
+  capacity: number;
+  startFuel: number;
 }
 
 /**

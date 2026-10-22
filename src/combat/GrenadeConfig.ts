@@ -6,7 +6,7 @@
  */
 export const GRENADE_CONFIG = {
   /** How many a player starts with. */
-  GRENADE_START_QUANTITY: 3,
+  GRENADE_START_QUANTITY: 1,
 
   // ---- Flight (the shared model: straight at first, then an arc) ----
   GRENADE_THROW_SPEED: 19,

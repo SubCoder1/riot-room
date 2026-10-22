@@ -107,6 +107,58 @@ export class Pieces {
     );
   }
 
+  /**
+   * A length of flexible cable from its centre, along x unless turned: a
+   * closed, plain cylinder (no rims or dark open ends), so a run of short
+   * lengths reads as one continuous cable.
+   */
+  public cable(
+    x: number,
+    y: number,
+    z: number,
+    length: number,
+    diameter: number,
+    color: number,
+    ry = 0,
+    rz = 0,
+    rx = 0,
+  ): void {
+    this.elements.push({
+      shape: "cable",
+      x,
+      y,
+      z,
+      sx: length,
+      sy: diameter,
+      sz: diameter,
+      rx,
+      ry,
+      rz,
+      color,
+    });
+  }
+
+  /** An upright cable from `bottom` up `height`. */
+  public cableUp(
+    x: number,
+    bottom: number,
+    z: number,
+    height: number,
+    diameter: number,
+    color: number,
+  ): void {
+    this.cable(
+      x,
+      bottom + height / 2,
+      z,
+      height,
+      diameter,
+      color,
+      0,
+      Math.PI / 2,
+    );
+  }
+
   /** An upright pipe from `bottom` up `height`. */
   public post(
     x: number,

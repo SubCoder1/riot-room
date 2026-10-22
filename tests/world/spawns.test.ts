@@ -31,9 +31,24 @@ const ids = (count: number): string[] =>
   Array.from({ length: count }, (_, i) => `p${i + 1}`);
 
 describe("Spawn points", () => {
-  it("there are 8-12 individual points with unique ids", () => {
-    expect(points.length).toBeGreaterThanOrEqual(8);
-    expect(points.length).toBeLessThanOrEqual(12);
+  it("there are four fixed points, two in each spawn area, with unique ids", () => {
+    expect(points).toHaveLength(4);
+
+    for (const room of ["room-spawn-nw", "room-spawn-ne"]) {
+      const area = ARENA_LAYOUT.rooms.find((r) => r.id === room)!;
+
+      expect(
+        points.filter(
+          (p) =>
+            p.x > area.minX &&
+            p.x < area.maxX &&
+            p.z > area.minZ &&
+            p.z < area.maxZ,
+        ),
+        room,
+      ).toHaveLength(2);
+    }
+
     expect(new Set(points.map((p) => p.id)).size).toBe(points.length);
   });
 
@@ -56,18 +71,16 @@ describe("Spawn points", () => {
       for (let j = i + 1; j < points.length; j++) {
         expect(
           Math.hypot(points[i].x - points[j].x, points[i].z - points[j].z),
-        ).toBeGreaterThanOrEqual(7);
+        ).toBeGreaterThanOrEqual(2.5);
       }
     }
   });
 
-  it("are spread around the arena (every quadrant has some)", () => {
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        expect(
-          points.some((p) => Math.sign(p.x) === sx && Math.sign(p.z) === sz),
-        ).toBe(true);
-      }
+  it("are on the ground floor, on the open floor of the spawn areas", () => {
+    for (const point of points) {
+      expect(point.y).toBe(0);
+      expect(Math.abs(point.x)).toBeGreaterThan(20);
+      expect(point.z).toBeLessThan(-14);
     }
   });
 
@@ -82,7 +95,7 @@ describe("Spawn points", () => {
       validateSpawnPoint({ id: "t", label: "T", x, y: 0, z, yaw: 0 }, world);
 
     expect(unsafe(-24, 0)).not.toEqual([]); // inside the west wing
-    expect(unsafe(-16, 5)).not.toEqual([]); // on the south-west staircase
+    expect(unsafe(-25, -15.8)).not.toEqual([]); // on a spawn-area staircase
     expect(unsafe(31.5, 0)).not.toEqual([]); // against the outer wall
     expect(unsafe(40, 0)).not.toEqual([]); // outside the map
     expect(unsafe(0, -9.5)).not.toEqual([]); // under the north balcony
@@ -90,23 +103,20 @@ describe("Spawn points", () => {
 });
 
 describe("Spawn assignment", () => {
-  it.each([2, 3, 4, 5, 6, 7, 8])(
-    "%i players each get a unique point",
-    (count) => {
-      const result = assignSpawns(ids(count), { rng: seeded(count) });
-      const used = Object.values(result).map((p) => p.id);
+  it.each([2, 3, 4])("%i players each get a unique point", (count) => {
+    const result = assignSpawns(ids(count), { rng: seeded(count) });
+    const used = Object.values(result).map((p) => p.id);
 
-      expect(Object.keys(result)).toHaveLength(count);
-      expect(new Set(used).size).toBe(count);
-    },
-  );
+    expect(Object.keys(result)).toHaveLength(count);
+    expect(new Set(used).size).toBe(count);
+  });
 
   it("only hands out predefined points (never arbitrary coordinates)", () => {
     const valid = new Set(points.map((p) => p.id));
 
     for (let seed = 1; seed <= 30; seed++) {
       for (const point of Object.values(
-        assignSpawns(ids(8), { rng: seeded(seed) }),
+        assignSpawns(ids(4), { rng: seeded(seed) }),
       )) {
         expect(valid.has(point.id)).toBe(true);
       }
@@ -116,7 +126,7 @@ describe("Spawn assignment", () => {
   it("keeps small groups apart by the minimum spawn distance", () => {
     for (let seed = 1; seed <= 50; seed++) {
       const spawned = Object.values(
-        assignSpawns(ids(3), { rng: seeded(seed) }),
+        assignSpawns(ids(2), { rng: seeded(seed) }),
       );
 
       for (let i = 0; i < spawned.length; i++) {
@@ -133,29 +143,29 @@ describe("Spawn assignment", () => {
   });
 
   it("relaxes the distance instead of failing when the arena is full", () => {
-    const result = assignSpawns(ids(8), { rng: seeded(5) });
+    const result = assignSpawns(ids(4), { rng: seeded(5) });
     const used = Object.values(result);
 
-    expect(used).toHaveLength(8);
+    expect(used).toHaveLength(4);
 
     // Even then nobody starts right next to someone else.
     for (let i = 0; i < used.length; i++) {
       for (let j = i + 1; j < used.length; j++) {
         expect(
           Math.hypot(used[i].x - used[j].x, used[i].z - used[j].z),
-        ).toBeGreaterThanOrEqual(7);
+        ).toBeGreaterThanOrEqual(2.5);
       }
     }
   });
 
   it("never gives two players the same point, even with no distance rule", () => {
     for (let seed = 1; seed <= 50; seed++) {
-      const result = assignSpawns(ids(8), {
+      const result = assignSpawns(ids(4), {
         rng: seeded(seed),
         minDistance: 0,
       });
 
-      expect(new Set(Object.values(result).map((p) => p.id)).size).toBe(8);
+      expect(new Set(Object.values(result).map((p) => p.id)).size).toBe(4);
     }
   });
 
@@ -175,16 +185,16 @@ describe("Spawn assignment", () => {
     const seen = new Set<string>();
 
     for (let seed = 1; seed <= 30; seed++) {
-      const result = assignSpawns(ids(8), { rng: seeded(seed) });
+      const result = assignSpawns(ids(4), { rng: seeded(seed) });
 
       seen.add(
-        ids(8)
+        ids(4)
           .map((id) => result[id].id)
           .join(","),
       );
     }
 
-    expect(seen.size).toBeGreaterThan(20);
+    expect(seen.size).toBeGreaterThanOrEqual(6);
   });
 
   it("does not tie a player's identity to a spawn", () => {
@@ -227,7 +237,7 @@ describe("Spawn assignment", () => {
     const occupant = { x: points[0].x + 1, z: points[0].z + 1 };
 
     for (let seed = 1; seed <= 40; seed++) {
-      const result = assignSpawns(ids(3), {
+      const result = assignSpawns(ids(2), {
         rng: seeded(seed),
         occupied: [occupant],
       });

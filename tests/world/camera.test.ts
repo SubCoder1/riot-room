@@ -12,7 +12,7 @@ const keepOut = (x: number, y: number, z: number) =>
 describe("Camera stays out of scenery", () => {
   const tower = ARENA_LAYOUT.platforms.find((p) => p.id === "east-wing")!; // 4 m, solid to the ground
   const block = ARENA_LAYOUT.walls.find(
-    (w) => w.id === "room-control-wall-s-2",
+    (w) => w.id === "room-switch-wall-s-2",
   )!; // 7.2 m, stands on the upper floor
 
   it("a camera poking into a tall platform's face is pushed back out", () => {

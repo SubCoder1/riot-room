@@ -29,7 +29,8 @@ const STEEL_BARE = 0x8791a0;
 const BLACK = 0x14161a;
 const TIMBER = 0x7a5c3c;
 const TIMBER_DARK = 0x5a4430;
-const YELLOW = 0xb09128;
+/** A muted blue-grey accent (yellow is kept for interactive objects). */
+const ACCENT = 0x5a667a;
 const CARDBOARD = 0x7c694a;
 const GREY_BIN = 0x606873;
 const RUST = 0x7a5b44;
@@ -174,8 +175,8 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     p.box(vx, t + 0.035, fz + 0.2, 0.24, 0.11, 0.06, CHARCOAL);
     p.alongZ(vx, t + 0.09, fz + 0.1, fz + 0.4, 0.035, STEEL_BARE);
     p.alongX(vx - 0.12, vx + 0.12, t + 0.09, fz + 0.4, 0.025, STEEL_BARE);
-    p.chunk(vx - 0.13, t + 0.06, fz + 0.4, 0.045, YELLOW);
-    p.chunk(vx + 0.13, t + 0.06, fz + 0.4, 0.045, YELLOW);
+    p.chunk(vx - 0.13, t + 0.06, fz + 0.4, 0.045, ACCENT);
+    p.chunk(vx + 0.13, t + 0.06, fz + 0.4, 0.045, ACCENT);
 
     // A metal bracket (an L) and a pipe fitting with a flange (a T).
     const bx = benchX0 + 1.0;
@@ -200,10 +201,10 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     p.box(hx + 0.8, t, fz - 0.16, 0.12, 0.055, 0.1, STEEL_BARE, -0.12);
     p.box(hx + 0.4, t, fz + 0.12, 0.34, 0.025, 0.045, STEEL_BARE, 0.18);
     p.box(hx + 0.4, t + 0.025, fz + 0.14, 0.34, 0.02, 0.045, STEEL_BARE, -0.06);
-    p.box(hx + 0.54, t, fz + 0.1, 0.16, 0.04, 0.06, YELLOW, 0.06);
-    p.alongX(hx + 0.95, hx + 1.12, t + 0.025, fz + 0.12, 0.05, YELLOW);
+    p.box(hx + 0.54, t, fz + 0.1, 0.16, 0.04, 0.06, ACCENT, 0.06);
+    p.alongX(hx + 0.95, hx + 1.12, t + 0.025, fz + 0.12, 0.05, ACCENT);
     p.alongX(hx + 0.65, hx + 0.95, t + 0.012, fz + 0.12, 0.018, STEEL_BARE);
-    p.box(hx + 1.15, t, fz - 0.12, 0.11, 0.07, 0.11, YELLOW, 0.3);
+    p.box(hx + 1.15, t, fz - 0.12, 0.11, 0.07, 0.11, ACCENT, 0.3);
 
     // A mechanical housing (a gearbox) with bolts and a shaft stub, at the east.
     const gx = benchX1 - 0.4;
@@ -240,7 +241,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
 
     // The board: charcoal blue panel in a steel frame, yellow along its foot.
     p.box(boardCx, y0, wallZ, boardW, y1 - y0, 0.04, 0x434d5c);
-    p.box(boardCx, y0 - 0.04, wallZ + 0.01, boardW + 0.06, 0.05, 0.06, YELLOW);
+    p.box(boardCx, y0 - 0.04, wallZ + 0.01, boardW + 0.06, 0.05, 0.06, ACCENT);
     p.box(boardCx, y1, wallZ + 0.01, boardW + 0.06, 0.04, 0.06, CHARCOAL);
     for (const ex of [boardX0 - 0.02, boardX1 + 0.02]) {
       p.box(ex, y0 - 0.04, wallZ + 0.01, 0.05, y1 - y0 + 0.08, 0.06, CHARCOAL);
@@ -258,7 +259,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
         stripeW * 0.98,
         0.12,
         0.035,
-        i % 2 === 0 ? YELLOW : CHARCOAL,
+        i % 2 === 0 ? ACCENT : CHARCOAL,
       );
     }
 
@@ -311,7 +312,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     p.box(x, mid + 0.0, zt, 0.065, 0.66, 0.03, STEEL_BARE);
     p.box(x - 0.045, mid + 0.62, zt, 0.07, 0.2, 0.03, STEEL_BARE);
     p.box(x + 0.055, mid + 0.58, zt, 0.07, 0.13, 0.03, STEEL_BARE);
-    p.chunk(x, mid + 0.04, zt + 0.02, 0.05, YELLOW);
+    p.chunk(x, mid + 0.04, zt + 0.02, 0.05, ACCENT);
     hooks(x, mid + 0.5, 0.05);
     x += 0.5;
 
@@ -338,16 +339,16 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
       0,
       0.12,
     );
-    p.box(x - 0.05, mid + 0.0, zt, 0.055, 0.2, 0.04, YELLOW, 0, -0.12);
-    p.box(x + 0.05, mid + 0.0, zt + 0.012, 0.055, 0.2, 0.04, YELLOW, 0, 0.12);
+    p.box(x - 0.05, mid + 0.0, zt, 0.055, 0.2, 0.04, ACCENT, 0, -0.12);
+    p.box(x + 0.05, mid + 0.0, zt + 0.012, 0.055, 0.2, 0.04, ACCENT, 0, 0.12);
     hooks(x, mid + 0.42, 0.05);
     x += 0.4;
 
     // Three screwdrivers of different length on one rail.
     for (const [len, handle] of [
-      [0.58, YELLOW],
+      [0.58, ACCENT],
       [0.46, CHARCOAL],
-      [0.36, YELLOW],
+      [0.36, ACCENT],
     ] as const) {
       outline(x, mid + len - 0.12, 0.1, len + 0.12);
       p.box(x, mid + 0.0, zt, 0.065, 0.2, 0.05, handle);
@@ -359,7 +360,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     // A tape measure on a single hook.
     x += 0.15;
     outline(x, mid + 0.18, 0.28, 0.4);
-    p.box(x, mid + 0.0, zt, 0.2, 0.2, 0.06, YELLOW);
+    p.box(x, mid + 0.0, zt, 0.2, 0.2, 0.06, ACCENT);
     p.box(x, mid + 0.02, zt + 0.032, 0.12, 0.12, 0.01, CHARCOAL);
     p.box(x, mid + 0.2, zt, 0.05, 0.08, 0.03, STEEL_BARE);
     hooks(x, mid + 0.26, 0.0);
@@ -404,7 +405,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
         0.02,
         i % 2 === 0 ? STEEL_LIGHT : STEEL,
       );
-      p.alongX(cx - 0.17, cx + 0.17, y + 0.1, z1 + 0.035, 0.025, YELLOW);
+      p.alongX(cx - 0.17, cx + 0.17, y + 0.1, z1 + 0.035, 0.025, ACCENT);
     }
 
     for (const wx of [x0 + 0.06, x1 - 0.06]) {
@@ -454,7 +455,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
 
     // Tall yellow handles by the seam and a lock plate.
     for (const side of [-1, 1]) {
-      p.box(cx + side * 0.07, 0.85, face + 0.04, 0.035, 0.34, 0.03, YELLOW);
+      p.box(cx + side * 0.07, 0.85, face + 0.04, 0.035, 0.34, 0.03, ACCENT);
     }
 
     p.box(cx, 0.95, face + 0.03, 0.09, 0.1, 0.02, STEEL_BARE);
@@ -464,7 +465,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
       p.box(cx - 0.28, 1.58 + i * 0.045, face + 0.032, 0.34, 0.02, 0.01, BLACK);
     }
 
-    p.box(cx + 0.28, 1.5, face + 0.03, 0.16, 0.16, 0.01, YELLOW);
+    p.box(cx + 0.28, 1.5, face + 0.03, 0.16, 0.16, 0.01, ACCENT);
     p.box(cx + 0.28, 1.54, face + 0.038, 0.04, 0.08, 0.006, BLACK);
     p.chunk(cx + 0.28, 1.5, face + 0.04, 0.025, BLACK);
 
@@ -531,14 +532,14 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     p.box(front - 0.012, 0.14, czA, 0.022, heightA - 0.2, 0.02, BLACK);
 
     for (const side of [-1, 1]) {
-      p.box(front - 0.04, 0.85, czA + side * 0.07, 0.03, 0.34, 0.035, YELLOW);
+      p.box(front - 0.04, 0.85, czA + side * 0.07, 0.03, 0.34, 0.035, ACCENT);
     }
 
     for (let i = 0; i < 4; i++) {
       p.box(front - 0.03, 1.55 + i * 0.045, czA, 0.01, 0.02, 0.4, BLACK);
     }
 
-    p.box(front - 0.03, 1.15, czA + 0.25, 0.01, 0.16, 0.16, YELLOW);
+    p.box(front - 0.03, 1.15, czA + 0.25, 0.01, 0.16, 0.16, ACCENT);
     p.box(front - 0.038, 1.19, czA + 0.25, 0.006, 0.08, 0.04, BLACK);
     p.box(front - 0.03, 0.12, czA - 0.3, 0.006, 0.07, 0.16, RUST);
 
@@ -602,8 +603,8 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
         CHARCOAL,
       );
       // Yellow end caps on the front of each shelf.
-      p.box(x1 - 0.01, y, z0 + 0.03, 0.03, 0.05, 0.08, YELLOW);
-      p.box(x1 - 0.01, y, z1 - 0.03, 0.03, 0.05, 0.08, YELLOW);
+      p.box(x1 - 0.01, y, z0 + 0.03, 0.03, 0.05, 0.08, ACCENT);
+      p.box(x1 - 0.01, y, z1 - 0.03, 0.03, 0.05, 0.08, ACCENT);
     }
 
     const sx = cx;
@@ -641,14 +642,14 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
 
     // Level 0: an oil drum, a big bin, a taped cardboard box.
     p.post(sx, base(0), zA + 0.28, 0.46, 0.38, 0x3c5365);
-    p.post(sx, base(0) + 0.2, zA + 0.28, 0.04, 0.39, YELLOW);
+    p.post(sx, base(0) + 0.2, zA + 0.28, 0.04, 0.39, ACCENT);
     tray(0, zA + 0.7, 0.46, 0.3, 0.6, GREY_BIN);
     p.box(sx, base(0), zA + 1.45, 0.42, 0.34, 0.5, CARDBOARD, 0.04);
     p.box(sx, base(0) + 0.34, zA + 1.45, 0.08, 0.004, 0.5, 0x9a8a68, 0.04);
 
     // Level 1: parts bins of different sizes and colours, one gap.
     tray(1, zA + 0.0, 0.4, 0.16, 0.34, GREY_BIN);
-    tray(1, zA + 0.4, 0.42, 0.2, 0.26, YELLOW);
+    tray(1, zA + 0.4, 0.42, 0.2, 0.26, ACCENT);
     tray(1, zA + 0.72, 0.36, 0.12, 0.3, 0x4c5a6b);
     tray(1, zA + 1.5, 0.44, 0.22, 0.4, GREY_BIN);
 
@@ -672,7 +673,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
 
     // Level 3: two lidded steel containers and a small box; the rest empty.
     p.box(sx, base(3), zA + 0.1, 0.44, 0.26, 0.5, STEEL_LIGHT);
-    p.box(sx, base(3) + 0.26, zA + 0.1, 0.46, 0.04, 0.52, YELLOW);
+    p.box(sx, base(3) + 0.26, zA + 0.1, 0.46, 0.04, 0.52, ACCENT);
     p.box(sx, base(3), zA + 0.85, 0.4, 0.2, 0.34, CHARCOAL);
     p.box(sx, base(3) + 0.2, zA + 0.85, 0.42, 0.03, 0.36, STEEL_BARE);
     p.box(sx, base(3), zA + 1.4, 0.3, 0.16, 0.24, CARDBOARD, -0.1);
@@ -757,9 +758,9 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     // Supplies: a toolbox with a yellow handle, a spray can and an oil can.
     p.box(cx - 0.17, 0.655, cz, 0.4, 0.14, 0.26, STEEL);
     p.box(cx - 0.17, 0.795, cz, 0.42, 0.025, 0.28, CHARCOAL);
-    p.alongX(cx - 0.3, cx - 0.04, 0.845, cz, 0.025, YELLOW);
+    p.alongX(cx - 0.3, cx - 0.04, 0.845, cz, 0.025, ACCENT);
     p.post(cx + 0.2, 0.655, cz - 0.08, 0.2, 0.07, 0x7e848c);
-    p.post(cx + 0.33, 0.655, cz + 0.04, 0.17, 0.08, YELLOW);
+    p.post(cx + 0.33, 0.655, cz + 0.04, 0.17, 0.08, ACCENT);
     p.box(cx + 0.1, 0.205, cz, 0.28, 0.18, 0.28, CARDBOARD, 0.08);
     p.post(cx - 0.25, 0.205, cz + 0.03, 0.22, 0.14, 0x3c5365);
 
@@ -793,7 +794,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     p.box(cx, 0, cz, x1 - x0, 0.08, z1 - z0, CHARCOAL);
     p.box(cx, 0.08, cz, x1 - x0 - 0.06, deck - 0.14, z1 - z0 - 0.06, STEEL);
     p.box(cx, deck - 0.06, cz, x1 - x0, 0.06, z1 - z0, CHARCOAL);
-    p.box(cx, deck - 0.01, z0 + 0.03, x1 - x0 - 0.02, 0.012, 0.04, YELLOW);
+    p.box(cx, deck - 0.01, z0 + 0.03, x1 - x0 - 0.02, 0.012, 0.04, ACCENT);
 
     for (let i = 0; i < 3; i++) {
       const y = 0.14 + i * 0.22;
@@ -807,12 +808,12 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
         0.02,
         i === 1 ? STEEL_LIGHT : 0x586a80,
       );
-      p.alongX(cx - 0.45, cx - 0.05, y + 0.14, z0 - 0.03, 0.025, YELLOW);
+      p.alongX(cx - 0.45, cx - 0.05, y + 0.14, z0 - 0.03, 0.025, ACCENT);
     }
 
     // A cupboard door on the right with a handle.
     p.box(cx + 0.62, 0.14, z0 - 0.005, 0.5, 0.62, 0.02, 0x586a80);
-    p.box(cx + 0.45, 0.42, z0 - 0.03, 0.03, 0.2, 0.03, YELLOW);
+    p.box(cx + 0.45, 0.42, z0 - 0.03, 0.03, 0.2, 0.03, ACCENT);
 
     // The drill press: a base plate, a tall column, a table with a collar, a
     // head with a motor, a chuck with a bit and a feed handle.
@@ -844,7 +845,7 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
       );
     }
 
-    p.chunk(px + 0.2, deck + 0.64, pz - 0.06, 0.04, YELLOW);
+    p.chunk(px + 0.2, deck + 0.64, pz - 0.06, 0.04, ACCENT);
     // A work piece clamped on the table.
     p.box(px, deck + 0.315, pz - 0.02, 0.14, 0.06, 0.1, STEEL_LIGHT);
 
@@ -877,49 +878,67 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
 
-    // Base: a heavy plinth, and a bed block the work sits on.
-    p.box(cx, 0, cz, x1 - x0, 0.12, z1 - z0, CHARCOAL);
-    p.box(cx, 0.12, cz, 1.0, 0.5, 0.9, STEEL);
-    p.box(cx, 0.62, cz, 1.2, 0.1, 1.0, CHARCOAL);
-    p.box(cx, 0.72, cz, 0.9, 0.03, 0.7, STEEL_BARE);
+    // A four-post hydraulic press: a low plinth and a bolster plate, four
+    // slim ground posts carrying a crown with the cylinder on top, a sliding
+    // platen on a ram, and a separate power unit at the back.
+    p.box(cx, 0, cz, x1 - x0, 0.1, z1 - z0, CHARCOAL);
+    p.box(cx, 0.1, cz, 1.3, 0.5, 1.1, STEEL);
+    p.box(cx, 0.6, cz, 1.46, 0.08, 1.2, CHARCOAL);
+    p.box(cx, 0.68, cz, 0.9, 0.03, 0.7, STEEL_BARE);
+    // A billet on the plate, under the die.
+    p.box(cx + 0.1, 0.71, cz - 0.05, 0.4, 0.07, 0.3, STEEL_LIGHT);
 
-    // Two thick columns at the sides, joined by a head beam.
-    for (const side of [-1, 1]) {
-      p.box(cx + side * 0.78, 0.12, cz, 0.36, 1.58, 0.5, STEEL);
-      p.box(cx + side * 0.78, 0.12, cz, 0.4, 0.28, 0.54, CHARCOAL);
-      // Faded safety yellow at the foot of each column.
-      p.box(cx + side * 0.78, 0.4, cz + 0.255, 0.38, 0.1, 0.01, YELLOW);
-      p.box(cx + side * 0.78, 0.4, cz - 0.255, 0.38, 0.1, 0.01, YELLOW);
+    // The four posts, with a collar at each foot and a sleeve in the platen.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const px = cx + sx * 0.6;
+        const pz = cz + sz * 0.42;
+
+        p.box(px, 0.68, pz, 0.2, 0.08, 0.2, CHARCOAL);
+        p.post(px, 0.76, pz, 0.74, 0.1, STEEL_BARE);
+        p.box(px, 1.0, pz, 0.18, 0.16, 0.18, STEEL);
+      }
     }
 
-    p.box(cx, 1.4, cz, 1.9, 0.5, 0.6, CHARCOAL);
-    p.box(cx, 1.4, cz, 1.2, 0.5, 0.64, STEEL);
+    // The sliding platen with its die, hanging from the ram.
+    p.box(cx, 0.98, cz, 1.36, 0.1, 1.0, STEEL);
+    p.box(cx, 0.88, cz - 0.05, 0.5, 0.1, 0.34, CHARCOAL);
+    p.post(cx, 1.08, cz, 0.36, 0.16, STEEL_BARE);
 
-    // The hydraulic cylinder and ram.
-    p.post(cx, 1.05, cz, 0.38, 0.22, STEEL_LIGHT);
-    p.post(cx, 0.85, cz, 0.22, 0.09, STEEL_BARE);
-    p.box(cx, 0.78, cz, 0.28, 0.07, 0.28, CHARCOAL);
+    // The crown: a thick beam across the posts, a top plate, and the
+    // hydraulic cylinder standing on it with a cap.
+    p.box(cx, 1.36, cz, 1.52, 0.22, 1.12, STEEL);
+    p.box(cx, 1.58, cz, 1.6, 0.05, 1.2, CHARCOAL);
+    p.post(cx, 1.63, cz, 0.24, 0.44, STEEL_LIGHT);
+    p.box(cx, 1.87, cz, 0.5, 0.03, 0.5, CHARCOAL);
+    // A faded plate and stripe on the crown's front.
+    p.box(cx, 1.42, cz - 0.565, 0.5, 0.09, 0.01, 0x9a8836);
+    p.box(cx - 0.55, 1.38, cz - 0.565, 0.3, 0.14, 0.01, ACCENT);
 
-    // The pump and oil tank on the east side, with a hose to the cylinder.
-    p.box(cx + 0.78, 0.5, z1 - 0.38, 0.5, 0.44, 0.4, STEEL);
-    p.box(cx + 0.78, 0.94, z1 - 0.38, 0.52, 0.04, 0.42, CHARCOAL);
-    p.post(cx + 0.78, 0.98, z1 - 0.38, 0.12, 0.08, STEEL_BARE);
-    p.alongX(cx + 0.1, cx + 0.62, 1.0, z1 - 0.3, 0.05, OIL);
-    p.alongZ(cx + 0.1, 1.0, z1 - 0.3, cz + 0.1, 0.05, OIL);
+    // The power unit at the back: an oil tank, a motor, a gauge and hoses up
+    // to the cylinder.
+    p.box(cx + 0.28, 0.1, z1 - 0.3, 0.9, 0.5, 0.4, STEEL);
+    p.box(cx + 0.28, 0.6, z1 - 0.3, 0.94, 0.04, 0.44, CHARCOAL);
+    p.alongX(cx - 0.02, cx + 0.5, 0.78, z1 - 0.3, 0.3, CHARCOAL);
+    p.box(cx + 0.56, 0.64, z1 - 0.3, 0.1, 0.06, 0.1, BLACK);
+    p.chunk(cx - 0.12, 0.64, z1 - 0.42, 0.07, ACCENT);
+    p.post(cx + 0.7, 0.64, z1 - 0.18, 0.2, 0.1, STEEL_BARE);
+    p.post(cx + 0.25, 0.64, z1 - 0.46, 1.06, 0.05, OIL);
+    p.alongZ(cx + 0.25, 1.7, z1 - 0.46, cz, 0.05, OIL);
 
-    // A control box on the west column with yellow switches.
-    p.box(cx - 0.78, 1.0, z0 + 0.03, 0.3, 0.36, 0.1, CHARCOAL);
-    p.chunk(cx - 0.84, 1.28, z0 - 0.03, 0.05, YELLOW);
-    p.chunk(cx - 0.72, 1.28, z0 - 0.03, 0.05, 0x7a2a22);
+    // A control stand at the front-left with a yellow and a red switch.
+    p.post(cx - 0.75, 0.1, z0 + 0.16, 0.8, 0.06, STEEL_BARE);
+    p.box(cx - 0.75, 0.9, z0 + 0.16, 0.3, 0.28, 0.16, CHARCOAL);
+    p.chunk(cx - 0.81, 1.1, z0 + 0.06, 0.05, ACCENT);
+    p.chunk(cx - 0.69, 1.1, z0 + 0.06, 0.05, 0x7a2a22);
 
-    // A machine guard across the front and back: a steel mesh in a frame.
-    for (const gz of [z0 + 0.1, z1 - 0.1]) {
-      const out = gz < cz ? -0.012 : 0.012;
-
-      p.box(cx, 0.75, gz, 1.2, 0.62, 0.025, 0x2b3038);
-      p.box(cx, 0.75, gz + out, 1.24, 0.03, 0.03, YELLOW);
-      p.box(cx, 1.35, gz + out, 1.24, 0.03, 0.03, YELLOW);
+    // A guard rail across the open front.
+    for (const gx of [cx - 0.58, cx + 0.58]) {
+      p.post(gx, 0.1, z0 + 0.06, 0.8, 0.04, ACCENT);
     }
+
+    p.alongX(cx - 0.58, cx + 0.58, 0.88, z0 + 0.06, 0.04, ACCENT);
+    p.alongX(cx - 0.58, cx + 0.58, 0.55, z0 + 0.06, 0.03, ACCENT);
 
     map.createFitting("fittings-press", F, p.elements, [
       { minX: x0, maxX: x1, minZ: z0, maxZ: z1, top: 1.9 },
@@ -993,8 +1012,8 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
       p.post(fx, 0.07, z0 + 0.06, 0.62, 0.06, CHARCOAL);
       p.post(fx, 0.07, z1 - 0.06, 0.62, 0.06, CHARCOAL);
       p.box(fx, 0.34, cz, 0.08, 0.04, 0.86, CHARCOAL);
-      p.box(fx, 0.66, z0 + 0.06, 0.14, 0.03, 0.12, YELLOW);
-      p.box(fx, 0.66, z1 - 0.06, 0.14, 0.03, 0.12, YELLOW);
+      p.box(fx, 0.66, z0 + 0.06, 0.14, 0.03, 0.12, ACCENT);
+      p.box(fx, 0.66, z1 - 0.06, 0.14, 0.03, 0.12, ACCENT);
     }
 
     const zA = z0 + 0.15;

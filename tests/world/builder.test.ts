@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { buildArena, createLadder } from "../../src/world/ArenaBuilder";
 import { PERIMETER_WALL_HEIGHT, ROOF_HIGH } from "../../src/world/ArenaLayout";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
+import { rawSurfaceFor } from "../../src/world/materials/WallSurfaces";
 import { ventBlocks } from "../../src/world/Vents";
 
 function meshes(root: THREE.Object3D): THREE.Mesh[] {
@@ -141,7 +142,7 @@ describe("Arena meshes", () => {
 
     // The control room keeps its own wall, and the floors stay concrete.
     const control = ARENA_LAYOUT.walls.filter((w) =>
-      w.id.startsWith("room-control-wall"),
+      w.id.startsWith("room-spawn-nw-wall"),
     );
 
     expect(control.length).toBeGreaterThan(0);
@@ -167,8 +168,13 @@ describe("Arena meshes", () => {
       (w) => (w.role ?? "floor") === "wall",
     ).length;
 
+    // The unfinished rooftop walls are exposed blockwork, not painted.
+    const raw = ARENA_LAYOUT.walls.filter(
+      (w) => (w.role ?? "floor") === "wall" && rawSurfaceFor(w.id) !== null,
+    ).length;
+
     // Every wall piece (the wall over each door included) and the four perimeter walls.
-    expect(painted.length + bricks.length).toBe(wallCount + 4);
+    expect(painted.length + bricks.length + raw).toBe(wallCount + 4);
     expect(painted.length).toBeGreaterThan(bricks.length);
     expect(materials.size).toBeLessThanOrEqual(3);
     expect(maps.size).toBeLessThanOrEqual(3);
@@ -278,7 +284,7 @@ describe("Arena meshes", () => {
     const box = new THREE.Box3().setFromObject(arena);
 
     expect(box.max.y).toBeGreaterThanOrEqual(PERIMETER_WALL_HEIGHT);
-    expect(box.max.y).toBeLessThanOrEqual(16);
+    expect(box.max.y).toBeLessThanOrEqual(17);
     expect(box.max.x).toBeGreaterThanOrEqual(32);
     expect(box.min.x).toBeLessThanOrEqual(-32);
     expect(box.max.z).toBeGreaterThanOrEqual(24);
@@ -291,7 +297,7 @@ describe("Arena meshes", () => {
 
   it("a wall on a floor is drawn from the floor up, not from the ground", () => {
     const wall = ARENA_LAYOUT.walls.find(
-      (w) => w.id === "room-control-wall-s-2",
+      (w) => w.id === "room-switch-wall-s-2",
     )!;
     const mesh = all.find(
       (m) =>

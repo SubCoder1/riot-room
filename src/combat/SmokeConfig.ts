@@ -4,7 +4,7 @@
  */
 export const SMOKE_CONFIG = {
   /** How many a player starts with. */
-  SMOKE_START_QUANTITY: 2,
+  SMOKE_START_QUANTITY: 1,
 
   // ---- Flight (the shared model) ----
   SMOKE_THROW_SPEED: 18,

@@ -10,7 +10,7 @@ const v = (x: number, y: number, z: number): THREE.Vector3 =>
   new THREE.Vector3(x, y, z);
 
 // A room wall on the upper floor; the lines run at chest height up there.
-const block = ARENA_LAYOUT.walls.find((w) => w.id === "room-control-wall-s-2")!;
+const block = ARENA_LAYOUT.walls.find((w) => w.id === "room-switch-wall-s-2")!;
 const chest = 5.2;
 const x = (block.minX + block.maxX) / 2;
 

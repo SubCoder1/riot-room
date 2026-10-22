@@ -93,16 +93,16 @@ describe("WeaponWheelView", () => {
   });
 
   it("shows the quantities on the slots, read from the inventory", () => {
-    expect(slotText("GRENADE")).toContain("×3");
-    expect(slotText("MOLOTOV")).toContain("×0");
-    expect(slotText("SMOKE")).toContain("×2");
+    expect(slotText("GRENADE")).toContain("×1");
+    expect(slotText("MOLOTOV")).toContain("×1");
+    expect(slotText("SMOKE")).toContain("×1");
 
     utilities.add("GRENADE", 2);
     utilities.add("MOLOTOV", 1);
     view.render();
 
-    expect(slotText("GRENADE")).toContain("×5");
-    expect(slotText("MOLOTOV")).toContain("×1");
+    expect(slotText("GRENADE")).toContain("×3");
+    expect(slotText("MOLOTOV")).toContain("×2");
   });
 
   it("the reserved slot has no quantity and is marked as a placeholder", () => {
@@ -146,12 +146,14 @@ describe("WeaponWheelView", () => {
   });
 
   it("highlights exactly one slot, and the centre follows each scroll at once", () => {
+    utilities.remove("MOLOTOV", 1); // (the test starts with none)
+    utilities.remove("MOLOTOV", 1);
     utilities.select("EMPTY");
     scroll(1);
 
     expect(selected()).toEqual(["GRENADE"]);
     expect(text(".ww-center-name")).toBe("GRENADE");
-    expect(text(".ww-center-qty")).toBe("×3");
+    expect(text(".ww-center-qty")).toBe("×1");
 
     scroll(1);
     expect(selected()).toEqual(["MOLOTOV"]);
@@ -161,7 +163,7 @@ describe("WeaponWheelView", () => {
     scroll(1);
     expect(selected()).toEqual(["SMOKE"]);
     expect(text(".ww-center-name")).toBe("SMOKE");
-    expect(text(".ww-center-qty")).toBe("×2");
+    expect(text(".ww-center-qty")).toBe("×1");
 
     scroll(1);
     expect(selected()).toEqual(["FISTS"]);
@@ -175,18 +177,20 @@ describe("WeaponWheelView", () => {
   });
 
   it("the centre quantity changes when the inventory does", () => {
+    utilities.remove("MOLOTOV", 1); // (the test starts with none)
     utilities.select("GRENADE");
     scroll(-1);
     scroll(1); // back to the grenade
-    expect(text(".ww-center-qty")).toBe("×3");
+    expect(text(".ww-center-qty")).toBe("×1");
 
     utilities.add("GRENADE", 2);
     view.render();
-    expect(text(".ww-center-qty")).toBe("×5");
+    expect(text(".ww-center-qty")).toBe("×3");
   });
 
   it("a slot that is used up is drawn quietly but is still there", () => {
-    utilities.remove("GRENADE", 3);
+    utilities.remove("MOLOTOV", 1); // (the test starts with none)
+    utilities.remove("GRENADE", 1);
     view.render();
 
     const grenades = Array.from(view.root.querySelectorAll(".ww-slot")).find(

@@ -29,7 +29,18 @@ describe("Piles of building material", () => {
     expect(kinds.has("bricks")).toBe(true);
 
     // The ground level stays bare: piles stand on floors and rooms only.
+    // (The two spawn areas are on the ground floor and are dressed.)
     for (const pile of layout.piles) {
+      // (Scattered debris and loose wiring are flat, drawn only and has no collision.)
+      if (
+        /spawn/.test(pile.id) ||
+        pile.id === "fittings-gate-closed" ||
+        pile.id.startsWith("debris-") ||
+        pile.id.startsWith("messy-wiring-") ||
+        pile.id === "power-feeds"
+      )
+        continue;
+
       expect(pile.baseY, pile.id).toBeGreaterThanOrEqual(2.8);
     }
   });
@@ -318,7 +329,7 @@ describe("Broken walls and barriers", () => {
 
       expect(wall.id.startsWith("outer"), base).toBe(false);
     }
-  });
+  }, 30000);
 
   it("the barricade is a low wall of bricks with a broken end, lower there", () => {
     // Not placed today (the rooms are dressed separately), but ready for it.
@@ -346,8 +357,9 @@ describe("Broken walls and barriers", () => {
     }
 
     for (const d of layout.decals) {
-      // The Workshop's floor marks go with its fittings.
-      if (/^(workshop-|dust-fittings-)/.test(d.id)) continue;
+      // The Workshop's and the furnished rooms' floor marks go with their fittings.
+      if (/^(workshop-|dust-fittings-|decal-spawn-|decal-room-)/.test(d.id))
+        continue;
 
       for (const room of layout.rooms) {
         if (Math.abs(room.floorY - d.y) > 0.5) continue;

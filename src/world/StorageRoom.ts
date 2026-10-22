@@ -31,13 +31,19 @@ const BLACK = 0x14161a;
 const TIMBER = 0x7a5c3c;
 const TIMBER_B = 0x6a5035;
 const TIMBER_DARK = 0x4e3a28;
-const YELLOW = 0xb09128;
+/** A muted blue-grey accent for edges and bands (yellow is kept for interactive objects). */
+const ACCENT = 0x5a667a;
+const GUNMETAL = 0x2c333d;
+const CARDBOARD_C = 0x6f5d40;
+const CARDBOARD_D = 0x866f4f;
+const BIN_BLUE = 0x4a5568;
+const BIN_PALE = 0x6a727e;
 const CARDBOARD = 0x7c694a;
 const CARDBOARD_B = 0x8a7656;
 const TAPE = 0xb8aa86;
 const GREY_BIN = 0x606873;
 
-interface Footprint {
+export interface Footprint {
   minX: number;
   maxX: number;
   minZ: number;
@@ -48,7 +54,7 @@ interface Footprint {
 }
 
 /** Rotates a local offset about a centre (matches a box turned by `ry`). */
-function turn(
+export function turn(
   cx: number,
   cz: number,
   ry: number,
@@ -62,7 +68,7 @@ function turn(
 }
 
 /** The axis-aligned footprint of a w x d box turned by `ry`. */
-function bounds(
+export function bounds(
   cx: number,
   cz: number,
   w: number,
@@ -83,7 +89,7 @@ function bounds(
 }
 
 /** A slatted wooden crate with corner posts, battens and steel corner brackets. */
-function crate(
+export function crate(
   p: Pieces,
   cx: number,
   bottom: number,
@@ -145,10 +151,10 @@ function crate(
 }
 
 /** What a unit mostly holds: each one reads differently from the next. */
-type ShelfTheme = "mixed" | "cartons" | "bins" | "steel";
+export type ShelfTheme = "mixed" | "cartons" | "bins" | "steel";
 
 /** A cardboard carton with a tape strip and a label. */
-function carton(
+export function carton(
   p: Pieces,
   cx: number,
   bottom: number,
@@ -168,7 +174,7 @@ function carton(
 }
 
 /** A steel drum: ribs, a lid with a bung, and an optional yellow band. */
-function drum(
+export function drum(
   p: Pieces,
   x: number,
   z: number,
@@ -183,7 +189,7 @@ function drum(
   p.chunk(x + 0.12, bottom + 0.9, z + 0.08, 0.06, STEEL_BARE);
 
   if (band) {
-    p.post(x, bottom + 0.4, z, 0.1, 0.59, YELLOW);
+    p.post(x, bottom + 0.4, z, 0.1, 0.59, ACCENT);
   }
 }
 
@@ -192,7 +198,7 @@ function drum(
  * way it runs; (x0, z0) is its min corner and `len` its length. `bays` fixes
  * how full each level is (1 = full, 0 = empty).
  */
-function shelving(
+export function shelving(
   p: Pieces,
   random: () => number,
   x0: number,
@@ -223,15 +229,18 @@ function shelving(
     b: number,
     height: number,
     color: number,
+    ry = 0,
   ): void => {
     const [sx, sdz] = sz(a, b);
 
-    p.box(wx(u, v), bottom, wz(u, v), sx, height, sdz, color);
+    p.box(wx(u, v), bottom, wz(u, v), sx, height, sdz, color, ry);
 
     // For shots: every piece (thin ones thickened) except the smallest bits.
     if (Math.max(sx, sdz, height) >= 0.06) {
-      const hx = Math.max(sx, 0.05) / 2;
-      const hz = Math.max(sdz, 0.05) / 2;
+      const c = Math.abs(Math.cos(ry));
+      const sn = Math.abs(Math.sin(ry));
+      const hx = Math.max(c * sx + sn * sdz, 0.05) / 2;
+      const hz = Math.max(sn * sx + c * sdz, 0.05) / 2;
       const cy = bottom + height / 2;
       const hy = Math.max(height, 0.08) / 2;
 
@@ -266,28 +275,60 @@ function shelving(
 
   levels.forEach((y, level) => {
     box(len / 2, depth / 2, y, len - 0.06, depth - 0.04, 0.04, STEEL);
-    box(len / 2, depth - 0.03, y + 0.04, len - 0.06, 0.03, 0.05, CHARCOAL);
-    box(0.04, depth - 0.02, y, 0.08, 0.04, 0.05, YELLOW);
-    box(len - 0.04, depth - 0.02, y, 0.08, 0.04, 0.05, YELLOW);
+    box(
+      len / 2,
+      depth - 0.03,
+      y + 0.04,
+      len - 0.06,
+      0.03,
+      0.05,
+      random() < 0.3 ? STEEL_LIGHT : CHARCOAL,
+    );
+    box(0.04, depth - 0.02, y, 0.08, 0.04, 0.05, ACCENT);
+    box(len - 0.04, depth - 0.02, y, 0.08, 0.04, 0.05, ACCENT);
 
     // Load: items laid along the level up to its fill, then left empty.
     let u = 0.12;
-    const stop = (len - 0.16) * fill[level % fill.length];
+    // Now and then a small worn label plate on the shelf's front lip.
+    if (level % 2 === 1 && random() < 0.4) {
+      box(
+        0.3 + random() * (len - 0.6),
+        depth - 0.005,
+        y + 0.05,
+        0.16,
+        0.012,
+        0.05,
+        0xc9c6b4,
+      );
+    }
+
+    // The upper levels are kept sparser: less is reached for up there.
+    const stop =
+      (len - 0.16) * fill[level % fill.length] * (level >= 4 ? 0.75 : 1);
+    const pick = (list: readonly number[]): number =>
+      list[Math.floor(random() * list.length)];
 
     while (u < stop) {
-      const roll = random();
-      // A themed unit holds mostly one thing, with the odd stray.
-      const kind =
-        theme === "mixed" || random() < 0.12
-          ? roll
-          : theme === "bins"
-            ? roll * 0.35
-            : theme === "cartons"
-              ? 0.35 + roll * 0.35
-              : 0.7 + roll * 0.15;
-      const w = 0.22 + random() * (theme === "cartons" ? 0.5 : 0.4);
+      // A themed unit holds mostly one kind of thing, with the odd stray.
+      const weights: Record<ShelfTheme, number[]> = {
+        // bin, carton, crate, steel, parts, stack, tub, case
+        mixed: [0.18, 0.26, 0.1, 0.1, 0.06, 0.1, 0.1, 0.1],
+        bins: [0.4, 0.1, 0.06, 0.1, 0.08, 0, 0.26, 0],
+        cartons: [0.08, 0.42, 0.06, 0, 0.04, 0.3, 0.04, 0.06],
+        steel: [0.14, 0.08, 0.1, 0.34, 0.1, 0, 0.06, 0.18],
+      };
+      const table = random() < 0.12 ? weights.mixed : weights[theme];
+      let roll = random();
+      let kind = 0;
+
+      while (kind < table.length - 1 && roll > table[kind]) {
+        roll -= table[kind];
+        kind++;
+      }
+
+      const w = 0.2 + random() * (kind === 1 || kind === 5 ? 0.5 : 0.36);
       // Never taller than the space under the next shelf (with a lid on top).
-      const hh = 0.14 + random() * (theme === "cartons" ? 0.28 : 0.2);
+      const hh = 0.12 + random() * (kind === 1 || kind === 5 ? 0.26 : 0.2);
 
       // Keep clear of the uprights: slide the item past one it would cross.
       for (const pu of postsU) {
@@ -306,48 +347,156 @@ function shelving(
         continue;
       }
 
-      const dd = Math.min(depth - 0.14, 0.3 + random() * 0.22);
-      const v = depth / 2 - 0.02 + (random() - 0.5) * 0.05;
+      const dd = Math.min(depth - 0.14, 0.28 + random() * 0.24);
+      // Now and then one is pulled a little toward the aisle, in use.
+      const pulled = random() < 0.1 ? Math.min(0.08, depth - 0.06 - dd) : 0;
+      const v = depth / 2 - 0.02 + (random() - 0.5) * 0.05 + pulled / 2;
       const at = y + 0.04;
+      const cu = u + w / 2;
 
-      if (kind < 0.35) {
-        // A crate-tray or bin.
-        box(u + w / 2, v, at, w, dd, hh, random() < 0.3 ? STEEL : GREY_BIN);
-        box(u + w / 2, v, at + hh - 0.005, w - 0.06, dd - 0.06, 0.012, BLACK);
-      } else if (kind < 0.7) {
-        // A carton, sometimes with another on top.
-        box(
-          u + w / 2,
-          v,
-          at,
-          w,
-          dd,
-          hh,
-          random() < 0.5 ? CARDBOARD : CARDBOARD_B,
-        );
-        box(u + w / 2, v, at + hh, w * 0.08, dd, 0.004, TAPE);
+      if (kind === 0) {
+        // A bin: grey, blue-grey or pale, with a dark opening.
+        box(cu, v, at, w, dd, hh, pick([GREY_BIN, BIN_BLUE, BIN_PALE]));
+        box(cu, v, at + hh - 0.005, w - 0.06, dd - 0.06, 0.012, BLACK);
+      } else if (kind === 1) {
+        // A carton, turned a little now and then.
+        const turn = random() < 0.25 ? (random() - 0.5) * 0.5 : 0;
+        const tone = pick([CARDBOARD, CARDBOARD_B, CARDBOARD_C, CARDBOARD_D]);
+
+        box(cu, v, at, w, dd, hh, tone, turn);
+        box(cu, v, at + hh, w * 0.08, dd, 0.004, TAPE, turn);
 
         // A second, smaller carton on top where there is room for it.
         const room = 0.4 - hh;
 
         if (random() < 0.3 && room > 0.1) {
           box(
-            u + w / 2,
+            cu,
             v,
             at + hh,
             w * 0.8,
             dd * 0.8,
             Math.min(room, 0.18),
-            CARDBOARD_B,
+            pick([CARDBOARD_B, CARDBOARD_C]),
+            (random() - 0.5) * 0.3,
           );
         }
-      } else if (kind < 0.85) {
-        // A lidded steel container.
-        box(u + w / 2, v, at, w, dd, hh, STEEL_LIGHT);
-        box(u + w / 2, v, at + hh, w + 0.02, dd + 0.02, 0.04, YELLOW);
+      } else if (kind === 2) {
+        // An open timber crate: a base and four low boards, empty or with a
+        // few parts in it.
+        const ch = Math.min(0.26, hh + 0.08);
+
+        box(cu, v, at, w, dd, 0.03, TIMBER_DARK);
+
+        for (const side of [-1, 1]) {
+          box(cu, v + side * (dd / 2 - 0.012), at + 0.03, w, 0.024, ch, TIMBER);
+          box(
+            cu + side * (w / 2 - 0.012),
+            v,
+            at + 0.03,
+            0.024,
+            dd,
+            ch,
+            TIMBER_B,
+          );
+        }
+
+        if (random() < 0.5) {
+          box(cu, v, at + 0.03, w * 0.55, dd * 0.5, ch * 0.5, STEEL_BARE);
+        }
+      } else if (kind === 3) {
+        // A lidded metal container.
+        box(cu, v, at, w, dd, hh, pick([STEEL_LIGHT, STEEL, ACCENT]));
+        box(
+          cu,
+          v,
+          at + hh,
+          w + 0.02,
+          dd + 0.02,
+          0.035,
+          pick([GUNMETAL, CHARCOAL]),
+        );
+      } else if (kind === 4) {
+        // Small parts: a couple of short drums or a coil, loose.
+        const r = Math.min(0.09, dd / 2 - 0.02);
+
+        p.post(wx(cu - 0.08, v), at, wz(cu - 0.08, v), hh * 0.8, r, STEEL_BARE);
+        p.post(
+          wx(cu + 0.1, v),
+          at,
+          wz(cu + 0.1, v),
+          hh * 0.6,
+          r * 0.8,
+          GUNMETAL,
+        );
+      } else if (kind === 6) {
+        // A plastic storage tub: wide and low, with a paler lid, slightly off.
+        box(
+          cu,
+          v,
+          at,
+          w + 0.08,
+          dd,
+          hh * 0.8,
+          pick([BIN_BLUE, GREY_BIN, BIN_PALE]),
+        );
+        box(
+          cu,
+          v,
+          at + hh * 0.8,
+          w + 0.1,
+          dd + 0.02,
+          0.03,
+          pick([BIN_PALE, STEEL_LIGHT]),
+          (random() - 0.5) * 0.12,
+        );
+      } else if (kind === 7) {
+        // A small equipment case: dark, with two light latches and a handle.
+        const ch = Math.min(hh, 0.26);
+
+        box(cu, v, at, w, dd, ch, pick([GUNMETAL, CHARCOAL]));
+        box(
+          cu - w * 0.25,
+          v + dd / 2,
+          at + ch * 0.6,
+          0.05,
+          0.015,
+          0.05,
+          STEEL_BARE,
+        );
+        box(
+          cu + w * 0.25,
+          v + dd / 2,
+          at + ch * 0.6,
+          0.05,
+          0.015,
+          0.05,
+          STEEL_BARE,
+        );
+        box(cu, v, at + ch, w * 0.35, 0.04, 0.03, STEEL_BARE);
       } else {
-        // A coil of pipe fittings.
-        box(u + w / 2, v, at, w * 0.7, dd * 0.6, hh * 0.5, STEEL_BARE);
+        // An uneven stack: three cartons, each a little off the one below.
+        let top = at;
+
+        for (let k = 0; k < 3; k++) {
+          const sh = Math.min(0.12, (0.4 - (top - at)) / (3 - k));
+
+          if (sh < 0.06) {
+            break;
+          }
+
+          box(
+            cu + (random() - 0.5) * 0.06,
+            v,
+            top,
+            w * (1 - k * 0.1),
+            dd * (1 - k * 0.06),
+            sh,
+            pick([CARDBOARD, CARDBOARD_C, CARDBOARD_D]),
+            (random() - 0.5) * 0.25,
+          );
+          top += sh;
+        }
       }
 
       u += w + 0.06 + random() * 0.1;
@@ -690,6 +839,36 @@ export function furnishHall(map: MapBuilder, floorY: number): void {
     map.createFitting(`fittings-maze-${id}`, F, p.elements, boxes);
   }
 
+  // Cartons on a pallet awaiting relocation: against the south wall at the end
+  // of the second south run, uneven and a little turned.
+  {
+    const p = new Pieces();
+
+    p.box(6.7, 0, 23.2, 0.8, 0.1, 1.0, TIMBER_DARK);
+    p.box(6.7, 0.1, 23.2, 0.8, 0.025, 1.0, TIMBER);
+    p.box(6.65, 0.125, 23.25, 0.7, 0.36, 0.8, CARDBOARD_C, 0.05);
+    p.box(6.75, 0.485, 23.15, 0.5, 0.3, 0.55, CARDBOARD_D, -0.12);
+    p.box(6.6, 0.485, 23.5, 0.34, 0.2, 0.3, CARDBOARD, 0.2);
+    map.createFitting("fittings-hall-pallet", F, p.elements, [
+      { minX: 6.3, maxX: 7.1, minZ: 22.7, maxZ: 23.7, top: 0.85 },
+    ]);
+  }
+
+  // One container group on the floor in the 2.4 m gap between the south row's
+  // two runs, against the first run's end and the wall, so the lane left to the
+  // second run is 1.5 m.
+  {
+    const p = new Pieces();
+
+    // A blue-grey bin with a dark opening, and a carton laid on top of it.
+    p.box(1.45, 0, 23.35, 0.9, 0.45, 0.7, 0x4a5568);
+    p.box(1.45, 0.43, 23.35, 0.8, 0.012, 0.6, BLACK);
+    p.box(1.4, 0.45, 23.35, 0.5, 0.17, 0.4, CARDBOARD_D, 0.15);
+    map.createFitting("fittings-hall-floor-stock", F, p.elements, [
+      { minX: 1.0, maxX: 1.9, minZ: 23.0, maxZ: 23.7, top: 0.62 },
+    ]);
+  }
+
   // The roller shutter of the wide north doorway (x -1 to 3), on the hall side
   // of the wall: a housing over the opening, guide rails down both jambs and
   // the curtain fully down, its bottom bar on the floor. It is closed: a solid
@@ -711,7 +890,7 @@ export function furnishHall(map: MapBuilder, floorY: number): void {
     // Guide rails down both jambs, with a yellow cap at the foot of each.
     for (const gx of [x0 - 0.04, x1 + 0.04]) {
       p.box(gx, 0, wall + 0.06, 0.09, 2.5, 0.12, CHARCOAL);
-      p.box(gx, 0, wall + 0.06, 0.12, 0.12, 0.15, YELLOW);
+      p.box(gx, 0, wall + 0.06, 0.12, 0.12, 0.15, ACCENT);
     }
 
     // The curtain: slats from the housing down to the bottom bar.
@@ -736,10 +915,10 @@ export function furnishHall(map: MapBuilder, floorY: number): void {
     // The bottom bar on the floor, a yellow strip along it and two lift
     // handles with a latch plate between them at hand height.
     p.box(cx, bottomBar, wall + 0.1, x1 - x0 + 0.1, 0.1, 0.07, CHARCOAL);
-    p.box(cx, bottomBar + 0.1, wall + 0.14, x1 - x0 + 0.06, 0.03, 0.02, YELLOW);
+    p.box(cx, bottomBar + 0.1, wall + 0.14, x1 - x0 + 0.06, 0.03, 0.02, ACCENT);
 
     for (const px of [cx - 0.55, cx + 0.55]) {
-      p.box(px, 0.9, wall + 0.14, 0.05, 0.16, 0.04, YELLOW);
+      p.box(px, 0.9, wall + 0.14, 0.05, 0.16, 0.04, ACCENT);
     }
 
     p.box(cx, 0.94, wall + 0.14, 0.14, 0.1, 0.03, STEEL_BARE);
@@ -757,7 +936,7 @@ export function furnishHall(map: MapBuilder, floorY: number): void {
 }
 
 /** A timber pallet: three bearers under a deck of boards. */
-function pallet(
+export function pallet(
   p: Pieces,
   cx: number,
   cz: number,
@@ -792,14 +971,25 @@ export function furnishYard(map: MapBuilder, floorY: number): void {
     const p = new Pieces();
     const boxes: Footprint[] = [];
 
-    pallet(p, -16.9, 16.5, 1.2, 1.0, 0.04);
-    carton(p, -17.15, 0.125, 16.5, 0.55, 0.8, 0.45, 0.04);
-    carton(p, -16.55, 0.125, 16.45, 0.5, 0.8, 0.5, 0.04, CARDBOARD_B);
-    carton(p, -17.1, 0.575, 16.5, 0.5, 0.7, 0.4, 0.1, CARDBOARD_B);
-    carton(p, -16.55, 0.625, 16.45, 0.45, 0.7, 0.35, -0.05);
+    pallet(p, -17.4, 15.82, 1.2, 1.0, 0.04);
+    carton(p, -17.65, 0.125, 15.82, 0.55, 0.8, 0.45, 0.04);
+    carton(p, -17.05, 0.125, 15.77, 0.5, 0.8, 0.5, 0.04, CARDBOARD_B);
+    carton(p, -17.6, 0.575, 15.82, 0.5, 0.7, 0.4, 0.1, CARDBOARD_B);
+    carton(p, -17.05, 0.625, 15.77, 0.45, 0.7, 0.35, -0.05);
     // A strap round the load, over the top.
-    p.box(-16.9, 0.125, 16.5, 1.14, 0.9, 0.012, STEEL_BARE, 0.04);
-    boxes.push(bounds(-16.9, 16.5, 1.2, 1.0, 0.04, 1.0));
+    p.box(-17.4, 0.125, 15.82, 1.14, 0.9, 0.012, STEEL_BARE, 0.04);
+    boxes.push(bounds(-17.4, 15.82, 1.2, 1.0, 0.04, 1.0));
+    // A stack of cartons filling the rest of the way to the shelving, so there
+    // is no pocket between the load and it (a body landing there is thrown out).
+    carton(p, -17.45, 0, 16.67, 1.0, 0.6, 0.4, 0.0);
+    carton(p, -17.4, 0.4, 16.67, 0.8, 0.5, 0.3, 0.12, CARDBOARD_B);
+    boxes.push({
+      minX: -18.0,
+      maxX: -16.85,
+      minZ: 16.34,
+      maxZ: 17.0,
+      top: 0.72,
+    });
     map.createFitting("fittings-yard-pallet", F, p.elements, boxes);
   }
 
@@ -843,7 +1033,7 @@ export function furnishYard(map: MapBuilder, floorY: number): void {
     p.post(-14.55, 0.24, 23.2, 1.5, 0.27, 0x4a5640);
     p.post(-15.45, 1.74, 23.2, 0.04, 0.2, STEEL_BARE);
     p.post(-14.55, 1.74, 23.2, 0.04, 0.2, STEEL_BARE);
-    p.post(-15.0, 0.8, 23.2, 0.5, 0.05, YELLOW);
+    p.post(-15.0, 0.8, 23.2, 0.5, 0.05, ACCENT);
     p.chunk(-15.0, 1.4, 22.85, 0.07, STEEL_BARE);
     map.createFitting("fittings-yard-compressor", F, p.elements, [
       { minX: -15.8, maxX: -14.2, minZ: 22.75, maxZ: 23.65, top: 1.8 },
@@ -865,7 +1055,7 @@ export function furnishYard(map: MapBuilder, floorY: number): void {
     }
 
     p.box(cx, 0.86, cz, x1 - x0, 0.06, 0.74, STEEL_BARE);
-    p.box(cx, 0.86, cz - 0.36, x1 - x0, 0.08, 0.03, YELLOW);
+    p.box(cx, 0.86, cz - 0.36, x1 - x0, 0.08, 0.03, ACCENT);
     p.box(cx, 0.28, cz, x1 - x0 - 0.1, 0.04, 0.66, STEEL);
     // A drawer unit, a vise and a parts tray.
     p.box(x0 + 0.4, 0.34, cz, 0.7, 0.5, 0.62, CHARCOAL);
@@ -889,7 +1079,7 @@ export function furnishYard(map: MapBuilder, floorY: number): void {
     for (const z of [17.65, 18, 18.35]) {
       p.post(-9.7, 0, z, 1.35, 0.1, 0x3c4658);
       p.post(-9.7, 1.35, z, 0.06, 0.06, STEEL_BARE);
-      p.post(-9.7, 1.2, z, 0.1, 0.11, YELLOW);
+      p.post(-9.7, 1.2, z, 0.1, 0.11, ACCENT);
     }
 
     map.createFitting("fittings-yard-drums", F, p.elements, [
