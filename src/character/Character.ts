@@ -2375,8 +2375,22 @@ export class Character {
   }
 
   private applyThrowPose(): void {
-    if (!this.throwPose || this.throwPose.weight < 0.002) {
+    let pose = this.throwPose;
+
+    if (!pose || pose.weight < 0.002) {
       return;
+    }
+
+    // The striking arm belongs to the punch while it reaches: the throw pose
+    // gives way as the arm straightens (never a half-folded fist).
+    if (this.reachAmount > 0.001) {
+      const give = 1 - this.reachAmount;
+
+      if (give < 0.002) {
+        return;
+      }
+
+      pose = { ...pose, weight: pose.weight * give };
     }
 
     // The way the player looks (flat), and the crosshair direction.
@@ -2396,9 +2410,9 @@ export class Character {
       .add(new THREE.Vector3(0, Math.sin(pitch), 0));
 
     this.throwArm.firstPerson = this.upperBodyFollowsLook;
-    this.swingBodyForThrow(this.throwPose, this.throwForward);
+    this.swingBodyForThrow(pose, this.throwForward);
 
-    this.throwArm.apply(this.throwPose, this.throwForward, this.throwAim);
+    this.throwArm.apply(pose, this.throwForward, this.throwAim);
   }
 
   /**

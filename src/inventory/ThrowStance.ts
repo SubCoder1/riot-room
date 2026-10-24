@@ -439,6 +439,9 @@ export class ThrowStance {
         }
 
         rate = 16;
+        // A punch thrown while the hand is still reaching for the next item
+        // (it comes straight after a throw) must have the arm to itself.
+        overall = input.armBusy ? 0 : 1;
 
         break;
 
@@ -472,7 +475,7 @@ export class ThrowStance {
 
       case "THROW_UNEQUIPPING":
         key = "pocket";
-        overall = progress < UNEQUIP_ITEM_GONE_AT ? 1 : 0;
+        overall = progress < UNEQUIP_ITEM_GONE_AT && !input.armBusy ? 1 : 0;
         rate = 16;
 
         break;
@@ -484,6 +487,10 @@ export class ThrowStance {
       this.mix[name] += ((name === key ? 1 : 0) - this.mix[name]) * k;
     }
 
-    this.overall += (overall - this.overall) * (1 - Math.exp(-18 * dt));
+    // The pose lets go of the arm fast when a punch needs it (a slow fade
+    // leaves the fist half in the pocket pose through the punch's reach).
+    const letGo = input.armBusy && overall === 0 ? 60 : 18;
+
+    this.overall += (overall - this.overall) * (1 - Math.exp(-letGo * dt));
   }
 }

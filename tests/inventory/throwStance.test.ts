@@ -658,4 +658,13 @@ describe("ThrowStance: a grenade's pin is pulled only when the throw is made", (
     expect(stance.state).toBe("THROW_EQUIPPING");
     expect(stance.pinPull).toBe(0);
   });
+
+  it("lets go of the arm within a few frames when a punch starts, even while reaching for the next item", () => {
+    run(THROW_TIMING.equip * 0.5);
+    expect(stance.state).toBe("THROW_EQUIPPING");
+    expect(stance.pose.weight).toBeGreaterThan(0.9);
+
+    run(0.1, { armBusy: true });
+    expect(stance.pose.weight).toBeLessThan(0.05);
+  });
 });

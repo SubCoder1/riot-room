@@ -1074,12 +1074,16 @@ export class Player {
     // The surface under the feet: the floor, or a platform / ramp / step that
     // is no more than a step above them.
     const feetY = this.position.y - this.eyeHeight;
+    // A step is climbed as the feet meet it only by a body that is moving: one
+    // standing still beside a low block (its centre just off the edge) would
+    // step up onto it and drop off again every frame, a flicker.
+    const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.1;
     const groundY = this.world
       ? this.world.groundHeight(
           this.position.x,
           this.position.z,
           feetY,
-          wasGrounded ? STEP_REACH : 0,
+          wasGrounded && moving ? STEP_REACH : 0,
         )
       : 0;
 
