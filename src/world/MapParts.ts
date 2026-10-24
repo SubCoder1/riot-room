@@ -23,6 +23,7 @@ import {
   type Vec3,
   type PartRole,
   type FramePart,
+  type FuelSpillDefinition,
   type GeneratorDefinition,
   type PickupDefinition,
   type PosterDefinition,
@@ -176,6 +177,7 @@ export class MapBuilder {
       curves: [],
       lights: [],
       generators: [],
+      fuelSpills: [],
       pickups: [],
       posters: [],
       shotSolids: [],
@@ -635,6 +637,26 @@ export class MapBuilder {
       // The head must stay under the hatch: 1.8 m of body, a little to spare.
       ladder.hatch = { id, stopY: bottom - 1.85 };
     }
+  }
+
+  /**
+   * A fixed grating set in a roof's opening: solid to stand on, drawn as open
+   * bars (see `ArenaBuilder`, which recognises its `vent-grating-` id).
+   */
+  public createGrating(
+    id: string,
+    area: Bounds,
+    top: number,
+    thickness = ROOF_THICKNESS,
+  ): void {
+    this.layout.platforms.push({
+      kind: "box",
+      id,
+      role: "catwalk",
+      ...area,
+      bottom: top - thickness,
+      height: top,
+    });
   }
 
   /** A narrow steel walkway hanging at `top`, with open ground or air beneath. */
@@ -1244,6 +1266,11 @@ export class MapBuilder {
     return this.layout.stairs;
   }
 
+  /** A pool of spilled fuel that fire and blasts can set alight. */
+  public addFuelSpill(spill: FuelSpillDefinition): void {
+    (this.layout.fuelSpills ??= []).push(spill);
+  }
+
   /** A generator with a filler cap at (x, y, z) that players can fuel. */
   public addGenerator(generator: GeneratorDefinition): void {
     this.layout.generators.push(generator);
@@ -1306,7 +1333,7 @@ export class MapBuilder {
     });
 
     this.layout.piles.push({
-      id: `${id}-${style}`,
+      id: `${id}-${style.startsWith("brick") ? "brick" : style}`,
       kind: style === "pipes" ? "pipes" : "barricade",
       x: cx,
       z: cz,

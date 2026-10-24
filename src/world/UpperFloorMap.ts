@@ -15,13 +15,23 @@ import { MapBuilder, bounds } from "./MapParts";
 import { addWeathering } from "./Weathering";
 import { furnishHall, furnishStorageRoom, furnishYard } from "./StorageRoom";
 import { furnishDebris } from "./Debris";
+import { furnishHangingTubes } from "./HangingTubes";
 import { furnishOccupation } from "./Occupation";
 import { furnishMessyWiring } from "./MessyWiring";
 import { furnishPowerFeeds } from "./PowerFeeds";
 import { furnishRoofWiring } from "./RoofWiring";
 import { furnishDeckService, furnishPowerGrid } from "./PowerGrid";
-import { furnishArchive } from "./Archive";
+import { furnishJunkRoom } from "./JunkRoom";
 import { furnishArmory } from "./Armory";
+import {
+  ARMORY_VENT_HOLE,
+  ARMORY_VENT_ROW,
+  ARMORY_VENT_THICKNESS,
+  ARMORY_VENT_TOP,
+  VENT_HATCH_ID,
+  fixedVentBlocks,
+  ventRoofGaps,
+} from "./ArmoryVent";
 import { furnishBarracks } from "./Barracks";
 import { furnishConstructionSite } from "./ConstructionSite";
 import { furnishBreakRoom } from "./BreakRoom";
@@ -254,7 +264,17 @@ function createUpperFloor(): ArenaLayout {
     face: 22,
     along: -6,
     bottomY: F,
-    topY: ROOF_LOW,
+    topY: ROOF_HIGH,
+  });
+  // From the catwalk (the Break room roof's level) up to the Server room's
+  // roof, now 2.7 m higher.
+  map.createLadder({
+    id: "ladder-catwalk-east",
+    normal: "+z",
+    face: -5,
+    along: 27.2,
+    bottomY: ROOF_LOW,
+    topY: ROOF_HIGH,
   });
   // (The hall's roof is level with the Warehouse's now: no ladder between.)
   map.createLadder({
@@ -271,7 +291,7 @@ function createUpperFloor(): ArenaLayout {
     face: 5,
     along: -29,
     bottomY: F,
-    topY: ROOF_LOW,
+    topY: ROOF_HIGH,
     secret: true,
   });
   // Secret or semi-hidden (still usable by anyone):
@@ -504,25 +524,35 @@ function createUpperFloor(): ArenaLayout {
   );
   map.createRoom({
     id: "room-archive",
-    name: "Archive (shelf aisles)",
+    name: "Industrial Junk Room",
     bounds: bounds(-14, -1, -Z, -16),
     floorY: F,
     doors: [
       { side: "s", at: -8 },
-      { side: "w", at: -21 },
       { side: "e", at: -20 },
+      // A hole in the west wall, low enough that only a crouching body fits
+      // (the lintel below is 1.2 m over the floor; a crouch needs 1.1).
+      { side: "w", at: -17.1, width: 1.6 },
     ],
   });
+  map.createWall(
+    "room-archive-crawl-lintel",
+    "z",
+    -14,
+    -17.9,
+    -16.3,
+    F + 1.2,
+    0.3,
+    1.4,
+    "wall",
+  );
   map.createRoom({
     id: "room-switch",
     name: "Switch room (switchgear)",
     bounds: bounds(-1, 7, -Z, -17),
     floorY: F,
     walls: ["n", "s", "e"],
-    doors: [
-      { side: "s", at: 3 },
-      { side: "e", at: -20.5 },
-    ],
+    doors: [{ side: "s", at: 3 }],
   });
   // The north-east spawn area, likewise at ground level, up the staircase
   // along its south edge to the loading dock.
@@ -566,6 +596,8 @@ function createUpperFloor(): ArenaLayout {
     bounds: bounds(22, X, -12, -5),
     floorY: F,
     walls: ["s", "e", "w"],
+    // As tall as the Storage room (6.5 m to the ceiling), roof and all.
+    wallHeight: WALL_TO_HIGH,
     doors: [{ side: "w", at: -8 }],
   });
   map.createRoom({
@@ -665,12 +697,72 @@ function createUpperFloor(): ArenaLayout {
   });
   map.createRoom({
     id: "room-armory",
-    name: "Armory (racks and a cage)",
+    name: "Armory (racks and bays)",
     bounds: bounds(-X, -20.2, 5, 12),
     floorY: F,
     walls: ["n", "e", "w"],
+    // As tall as the Storage room (6.5 m to the ceiling), roof and all.
+    wallHeight: WALL_TO_HIGH,
     doors: [{ side: "e", at: 8 }],
+    // The roof is built below, with the vent's opening in it.
+    roof: false,
   });
+  // The Armory's roof, with a hole for the overhead vent (a netted grille that
+  // lifts out from the roof: see ArmoryVent) over the middle of the room.
+  map.createRoofSection(
+    "room-armory-roof",
+    bounds(-X, -20.2, 5, 12),
+    ROOF_HIGH,
+    ROOF_THICKNESS,
+    ARMORY_VENT_ROW,
+  );
+  // The roof is solid on every tube line, between two vents.
+  ventRoofGaps().forEach((area, i) => {
+    map.createRoofSection(`room-armory-roof-gap-${i + 1}`, area, ROOF_HIGH);
+  });
+  for (const { id, area } of fixedVentBlocks()) {
+    map.createGrating(id, area, ARMORY_VENT_TOP, ARMORY_VENT_THICKNESS);
+  }
+  map.createHatch(
+    VENT_HATCH_ID,
+    "none",
+    ARMORY_VENT_HOLE,
+    ARMORY_VENT_TOP,
+    ARMORY_VENT_THICKNESS,
+  );
+  // The Armory's side walls stop at z 11.7 and the Hall's wall starts at 12.0:
+  // close the 0.3 m slit that left at each south corner, so it cannot be seen
+  // through or squeezed into.
+  for (const [id, at] of [
+    ["room-armory-wall-e-corner", -20.5],
+    ["room-armory-wall-w-corner", -X],
+  ] as const) {
+    map.createWall(id, "z", at, 11.7, 12.0, F, 0.3, WALL_TO_HIGH);
+  }
+
+  // The Hall's wall along the Armory's south side is ragged and unfinished
+  // (its lowest pieces stop at 6.1 m) and reached only the old ceiling. It is
+  // carried up to the new one from below its lowest piece, so there is no slit
+  // left to see the Hall through (the door below keeps its lintel). Its
+  // inside face stands 2 cm proud, so the two walls do not fight.
+  // The hatch's passage (x -27 to -25, 2.6 m high) is left open: the wall
+  // above it starts at the top of the opening, so the cut is clean.
+  for (const [id, x0, x1, bottom] of [
+    ["room-armory-wall-s-upper-w", -X, -27, 2.0],
+    ["room-armory-wall-s-upper-door", -27, -25, 2.6],
+    ["room-armory-wall-s-upper-e", -25, -20.2, 2.0],
+  ] as const) {
+    map.createWall(
+      id,
+      "x",
+      11.98,
+      x0,
+      x1,
+      F + bottom,
+      0.3,
+      WALL_TO_HIGH - bottom,
+    );
+  }
 
   // Partial cover on the balconies.
   map.createIndustrialProp("crate", "cover-overlook-a", -4, -9.7, F);
@@ -683,8 +775,8 @@ function createUpperFloor(): ArenaLayout {
   // North-west spawn area: bare floor in the middle for spawning and moving
   // out; a monitor bank on the north wall and a crate in the south-west corner.
 
-  // Archive: shelf aisles with gaps to cross, cabinets, a counter and a desk (see Archive).
-  furnishArchive(map, F);
+  // Industrial Junk Room: a construction-waste pile, two racks, drums and cables (see JunkRoom).
+  furnishJunkRoom(map, F);
 
   // Switch room: switchgear along the wall and a machine in the middle.
   // (The third switchgear cabinet is the main distribution panel: see PowerGrid.)
@@ -721,6 +813,8 @@ function createUpperFloor(): ArenaLayout {
   furnishStairDetails(map, F);
   furnishConstructionSite(map, F);
   furnishOccupation(map, F);
+  // The Warehouse's hanging tube lights.
+  furnishHangingTubes(map, F);
   furnishShotBlocks(map, F);
 
   // Yard: a few scattered props with wide lanes between them (the vent
@@ -741,7 +835,7 @@ function createUpperFloor(): ArenaLayout {
   // Barracks: bunks on the west wall, a locker wall splitting the room (see Barracks).
   furnishBarracks(map, F);
 
-  // Armory: handgun racks, throwable bays, a table and a cage (see Armory).
+  // Armory: handgun racks, tall throwable bays and a table (see Armory).
   furnishArmory(map, F);
 
   // ----------------------------------------------------------------- roofs
@@ -779,7 +873,8 @@ function createUpperFloor(): ArenaLayout {
     map.createColumn(id, x, z, F, roof - ROOF_THICKNESS);
   });
 
-  // A catwalk joins the Server room's roof and the Break room's across the east court.
+  // A catwalk joins the Break room's roof to the foot of the Server room's roof
+  // (a ladder climbs the last 2.7 m) across the east court.
   map.createCatwalk("catwalk-east", bounds(26.2, 28.2, -5, 3), ROOF_LOW);
   map.createRailing({
     id: "rail-catwalk-west",
@@ -807,7 +902,7 @@ function createUpperFloor(): ArenaLayout {
   map.createTank("tank-barracks", -28.9, -6.5, ROOF_LOW);
   prop("vent", "vent-barracks", -24.2, -5.4, ROOF_LOW);
   prop("vent", "vent-archive", -8, -20, ROOF_LOW);
-  prop("vent", "vent-server", 25, -10.6, ROOF_LOW);
+  prop("vent", "vent-server", 25, -10.6, ROOF_HIGH);
   map.createTank("tank-break", 28.6, 8, ROOF_LOW, 1.35, 3.9);
   prop("vent", "vent-store", -13.5, 20, ROOF_LOW);
   prop("vent", "vent-workshop", 11, 20, ROOF_HIGH);
@@ -1179,7 +1274,7 @@ function createUpperFloor(): ArenaLayout {
     height: 2.4,
   });
   prop("vent", "unit-switch", 3, -20.5, ROOF_LOW);
-  prop("machine", "box-server", 24.4, -7.2, ROOF_LOW, "x", {
+  prop("machine", "box-server", 24.4, -7.2, ROOF_HIGH, "x", {
     width: 1.2,
     depth: 0.75,
     height: 1.1,
@@ -1225,16 +1320,29 @@ function createUpperFloor(): ArenaLayout {
   roofWall("roofwall-archive", "x", -16.3, -13.8, -1.2, ROOF_LOW, [
     { from: -8.8, to: -5.8 },
   ]);
-  roofWall("roofwall-server", "z", 22, -11.8, -7.5, ROOF_LOW, []);
+  roofWall("roofwall-server", "z", 22, -11.8, -7.5, ROOF_HIGH, []);
   roofWall("roofwall-break", "z", 22, 3.2, 11.8, ROOF_LOW, [
     { from: 6, to: 9 },
   ]);
   roofWall("roofwall-barracks", "z", -21.3, -11.8, -3.2, ROOF_LOW, [
     { from: -8, to: -5 },
   ]);
-  roofWall("roofwall-armory", "z", -20.5, 5.2, 11.8, ROOF_LOW, [
+  roofWall("roofwall-armory", "z", -20.5, 5.2, 11.8, ROOF_HIGH, [
     { from: 6.8, to: 9.6 },
   ]);
+  // A short wall over the glass cover's closed end pane: the storage halogen
+  // is bolted to its face.
+  map.createWall(
+    "roofwall-lamp",
+    "z",
+    -9.7,
+    22.3,
+    23.7,
+    ROOF_LOW,
+    0.3,
+    1.9,
+    "wall",
+  );
   roofWall("roofwall-store", "x", 15, -17.8, -9.2, ROOF_LOW, [
     { from: -14.5, to: -11.5 },
   ]);
@@ -1307,8 +1415,46 @@ function createUpperFloor(): ArenaLayout {
     map.restyleBarrier(id, "pipes");
   }
 
-  for (const id of ["rail-be-north-1", "rail-edge-west-1", "rail-bn-east-1"]) {
-    map.restyleBarrier(id, "brick");
+  // Brick barricades: some a jump clears (0.75 to 0.9 m), some that only a
+  // vault or a hop crosses (1.05 to 1.2 m). The first three are fixed; more are
+  // picked from the other barriers at random (the same picks every run), so
+  // they are scattered over the map, both kinds.
+  map.restyleBarrier("rail-be-north-1", "brick-low");
+  map.restyleBarrier("rail-edge-west-1", "brick-high");
+  map.restyleBarrier("rail-bn-east-1", "brick-high");
+
+  {
+    let seed = 7741;
+    const next = (): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+
+      return seed / 4294967296;
+    };
+    // (Not the south edge, which is looked over from the south balcony; nor
+    // the ones the tests stand on, or look over.)
+    const pool = [
+      "rail-edge-north-2",
+      "rail-bs-front-1",
+      "rail-be-front-1",
+      "rail-mp-front-1",
+      "rail-mp-front-2",
+      "rail-bn-west-1",
+      "rail-bs-east-1",
+      "rail-edge-east-1",
+      "rail-mp-east-1",
+    ];
+
+    // A shuffled pool; the first six, two of them low.
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(next() * (i + 1));
+
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    // Two of the six are low (a jump clears them); the rest need a vault or a hop.
+    pool.slice(0, 6).forEach((id, k) => {
+      map.restyleBarrier(id, k < 2 ? "brick-low" : "brick-high");
+    });
   }
 
   // Most of the plain concrete barriers are straight; these have a wavy top,

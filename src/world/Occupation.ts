@@ -162,55 +162,6 @@ function scrawl(
   }
 }
 
-/**
- * A pinned note: a scrap of paper (or two) at a slight angle with a few lines
- * of writing and a red pin, on a wall facing `axis` towards `sign`.
- */
-function note(
-  p: Pieces,
-  axis: Axis,
-  sign: 1 | -1,
-  at: number,
-  u: number,
-  y: number,
-  w: number,
-  h: number,
-  tilt: number,
-  paper = 0xa8a48e,
-  lines = 4,
-): void {
-  onWall(p, axis, sign, at, u, y, w, h, paper, tilt);
-
-  for (let k = 0; k < lines; k++) {
-    onWall(
-      p,
-      axis,
-      sign,
-      at + sign * 0.004,
-      u - w * 0.04 + k * 0.004,
-      y + h * 0.82 - (k * (h * 0.7)) / lines,
-      w * (0.78 - (k % 3) * 0.12),
-      0.012,
-      0x2a2622,
-      tilt,
-    );
-  }
-
-  // The pin, near the top edge.
-  onWall(
-    p,
-    axis,
-    sign,
-    at + sign * 0.007,
-    u,
-    y + h - 0.02,
-    0.025,
-    0.025,
-    PAINT_RED,
-    0,
-  );
-}
-
 /** A bare bulb on a cord from the ceiling, in a wire guard, `drop` metres below the 3.8 m ceiling. */
 function bulb(
   p: Pieces,
@@ -311,70 +262,58 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     map.createFitting("occupation-server", F, p.elements, []);
     map.addLight({
       id: "light-room-server",
+      castShadow: true,
       x: 27.0,
-      y: F + 3.1,
-      z: -8.4,
+      y: F + 5.2,
+      z: -8.7,
       color: 0x7fb0ea,
-      intensity: 10,
-      distance: 9,
+      intensity: 26,
+      distance: 12,
     });
   }
 
   // =============================================================== ARCHIVE
-  // One weak warm task lamp on the sorting desk, damp on the west wall.
+  // The Industrial Junk Room (see JunkRoom): damp on the
+  // west wall and two weak warm caged lamps.
   {
     const p = new Pieces();
 
-    // The lamp: weighted base, a bent arm, a tin shade.
-    p.box(-4.2, 0.83, -16.75, 0.14, 0.03, 0.14, CHARCOAL);
-    p.post(-4.2, 0.86, -16.75, 0.36, 0.02, STEEL_BARE);
-    p.box(-4.15, 1.21, -16.85, 0.1, 0.02, 0.26, STEEL_BARE, 0.0, 0.0, 0.5);
-    p.post(-4.2, 1.1, -17.0, 0.1, 0.2, 0x3a3f46);
-    // Water damage on the west wall and a patch on the floor, mould in a corner.
-    for (const [z, w, h, y] of [
-      [-16.9, 0.6, 0.9, 0.0],
-      [-18.2, 0.5, 0.7, 0.0],
-      [-22.6, 0.6, 0.9, 0.0],
-    ] as const) {
+    // Water damage on the west wall (the door that was there is walled up).
+    for (const [z, w, h, y] of [[-22.6, 0.4, 0.5, 0.0]] as const) {
       p.box(-13.69, y, z, 0.006, h, w, STAIN, 0, 0, 0.06);
     }
 
-    p.box(-13.4, 0, -23.4, 0.5, 0.004, 0.5, 0x2a3328, 0.4);
-    scrawl(p, "z", 1, -23.7, -8.0, 1.6, 0.3);
-    crudeX(p, "z", 1, -23.7, -5.2, 1.4, 0.3, PAINT_RED);
-
-    // Notes pinned up round the room, clear of the three doorways (the west
-    // door z -22 to -20, the east door z -21 to -19, the south door x -9 to -7).
-    // North wall, round the index board and over the shelving.
-    note(p, "z", 1, -23.7, -12.7, 1.5, 0.26, 0.34, 0.06);
-    note(p, "z", 1, -23.7, -12.2, 1.75, 0.2, 0.26, -0.08, 0xb9b49c, 3);
-    note(p, "z", 1, -23.7, -7.0, 1.2, 0.3, 0.2, 0.03, 0x9a9486, 3);
-    note(p, "z", 1, -23.7, -6.5, 1.7, 0.22, 0.3, -0.05);
-    note(p, "z", 1, -23.7, -3.0, 1.45, 0.28, 0.36, 0.07, 0xb9b49c, 5);
-    note(p, "z", 1, -23.7, -2.4, 1.2, 0.18, 0.22, -0.1, 0x9a9486, 3);
-    // East wall, either side of its door.
-    note(p, "x", -1, -1.3, -22.6, 1.5, 0.3, 0.38, 0.05);
-    note(p, "x", -1, -1.3, -23.1, 1.15, 0.2, 0.24, -0.07, 0xb9b49c, 3);
-    note(p, "x", -1, -1.3, -17.6, 1.6, 0.3, 0.4, -0.04, 0xa8a48e, 5);
-    note(p, "x", -1, -1.3, -16.9, 1.3, 0.2, 0.26, 0.09, 0x9a9486, 3);
-    // South wall, over the sorting desk and beside the door.
-    note(p, "z", -1, -16.3, -5.0, 1.55, 0.34, 0.44, 0.03, 0xb9b49c, 6);
-    note(p, "z", -1, -16.3, -4.3, 1.4, 0.2, 0.26, -0.08);
-    note(p, "z", -1, -16.3, -3.6, 1.75, 0.22, 0.28, 0.06, 0x9a9486, 4);
-    note(p, "z", -1, -16.3, -6.4, 1.5, 0.24, 0.3, -0.05);
-    // West wall, over the cabinets and north of the lateral files.
-    note(p, "x", 1, -13.7, -17.9, 2.05, 0.3, 0.36, 0.05, 0xb9b49c, 5);
-    note(p, "x", 1, -13.7, -19.3, 2.3, 0.26, 0.3, -0.06);
-    note(p, "x", 1, -13.7, -23.0, 1.6, 0.24, 0.3, 0.04, 0x9a9486, 4);
     map.createFitting("occupation-archive", F, p.elements, []);
+    // The caged lamps (drawn in JunkRoom): weak amber pools over the pile and the middle.
     map.addLight({
       id: "light-room-archive",
-      x: -4.2,
-      y: F + 1.6,
-      z: -16.95,
+      castShadow: true,
+      x: -10.9,
+      y: F + 2.75,
+      z: -21.0,
       color: 0xffc47a,
-      intensity: 15,
-      distance: 6.5,
+      intensity: 32,
+      distance: 11,
+    });
+    map.addLight({
+      id: "light-room-archive-b",
+      castShadow: true,
+      x: -4.2,
+      y: F + 2.75,
+      z: -20.4,
+      color: 0xffbd70,
+      intensity: 28,
+      distance: 9,
+    });
+    map.addLight({
+      id: "light-room-archive-c",
+      castShadow: true,
+      x: -11.4,
+      y: F + 2.7,
+      z: -18.6,
+      color: 0xffb870,
+      intensity: 16,
+      distance: 7,
     });
   }
 
@@ -396,6 +335,7 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     map.createFitting("occupation-barracks", F, p.elements, []);
     map.addLight({
       id: "light-room-barracks",
+      castShadow: true,
       x: -24.4,
       y: F + 2.25,
       z: -10.0,
@@ -406,14 +346,11 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
   }
 
   // =============================================================== ARMORY
-  // One directional work light over the table; opened boxes, a toolbox, marks.
+  // Opened boxes, a toolbox, marks (the room is lit by tubes: see ArmoryLighting).
   {
     const p = new Pieces();
 
-    // An opened crate of ammunition cans and a toolbox on the floor by the bays.
-    p.box(-29.6, 0, 7.55, 0.8, 0.3, 0.5, TIMBER_B, 0.3);
-    p.box(-29.5, 0.3, 7.5, 0.84, 0.02, 0.26, TIMBER_DARK, 0.3, 0, 0.5);
-    p.box(-29.65, 0.12, 7.6, 0.3, 0.14, 0.18, 0x4a5236, 0.5);
+    // A toolbox on the floor by the bays.
     p.box(-28.2, 0, 9.9, 0.46, 0.2, 0.2, 0x8a2a24, 0.2);
     p.box(-28.2, 0.2, 9.9, 0.4, 0.02, 0.18, STEEL_BARE, 0.2);
     p.box(-28.45, 0.2, 9.95, 0.1, 0.04, 0.2, STEEL, 0.2);
@@ -425,17 +362,6 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     tally(p, "x", 1, -31.7, 7.0, 2.35, 2);
     scrawl(p, "z", 1, 5.3, -24.3, 1.6, 0.34);
     map.createFitting("occupation-armory", F, p.elements, []);
-    map.addLight({
-      id: "light-room-armory",
-      x: -26.3,
-      y: F + 3.4,
-      z: 7.4,
-      color: 0xe8e0c8,
-      intensity: 30,
-      distance: 9,
-      target: { x: -26.3, y: F + 0.9, z: 8.6 },
-      angle: 0.7,
-    });
   }
 
   // ============================================================ BREAK ROOM
@@ -450,6 +376,7 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     map.createFitting("occupation-break", F, p.elements, []);
     map.addLight({
       id: "light-room-break",
+      castShadow: true,
       x: 27.2,
       y: F + 2.75,
       z: 7.3,
@@ -460,30 +387,10 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
   }
 
   // ============================================================== WAREHOUSE
-  // Two isolated work lamps hung from the hoist beam; a hand trolley, opened
-  // cartons and offcuts; some of it handwritten.
+  // (Two tube lights hang from the hoist beam: see HangingTubes.) A hand
+  // trolley, opened cartons and offcuts; some of it handwritten.
   {
     const p = new Pieces();
-
-    for (const [x, z, drop] of [
-      [21.0, 18.2, 1.6],
-      [28.6, 18.2, 2.0],
-    ] as const) {
-      p.cableUp(x, 5.3 - drop - 0.3, z, drop, 0.02, 0x1d1f23);
-      p.box(x, 5.3 - drop - 0.55, z, 0.3, 0.22, 0.22, GUNMETAL);
-
-      for (const k of [-1, 0, 1]) {
-        p.box(
-          x + k * 0.1,
-          5.3 - drop - 0.55,
-          z - 0.115,
-          0.012,
-          0.22,
-          0.012,
-          BLACK,
-        );
-      }
-    }
 
     // A sack truck leaning on the north wall by the middle pillar, a
     // split carton and its spilled contents, offcuts of conduit.
@@ -524,24 +431,6 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     crudeX(p, "z", -1, 23.7, 29.4, 1.9, 0.34, PAINT_RED);
     tally(p, "x", 1, 18.3, 15.0, 1.6, 2);
     map.createFitting("occupation-warehouse", F, p.elements, []);
-    map.addLight({
-      id: "light-room-warehouse-a",
-      x: 21.0,
-      y: F + 3.2,
-      z: 18.2,
-      color: 0xffdcae,
-      intensity: 26,
-      distance: 10,
-    });
-    map.addLight({
-      id: "light-room-warehouse-b",
-      x: 28.6,
-      y: F + 2.8,
-      z: 18.2,
-      color: 0xffdcae,
-      intensity: 20,
-      distance: 9,
-    });
   }
 
   // ========================================================== YARD / STORAGE
@@ -676,9 +565,9 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
       z: -1.95,
       color: 0xffcf94,
       intensity: 22,
-      distance: 9,
+      distance: 16,
       target: { x: -26.0, y: F + 0.2, z: 0.5 },
-      angle: 0.8,
+      angle: 0.9,
     });
   }
 }

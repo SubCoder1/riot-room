@@ -36,7 +36,9 @@ describe("Starting equipment", () => {
 
 describe("Spawn areas: entry and staging, not a shop", () => {
   it("has no workbench and no pickups in either spawn area", () => {
-    expect(ARENA_LAYOUT.pickups).toHaveLength(0);
+    expect(
+      ARENA_LAYOUT.pickups.filter((pickup) => !pickup.id.startsWith("armory-")),
+    ).toHaveLength(0);
     expect(ARENA_LAYOUT.walls.some((w) => /bench-spawn/.test(w.id))).toBe(
       false,
     );

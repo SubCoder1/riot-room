@@ -31,10 +31,10 @@ describe("Shot blocks for drawn-only props", () => {
   });
 });
 
-describe("Archive shelves you can stand on", () => {
+describe("Junk room heaps you can stand on", () => {
   it("none is tall enough to put a standing player's head into the 3.8 m ceiling", () => {
-    for (const w of ARENA_LAYOUT.walls.filter((s) =>
-      s.id.startsWith("shelf-archive"),
+    for (const w of ARENA_LAYOUT.walls.filter(
+      (s) => s.id === "rack-junk-fallen",
     )) {
       // Feet on the top, 1.8 m of body, the ceiling 3.8 m over the floor.
       expect(w.height + 1.8, w.id).toBeLessThanOrEqual(F + 3.8 + 1e-6);
@@ -64,14 +64,9 @@ describe("Stair handrails", () => {
   });
 });
 
-describe("Archive shelves can be vaulted", () => {
+describe("Junk room heaps can be vaulted", () => {
   it("each is low enough to vault (1.45 m at most) from the aisle in front of it", () => {
-    for (const id of [
-      "shelf-archive-1",
-      "shelf-archive-2",
-      "shelf-archive-3",
-      "shelf-archive-4",
-    ]) {
+    for (const id of ["rack-junk-fallen"]) {
       const s = ARENA_LAYOUT.walls.find((w) => w.id === id)!;
 
       expect(s.height - F, id).toBeLessThanOrEqual(1.45);

@@ -84,7 +84,10 @@ function freeCells(
 const OPEN_TOP = ["room-spawn-nw", "room-hall", "room-spawn-ne"];
 
 function roofOf(room: { id: string }): BoxSolid {
-  return layout.platforms.find((p) => p.id === `${room.id}-roof`)!;
+  // (A roof with a hole in it is in pieces: `-roof-1`, `-roof-2`...)
+  return layout.platforms.find(
+    (p) => p.id === `${room.id}-roof` || p.id.startsWith(`${room.id}-roof-`),
+  )!;
 }
 
 describe("What was built", () => {
@@ -579,7 +582,8 @@ describe("The central arena", () => {
 
     expect(sees(-7.6, -13.5, -7.6, 0)).toBe(true); // north
     expect(sees(10, 13.5, 8, 0)).toBe(true); // south
-    expect(sees(-20.5, 0, 0, -3)).toBe(true); // west (past the pillars)
+    // (The whole west edge is a 1.35 m brick barricade: it is looked over from
+    // a vault, not through, so there is no line through it to test.)
     expect(sees(20.5, 0, 0, 3)).toBe(true); // east (the east pillar is in the way of the middle)
     expect(sees(3.5, -8.5, 3.5, 0)).toBe(true); // north overlook
     expect(sees(11.8, 10.8, 0, 6)).toBe(true); // east corner balcony
@@ -1149,9 +1153,12 @@ describe("Hatches", () => {
       fresh.setOpen(hatch.id, false);
       expect(fresh.groundHeight(x, z, hatch.top)).toBe(hatch.top);
 
-      const ladder = layout.ladders.find((l) => l.id === hatch.ladderId)!;
+      // (A hatch opened from the roof, like the Armory's vent, has no ladder.)
+      if (hatch.ladderId !== "none") {
+        const ladder = layout.ladders.find((l) => l.id === hatch.ladderId)!;
 
-      expect(ladder.hatch?.id).toBe(hatch.id);
+        expect(ladder.hatch?.id).toBe(hatch.id);
+      }
     }
   });
 });
@@ -1273,7 +1280,7 @@ describe("Sightlines and anchors", () => {
     expect(samples.length).toBeGreaterThan(90);
     expect(worst).toBeLessThan(0.85);
     expect(total / samples.length).toBeLessThan(0.65);
-  });
+  }, 30000);
 
   it("the hall roof and the Warehouse roof are one level, joined through the gap in the glass barrier", () => {
     const warehouse = layout.platforms

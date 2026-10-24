@@ -25,12 +25,13 @@ const BLOCKS: ReadonlyArray<
   ["shot-bench-barracks", -24.2, -3.52, 1.4, 0.2, 0.42],
   ["shot-bed-barracks", -22.5, -10.05, 0.5, 1.15, 0.42],
   // Armory
-  ["shot-crate-armory", -29.6, 7.55, 0.4, 0.26, 0.32],
   ["shot-toolbox-armory", -28.2, 9.9, 0.24, 0.12, 0.24],
-  // Archive
-  ["shot-box-archive", -7.5, -20.0, 0.22, 0.18, 0.3],
-  ["shot-chair-archive", -12.0, -17.7, 0.25, 0.25, 0.9],
-  ["shot-chair-archive-desk", -4.6, -17.75, 0.24, 0.24, 0.9],
+  // (The worktable's guns, tools and cans, over its top; the emptied cans on the floor.)
+  ["shot-clutter-armory-table", -26.3, 8.6, 1.2, 0.55, 1.07],
+  ["shot-can-armory-1", -26.9, 6.55, 0.17, 0.14, 0.2],
+  ["shot-can-armory-2", -23.8, 6.95, 0.17, 0.14, 0.2],
+  ["shot-can-armory-3", -28.0, 10.9, 0.17, 0.14, 0.2],
+  ["shot-can-armory-4", -21.95, 10.85, 0.17, 0.14, 0.2],
   // Warehouse
   ["shot-trolley-warehouse", 23.2, 12.6, 0.3, 0.22, 1.2],
   ["shot-carton-warehouse", 22.0, 20.9, 0.26, 0.22, 0.3],

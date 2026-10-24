@@ -467,6 +467,8 @@ export interface ArenaLayout {
   lights: LightDefinition[];
   /** Fuel-powered generators players can refuel. */
   generators: GeneratorDefinition[];
+  /** Pools of spilled fuel that a Molotov or a grenade blast can set alight. */
+  fuelSpills?: FuelSpillDefinition[];
   /** Items lying where players take them (none yet: an armory will use this). */
   pickups: PickupDefinition[];
   /** Site plans on the spawn-area walls. */
@@ -534,6 +536,23 @@ export interface PickupDefinition {
   amount: number;
   /** Seconds until it is there again after it is taken. */
   respawn: number;
+}
+
+/**
+ * A pool of fuel on a floor (with the trail that runs to it): the ONE
+ * designated fuel hazard of its place. `radius` reaches the edge of the pool
+ * and the end of its trail; a bottle that breaks inside it, or a blast close
+ * to it, sets it alight (once a round).
+ */
+export interface FuelSpillDefinition {
+  id: string;
+  /** Centre of the pool, on the floor. */
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  /** Where the oil comes from (the leaking drum's mouth), for the trail. */
+  source: { x: number; z: number };
 }
 
 /** A fuel-powered generator with a filler cap a player can pour into. */
