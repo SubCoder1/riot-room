@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 import type { FuelSpillDefinition } from "../world/ArenaLayout";
 import type { CombatSystem } from "./CombatSystem";
-import type { FireSystem } from "./FireZones";
+import { zoneRadius, type FireSystem } from "./FireZones";
 import { MOLOTOV_CONFIG as C } from "./MolotovConfig";
 
 /** Fire started by the hazard itself is owned by whoever lit it; this marks none. */
@@ -135,6 +135,59 @@ export class FuelHazard {
 
   public stateOf(id: string): FuelState {
     return this.states.get(id)?.state ?? "intact";
+  }
+
+  /**
+   * Call every frame: an ordinary fire whose spreading edge has reached an
+   * intact pool (over the pool's floor, with no wall between) lights it, so a
+   * Molotov thrown beside the oil sets it off as the fire grows.
+   */
+  public update(): void {
+    if (this.fires.zones.length === 0) {
+      return;
+    }
+
+    for (const spill of this.spills) {
+      const entry = this.states.get(spill.id);
+
+      if (!entry || entry.state !== "intact") {
+        continue;
+      }
+
+      for (const zone of this.fires.zones) {
+        if (zone.fuel || !this.onFloor(spill, zone.position.y)) {
+          continue;
+        }
+
+        const radius = zoneRadius(zone);
+
+        for (const patch of poolShape(spill)) {
+          const d = Math.hypot(
+            zone.position.x - patch.x,
+            zone.position.z - patch.z,
+          );
+
+          if (d > radius + patch.r) {
+            continue;
+          }
+
+          // The patch's edge nearest the fire (or the fire's heart if inside it).
+          const t = d > 0 ? Math.min(patch.r, d) / d : 0;
+          const ex = patch.x + (zone.position.x - patch.x) * t;
+          const ez = patch.z + (zone.position.z - patch.z) * t;
+
+          if (this.fires.reachesPoint(zone, ex, ez)) {
+            this.light(spill, zone.ownerId, -1, d);
+
+            break;
+          }
+        }
+
+        if (entry.state !== "intact") {
+          break;
+        }
+      }
+    }
   }
 
   /** A new round: every pool is full again (call after the fires are cleared). */

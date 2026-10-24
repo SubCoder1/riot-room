@@ -144,6 +144,8 @@ export class FireSystem {
   private readonly list: FireZone[] = [];
   private readonly burns = new Map<string, Burn>();
   private readonly feet = new THREE.Vector3();
+  private readonly from = new THREE.Vector3();
+  private readonly to = new THREE.Vector3();
   private nextId = 1;
 
   private readonly combat: CombatSystem;
@@ -233,7 +235,12 @@ export class FireSystem {
         ? C.FUEL_FIRE_VERTICAL_REACH
         : C.MOLOTOV_VERTICAL_REACH;
 
-      if (dx * dx + dz * dz <= radius * radius && dy >= -0.6 && dy <= reach) {
+      if (
+        dx * dx + dz * dz <= radius * radius &&
+        dy >= -0.6 &&
+        dy <= reach &&
+        this.reaches(zone, this.feet)
+      ) {
         // A fuel fire's harder burn wins over an ordinary one it overlaps.
         if (zone.fuel) {
           return zone;
@@ -244,6 +251,22 @@ export class FireSystem {
     }
 
     return found;
+  }
+
+  /** Whether a point on the fire's floor is open to the fire (no wall between it and the fire's heart). */
+  public reachesPoint(zone: FireZone, x: number, z: number): boolean {
+    this.from.set(zone.position.x, zone.position.y + 0.5, zone.position.z);
+    this.to.set(x, zone.position.y + 0.5, z);
+
+    return this.world.clearFraction(this.from, this.to) >= 0.999;
+  }
+
+  /** A wall between the fire's heart and a body shields it (fire does not burn through walls). */
+  private reaches(zone: FireZone, feet: THREE.Vector3): boolean {
+    this.from.set(zone.position.x, zone.position.y + 0.5, zone.position.z);
+    this.to.set(feet.x, zone.position.y + 0.5, feet.z);
+
+    return this.world.clearFraction(this.from, this.to) >= 0.999;
   }
 
   private burn(target: Combatant, dt: number): void {

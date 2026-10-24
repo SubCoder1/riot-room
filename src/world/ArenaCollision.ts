@@ -441,6 +441,40 @@ export class ArenaCollision {
     return top > limit && this.solidBottom(solid) < headTop;
   }
 
+  /**
+   * The surface something dropped at (x, z) from `fromY` comes to rest on:
+   * the highest top at or below it, ignoring walls and railings (a thing that
+   * hits a wall falls beside it, never onto its top). Returns its height and
+   * the id of the solid.
+   */
+  public floorBelow(
+    x: number,
+    z: number,
+    fromY: number,
+    ignoring?: (id: string) => boolean,
+  ): { y: number; id: string } {
+    let best = { y: 0, id: "ground" };
+
+    for (const solid of this.near(x, z, 0)) {
+      if (
+        (solid.kind === "box" &&
+          (solid.role === "wall" || solid.role === "railing")) ||
+        solid.id.endsWith("-lid") ||
+        (ignoring?.(solid.id) ?? false)
+      ) {
+        continue;
+      }
+
+      const height = this.solidHeight(solid, x, z, 0);
+
+      if (height !== NO_SURFACE && height <= fromY + 0.05 && height > best.y) {
+        best = { y: height, id: solid.id };
+      }
+    }
+
+    return best;
+  }
+
   /** Top of one solid at (x, z), or NO_SURFACE if the circle of `margin` misses it. */
   private solidHeight(
     solid: Solid,

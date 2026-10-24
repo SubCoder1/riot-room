@@ -134,6 +134,15 @@ export class FireZoneView {
   public surfaceY: ((x: number, z: number, fromY: number) => number) | null =
     null;
 
+  /**
+   * Whether the line from (x0, y, z0) to (x1, y, z1) is free of walls. A fire
+   * thrown against a wall burns only on its own side: no flame is drawn where
+   * a wall lies between it and the fire's heart (or inside the wall itself).
+   */
+  public lineClear:
+    | ((x0: number, y: number, z0: number, x1: number, z1: number) => boolean)
+    | null = null;
+
   constructor() {
     for (let i = 0; i < MOLOTOV_CONFIG.MOLOTOV_MAX_ZONES; i++) {
       this.entries.push(this.createEntry());
@@ -343,6 +352,16 @@ export class FireZoneView {
           )
         : 0;
 
+      const hidden =
+        this.lineClear !== null &&
+        !this.lineClear(
+          zone.position.x,
+          zone.position.y + 0.5,
+          zone.position.z,
+          zone.position.x + fx,
+          zone.position.z + fz,
+        );
+
       this.position.set(fx, ground, fz);
       this.euler.set(
         0.26 * fury * Math.sin(time * 3 * pace + sway),
@@ -350,14 +369,18 @@ export class FireZoneView {
         0.26 * fury * Math.cos(time * 2.6 * pace + sway),
       );
       this.rotation.setFromEuler(this.euler);
-      this.scale.set(width * flat, Math.max(tongue, 0.001), width / flat);
+      this.scale.set(
+        width * flat,
+        hidden ? 0.001 : Math.max(tongue, 0.001),
+        width / flat,
+      );
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.flames.setMatrixAt(i, this.matrix);
 
       // The hot core: narrower and shorter, in the same place.
       this.scale.set(
         width * flat * 0.55,
-        Math.max(tongue * 0.68, 0.001),
+        hidden ? 0.001 : Math.max(tongue * 0.68, 0.001),
         (width / flat) * 0.55,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);

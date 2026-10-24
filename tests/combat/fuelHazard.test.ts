@@ -223,4 +223,37 @@ describe("Fuel spill (the designated fuel hazard)", () => {
 
     expect(burnt(true)).toBeGreaterThan(burnt(false) * 2);
   });
+
+  it("a Molotov thrown beside it lights it once the fire's edge grows over it", () => {
+    const { fires, hazard } = setup();
+    const maxRadius = zoneRadius({ age: 3, fuel: false });
+
+    // Too far to touch at first, near enough for the grown fire.
+    fires.ignite(
+      "thrower",
+      at(spill.x, spill.z + spill.radius * 0.8 + maxRadius * 0.8),
+    );
+    expect(hazard.stateOf(spill.id)).toBe("intact");
+
+    for (let t = 0; t < 8; t += 0.1) {
+      fires.update(0.1);
+      hazard.update();
+    }
+
+    expect(hazard.stateOf(spill.id)).toBe("burning");
+    expect(fires.zones.some((z) => z.fuel)).toBe(true);
+  });
+
+  it("a fire far from the pool never lights it", () => {
+    const { fires, hazard } = setup();
+
+    fires.ignite("thrower", at(spill.x, spill.z + 8));
+
+    for (let t = 0; t < 8; t += 0.1) {
+      fires.update(0.1);
+      hazard.update();
+    }
+
+    expect(hazard.stateOf(spill.id)).toBe("intact");
+  });
 });
