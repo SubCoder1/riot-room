@@ -99,7 +99,6 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     "bulb-junk-a": { scale: 0.88, color: 0xffb870, reach: 1 },
     "bulb-junk-b": { scale: 0.88, color: 0xffb870, reach: 1 },
     "bulb-power-a": { scale: 0.88, color: 0xffb870, reach: 1 },
-    "bulb-power-b": { scale: 0.88, color: 0xffb870, reach: 1 },
     "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
     "bulb-break-a": { scale: 0.96, reach: 1 },
     "light-room-barracks": { scale: 0.96, reach: 1 },

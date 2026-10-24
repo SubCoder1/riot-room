@@ -593,8 +593,12 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
     p.box(cx + 1.1, 0.91, cz, 0.18, 0.1, 0.16, GUNMETAL);
     p.box(cx + 1.1, 1.01, cz, 0.14, 0.06, 0.12, STEEL_BARE);
     // Oil drips and a work light, dead, on a clamp at the north-west corner.
-    p.post(cx - 1.1, 0.91, cz - 0.5, 0.45, 0.025, STEEL);
-    p.box(cx - 1.1, 1.3, cz - 0.4, 0.06, 0.06, 0.24, GUNMETAL);
+    // (Every part overlaps the next: the clamp holds the post, the arm is
+    // fixed to the post's top, and the hood hangs from the arm's end.)
+    p.box(cx - 1.1, 0.88, cz - 0.5, 0.09, 0.07, 0.07, GUNMETAL);
+    p.post(cx - 1.1, 0.91, cz - 0.5, 0.46, 0.025, STEEL);
+    p.box(cx - 1.1, 1.34, cz - 0.38, 0.03, 0.03, 0.26, STEEL);
+    p.box(cx - 1.1, 1.22, cz - 0.27, 0.1, 0.14, 0.1, GUNMETAL);
     map.createFitting("table-armory", F, p.elements, [
       { minX: x0, maxX: x1, minZ: z0, maxZ: z1, top: 0.95 },
     ]);
@@ -743,6 +747,19 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
 
     p.box(-26.0, 2.53, 12.15, 2.0, 0.07, 0.34, FRAME);
     p.box(-26.0, 0, 12.15, 1.86, 0.015, 0.34, 0x24282d);
+
+    // The door leaf is a little smaller than its opening (so it can swing):
+    // steel closes what is left, so nobody can look through the crack when it
+    // is shut: a strip against the hinge side, one down the latch side, one
+    // over the top and a low sill. Each is as thick as the door.
+    for (const [x, y, w, h] of [
+      [-26.965, 0, 0.08, 2.6],
+      [-25.05, 0, 0.12, 2.6],
+      [-26.0, 2.47, 2.0, 0.13],
+      [-26.0, 0, 2.0, 0.04],
+    ] as const) {
+      p.box(x, y, 12.15, w, h, 0.1, 0x24282d);
+    }
 
     // A plain trim round the opening on each face: rust-brown flat steel, no
     // bolts, no stripes.

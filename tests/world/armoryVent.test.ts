@@ -4,10 +4,12 @@ import { VentDrips } from "../../src/vfx/VentDrips";
 import { ROOF_HIGH } from "../../src/world/ArenaLayout";
 import {
   ARMORY_VENT_BLOCKS,
+  ARMORY_VENT_HATCHES,
   ARMORY_VENT_HOLE,
   ARMORY_VENT_TOP,
   VENT_HATCH_ID,
   grilleBars,
+  isVentHatchId,
   ventDripPoints,
 } from "../../src/world/ArmoryVent";
 import { ARMORY } from "../../src/world/ArmoryMechanisms";
@@ -247,5 +249,37 @@ describe("The drips", () => {
     expect(Math.max(...firstFall) - Math.min(...firstFall)).toBeGreaterThan(
       0.3,
     );
+  });
+});
+
+describe("Every Armory vent is a hatch", () => {
+  it("each can be opened, several at once, and is a clear drop into the room", () => {
+    expect(ARMORY_VENT_HATCHES.length).toBeGreaterThanOrEqual(5);
+
+    for (const { id } of ARMORY_VENT_HATCHES) {
+      expect(isVentHatchId(id)).toBe(true);
+      expect(
+        ARENA_LAYOUT.hatches.some((h) => h.id === id),
+        id,
+      ).toBe(true);
+    }
+
+    // All open at once: from the roof, the ground under each is the room's floor.
+    for (const { id } of ARMORY_VENT_HATCHES) {
+      world.setOpen(id, true);
+    }
+
+    for (const { id, area } of ARMORY_VENT_HATCHES) {
+      const x = (area.minX + area.maxX) / 2 + 0.3;
+      const z = (area.minZ + area.maxZ) / 2;
+
+      expect(world.groundHeight(x, z, ROOF_HIGH + 0.5), id).toBeLessThan(
+        ROOF_HIGH - 3,
+      );
+    }
+
+    for (const { id } of ARMORY_VENT_HATCHES) {
+      world.setOpen(id, false);
+    }
   });
 });

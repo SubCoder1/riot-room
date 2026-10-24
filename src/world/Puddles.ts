@@ -9,6 +9,7 @@ import {
 import { openAt } from "./Debris";
 import { rng } from "./FittingPieces";
 import { LIGHT_SUM, MAX_LIGHTS } from "./Rain";
+import { ventDripPoints } from "./ArmoryVent";
 import { ventBlocks, ventBlocksNear } from "./Vents";
 
 /**
@@ -214,6 +215,41 @@ export function createPuddles(
       stretch: 0.6 + random() * 0.7,
       seed: random(),
     });
+  }
+
+  // Where the Armory's overhead vents let the rain in: a puddle on the floor
+  // under each (at its drip point), as the water comes from above.
+  for (const drip of ventDripPoints()) {
+    const y = collision.groundHeight(drip.x, drip.z, 5);
+    const radius = 0.5 + random() * 0.25;
+    let flat = Math.abs(y - 4) < 0.02;
+
+    for (let k = 0; k < 12 && flat; k++) {
+      const a = (k / 12) * Math.PI * 2;
+
+      if (
+        Math.abs(
+          collision.groundHeight(
+            drip.x + Math.cos(a) * radius * 1.3,
+            drip.z + Math.sin(a) * radius * 1.3,
+            y + 0.3,
+          ) - y,
+        ) > 0.02
+      ) {
+        flat = false;
+      }
+    }
+
+    if (flat) {
+      spots.push({
+        x: drip.x,
+        z: drip.z,
+        y,
+        radius,
+        stretch: 0.8 + random() * 0.4,
+        seed: random(),
+      });
+    }
   }
 
   const position = new Float32Array(spots.length * 12);

@@ -39,6 +39,15 @@ const WALL_GAP = 0.18;
 type XZ = [number, number];
 type Vec = [number, number, number];
 
+/**
+ * Where a lamp's cord starts (height above the floor): at the lamp, or for a
+ * hanging bulb at the top of its socket (its light hangs 16 cm under the glass,
+ * and the cord must not show below the bulb).
+ */
+function lampTop(l: LightDefinition): number {
+  return l.y - F + (l.id.startsWith("bulb-") ? 0.36 : 0);
+}
+
 function isRoomLamp(l: LightDefinition): boolean {
   return (
     l.y > F + 1 &&
@@ -437,7 +446,7 @@ export function furnishPowerFeeds(map: MapBuilder): void {
     const [wx, wz] = walls[0].at;
 
     // The lamp's cord up to the ceiling, then along the ceiling to the wall.
-    wire([main.x, main.y - F, main.z], [main.x, ceiling - F, main.z]);
+    wire([main.x, lampTop(main), main.z], [main.x, ceiling - F, main.z]);
     sag([main.x, ceiling - F, main.z], [wx, ceiling - F, wz]);
     clamp(main.x, ceiling - F, main.z);
 
@@ -445,7 +454,7 @@ export function furnishPowerFeeds(map: MapBuilder): void {
     for (const other of lamps.slice(1)) {
       const top = ceilingOver(solids, other.x, other.z, other.y);
 
-      wire([other.x, other.y - F, other.z], [other.x, top - F, other.z]);
+      wire([other.x, lampTop(other), other.z], [other.x, top - F, other.z]);
       sag([other.x, top - F, other.z], [main.x, ceiling - F, main.z]);
     }
 

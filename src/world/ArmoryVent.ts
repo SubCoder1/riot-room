@@ -10,8 +10,9 @@ const BLACK_STEEL = 0x08090b;
  * length from one tube line to the next (the beams the lights hang from), with
  * solid concrete left on every tube line between two vents, and is the floor
  * vents' own grating. Everything else overhead is the solid concrete roof. The grates are solid to
- * walk on from the roof, and open to rain; one of them is the hatch: E on the
- * roof lifts it on its west hinge and it stays up, a clear drop into the room.
+ * walk on from the roof, and open to rain; every one of them is a hatch: E on
+ * the roof lifts the nearest on its west hinge and it stays up, a clear drop
+ * into the room (any number can be open at once).
  * Water drips from gaps in every grate (VentDrips).
  */
 
@@ -96,12 +97,21 @@ export const ARMORY_VENT_TOP = ROOF_HIGH - ROOF_THICKNESS + 0.02;
 /** How thick they are: their undersides are flush. */
 export const ARMORY_VENT_THICKNESS = 0.07;
 
-/** The fixed grates: every one of the row but the hatch. */
+/** The fixed grates: none (every vent of the row is a hatch now). */
 export function fixedVentBlocks(): Array<{ id: string; area: Bounds }> {
-  return ARMORY_VENT_BLOCKS.map((area, i) => ({
-    id: `${VENT_GRATING_PREFIX}armory-${i + 1}`,
+  return [];
+}
+
+/** Every vent of the row is a hatch of its own; the 1.2 m one keeps the old id. */
+export const ARMORY_VENT_HATCHES: Array<{ id: string; area: Bounds }> =
+  ARMORY_VENT_BLOCKS.map((area, i) => ({
+    id: i === HATCH_INDEX ? VENT_HATCH_ID : `${VENT_HATCH_ID}-${i + 1}`,
     area,
-  })).filter((_, i) => i !== HATCH_INDEX);
+  }));
+
+/** Whether an id is one of the row's hatches. */
+export function isVentHatchId(id: string): boolean {
+  return id.startsWith(VENT_HATCH_ID);
 }
 
 /** The panel is a little smaller than its hole, hinged on the west edge. */
@@ -192,19 +202,21 @@ export function furnishArmoryVent(map: MapBuilder, floorY: number): void {
   p.box(row.minX - 0.12, roof, cz, 0.1, curb, d + 0.1, BLACK_STEEL);
   p.box(row.maxX + 0.02, roof, cz, 0.1, curb, d + 0.1, BLACK_STEEL);
 
-  const hatch = ARMORY_VENT_HOLE;
-  const hz = (hatch.minZ + hatch.maxZ) / 2;
+  const hz = cz;
 
-  for (const sz of [-1, 1]) {
-    p.box(
-      hatch.minX + 0.02,
-      roof + curb,
-      hz + sz * (ROW_DEPTH * 0.3),
-      0.07,
-      0.05,
-      0.1,
-      BLACK_STEEL,
-    );
+  // Hinge knuckles on every hatch's west edge.
+  for (const { area } of ARMORY_VENT_HATCHES) {
+    for (const sz of [-1, 1]) {
+      p.box(
+        area.minX + 0.02,
+        roof + curb,
+        hz + sz * (ROW_DEPTH * 0.3),
+        0.07,
+        0.05,
+        0.1,
+        BLACK_STEEL,
+      );
+    }
   }
 
   for (let x = row.minX + 0.4; x < row.maxX; x += 1.4) {
