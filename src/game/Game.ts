@@ -1,17 +1,45 @@
 import * as THREE from "three";
-import { createGrenade, createGrenadeParts } from "../vfx/ThrowableMeshes";
+import {
+  createBottle,
+  createBottleParts,
+  createGrenade,
+  createGrenadeParts,
+  createSmokeCanister,
+} from "../vfx/ThrowableMeshes";
 
 import { Renderer } from "../rendering/Renderer";
 import { InputManager } from "../input/InputManager";
 import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
 import { ArenaCollision } from "../world/ArenaCollision";
+import {
+  ARMORY,
+  ChainShutter,
+  OneWayHatch,
+  chainInReach,
+  chainNear,
+  doorAim,
+  doorSweepBlocked,
+  type HatchResult,
+} from "../world/ArmoryMechanisms";
+import { ArmoryMechanismView } from "../world/ArmoryMechanismView";
+import { createTubeGlow } from "../world/ArmoryLighting";
+import { createHangingTubeGlow } from "../world/HangingTubes";
+import {
+  ARMORY_VENT_HOLE,
+  VENT_HATCH_ID,
+  ventDripPoints,
+} from "../world/ArmoryVent";
+import { VentDrips } from "../vfx/VentDrips";
+import type { BoxSolid } from "../world/ArenaLayout";
+import { ShutterCrush } from "../combat/ShutterCrush";
 import { ArenaDebug } from "../world/ArenaDebug";
 import { CLIMB, angleBetween, ladderYaw } from "../player/Climb";
 import {
   ARENA_HALF_X,
   ARENA_HALF_Z,
   PERIMETER_WALL_HEIGHT,
+  ROOF_HIGH,
 } from "../world/ArenaLayout";
 import { ARENA_LAYOUT } from "../world/UpperFloorMap";
 import { GeneratorFuel } from "../world/GeneratorFuel";
@@ -34,6 +62,7 @@ import { ProjectileSystem, PROFILES } from "../combat/Projectiles";
 import { THROW_CONFIG } from "../combat/ThrowConfig";
 import { FireSystem, fireIntensity, fireRadius } from "../combat/FireZones";
 import { ExplosionSystem } from "../combat/Explosions";
+import { FuelHazard } from "../combat/FuelHazard";
 import { SmokeSystem } from "../combat/Smoke";
 import { canPerceive } from "../combat/Awareness";
 import {
@@ -50,6 +79,7 @@ import { ThrowStance, type HeldKind } from "../inventory/ThrowStance";
 import type { UtilityType } from "../inventory/PlayerUtilities";
 import { WeaponWheel } from "../inventory/WeaponWheel";
 import { FireZoneView } from "../vfx/FireZoneView";
+import { FuelSpillView } from "../vfx/FuelSpillView";
 import { ThrowAimPreview } from "../vfx/ThrowAimPreview";
 import { ThrownItemView } from "../vfx/ThrownItemView";
 import { ExplosionView } from "../vfx/ExplosionView";
@@ -170,6 +200,10 @@ export class Game {
   private readonly explosions: ExplosionSystem;
   private readonly smoke: SmokeSystem;
   private readonly fireView = new FireZoneView();
+  private readonly fuelSpillView = new FuelSpillView(
+    ARENA_LAYOUT.fuelSpills ?? [],
+  );
+  private fuelHazard!: FuelHazard;
   private readonly thrownView: ThrownItemView;
   private readonly explosionView = new ExplosionView();
   private readonly smokeView: SmokeCloudView;
@@ -184,6 +218,69 @@ export class Game {
   private climbPrompt: HTMLElement | null = null;
 
   private climbKeyDown = false;
+
+  /** The Armory's chain shutter and inside-lockable door (see ArmoryMechanisms). */
+  private readonly armoryShutter = new ChainShutter();
+  private readonly armoryDoor = new OneWayHatch();
+  private readonly armoryView = new ArmoryMechanismView();
+  /** The Armory's tubes (they glow, and the loose one dips with its lamp). */
+  private readonly tubeGlow = createTubeGlow();
+  /** The Warehouse's hanging tubes. */
+  private readonly hangingTubes = createHangingTubeGlow();
+  /** Rain through the Armory vent's grille. */
+  private readonly ventDrips = new VentDrips(
+    ventDripPoints(),
+    ARMORY.FLOOR + 6.44,
+    ARMORY.FLOOR,
+  );
+  private tubeLamp: THREE.Light | null | undefined;
+  private tubeBase = 0;
+  private shutterCrush!: ShutterCrush;
+  private readonly shutterSolid: BoxSolid = {
+    kind: "box",
+    id: "armory-shutter",
+    role: "wall",
+    minX: ARMORY.SHUTTER_X - ARMORY.SHUTTER_THICKNESS / 2,
+    maxX: ARMORY.SHUTTER_X + ARMORY.SHUTTER_THICKNESS / 2,
+    minZ: ARMORY.SHUTTER_Z0,
+    maxZ: ARMORY.SHUTTER_Z1,
+    bottom: ARMORY.FLOOR,
+    height: ARMORY.FLOOR + ARMORY.SHUTTER_HEIGHT,
+  };
+  private readonly doorSolid: BoxSolid = {
+    kind: "box",
+    id: "armory-hatch",
+    role: "wall",
+    minX: ARMORY.DOOR_OPENING_MIN_X,
+    maxX: ARMORY.DOOR_OPENING_MAX_X,
+    minZ: ARMORY.DOOR_Z - ARMORY.DOOR_THICKNESS / 2,
+    maxZ: ARMORY.DOOR_Z + ARMORY.DOOR_THICKNESS / 2,
+    bottom: ARMORY.FLOOR,
+    height: ARMORY.FLOOR + ARMORY.DOOR_OPENING_HEIGHT,
+  };
+  /**
+   * The leaf once it stands wide open against the Hall side of the west jamb
+   * (a little past square, so its free end is clear of the way through).
+   */
+  private readonly openLeafSolid: BoxSolid = {
+    kind: "box",
+    id: "armory-hatch-open",
+    role: "wall",
+    minX: ARMORY.DOOR_HINGE_X - 0.22,
+    maxX: ARMORY.DOOR_HINGE_X + 0.05,
+    minZ: ARMORY.DOOR_Z + 0.15,
+    maxZ: ARMORY.DOOR_Z + 0.15 + ARMORY.DOOR_WIDTH,
+    bottom: ARMORY.FLOOR,
+    height: ARMORY.FLOOR + ARMORY.DOOR_HEIGHT,
+  };
+
+  /** Whether the chain is being hauled this frame. */
+  private chainHeld = false;
+  /** Whether it was last frame, so a haul keeps its hold when you look away. */
+  private chainHauling = false;
+  /** A message about the door or the chain, and how long it stays up (s). */
+  private armoryMessage = "";
+  private armoryMessageTime = 0;
 
   /** Roof hatches that have been opened this round (they stay open). */
   private readonly openHatches = new Set<string>();
@@ -387,6 +484,12 @@ export class Game {
     this.thrownView = new ThrownItemView(this.projectiles);
     this.fires = new FireSystem(this.combat, this.throwWorld);
     this.explosions = new ExplosionSystem(this.combat, this.throwWorld);
+    // The fuel pools: a Molotov or a close blast sets them alight (once a round).
+    this.fuelHazard = new FuelHazard(
+      ARENA_LAYOUT.fuelSpills ?? [],
+      this.combat,
+      this.fires,
+    );
     this.smoke = new SmokeSystem(this.combat, this.throwWorld);
     this.smokeView = new SmokeCloudView(this.smoke);
     // A Molotov that breaks starts a fire where it landed.
@@ -432,6 +535,19 @@ export class Game {
 
     this.combat.register(this.dummy);
 
+    // The Armory's movable solids join the collision (they are not in the
+    // layout: the map has the doorways open), and its crush hazard watches
+    // everyone's position.
+    this.collision.addMovable(this.shutterSolid);
+    this.collision.addMovable(this.doorSolid);
+    this.collision.addMovable(this.openLeafSolid);
+    this.syncArmory();
+    this.shutterCrush = new ShutterCrush(
+      this.combat,
+      this.armoryShutter,
+      () => this.playerCombatant.id,
+    );
+
     this.enemyHealthBars = new WorldHealthBars(
       document.body,
       this.combat.events,
@@ -474,6 +590,10 @@ export class Game {
     // ----------------------------------------------------------
 
     this.renderer.scene.add(this.arena.group);
+    this.arena.group.add(this.armoryView.group);
+    this.arena.group.add(this.tubeGlow.group);
+    this.arena.group.add(this.hangingTubes.group);
+    this.arena.group.add(this.ventDrips.group);
     this.renderer.scene.add(
       this.flameLight,
       this.blastLight,
@@ -503,6 +623,7 @@ export class Game {
     this.fireView.surfaceY = (x, z, fromY) =>
       this.collision.groundHeight(x, z, fromY);
     this.renderer.scene.add(this.fireView.group);
+    this.renderer.scene.add(this.fuelSpillView.group);
     this.renderer.scene.add(this.explosionView.group);
     this.renderer.scene.add(this.smokeView.group);
     this.renderer.scene.add(this.throwPreview.group);
@@ -603,6 +724,7 @@ export class Game {
     // aiming a throwable decides if they can guard or punch this frame.
     this.updateWeaponWheel(dt);
     this.updateClimb();
+    this.updateArmory(dt);
     this.updateHatches(dt);
     this.updateGrates(dt);
     this.updateThrowStance(dt);
@@ -621,6 +743,8 @@ export class Game {
 
     this.updatePunchState(dt);
 
+    // Hauling the chain: no walking about, only looking round.
+    this.player.movementLocked = this.chainHeld;
     this.player.update(dt, this.input);
 
     this.resolveDummyCollision();
@@ -657,6 +781,12 @@ export class Game {
     if (ladder) {
       // On a ladder the body stays facing it; only the head turns.
       this.bodyYawOffset = angleBetween(ladderYaw(ladder), this.player.yaw);
+    } else if (this.chainHeld) {
+      // Hauling the chain: the body faces it (easing round to it), the head
+      // turns where the player looks.
+      this.bodyYawOffset +=
+        (angleBetween(ARMORY.CHAIN_YAW, this.player.yaw) - this.bodyYawOffset) *
+        (1 - Math.exp(-10 * dt));
     } else {
       this.bodyYawOffset +=
         ((diagonalForward ? sideInput * (Math.PI / 4) : 0) -
@@ -672,7 +802,10 @@ export class Game {
         this.runPunchTimeLeft > 0 ||
         this.flyPunchActive ||
         this.player.isBlocking ||
-        this.throwStance.pointsAtCrosshair,
+        this.throwStance.pointsAtCrosshair ||
+        // In first person the upper body always follows the pitch, so the
+        // camera does not swing over the fists when looking down at a table.
+        !this.isThirdPerson,
       !this.player.isGrounded && !this.player.isClimbing,
       (this.punchTimeLeft > 0 || this.runPunchTimeLeft > 0) &&
         this.player.isGrounded,
@@ -690,6 +823,9 @@ export class Game {
         : undefined,
     );
 
+    this.character.setChainPull(
+      this.chainHeld ? { travel: this.armoryShutter.chainTravel } : null,
+    );
     this.character.setVault(this.player.vaultPose);
     this.character.setVentMove(this.player.ventPose);
     this.character.setLegsHidden(this.player.isInVent && !this.isThirdPerson);
@@ -755,6 +891,7 @@ export class Game {
     // Render
     // ----------------------------------------------------------
 
+    this.warmUp();
     this.arena.update(dt);
     this.updateFlameLight();
     this.updateFireLights();
@@ -784,6 +921,12 @@ export class Game {
       return true;
     }
 
+    // Under something too low to stand beneath, they stay down even when C is
+    // let go, until they are clear.
+    if (this.player.isCrouching && this.player.mustStayLow) {
+      return true;
+    }
+
     return (
       this.player.isGrounded &&
       !this.crouchCancelled &&
@@ -794,7 +937,7 @@ export class Game {
   private updateCrouchState(): void {
     if (!this.input.isPressed("KeyC")) {
       this.crouchCancelled = false;
-      this.player.isCrouching = false;
+      this.player.isCrouching = this.isCrouching();
       return;
     }
 
@@ -868,9 +1011,16 @@ export class Game {
    */
   private updateClimb(): void {
     const key = this.input.isPressed("KeyE");
-    const pressed = key && !this.climbKeyDown;
+    let pressed = key && !this.climbKeyDown;
 
     this.climbKeyDown = key;
+
+    // The Armory's chain and door take E first when you are at them.
+    const armoryText = this.updateArmoryControls(key, pressed);
+
+    if (armoryText !== null) {
+      pressed = false;
+    }
 
     if (pressed && this.player.isInVent) {
       // Underground: E climbs out through the grate overhead (any grate).
@@ -890,6 +1040,8 @@ export class Game {
         } else {
           this.player.releaseLadder();
         }
+      } else if (this.liftVentGrilleIfNear()) {
+        // Lifted the Armory vent's grille from the roof.
       } else if (this.takePickupIfNear()) {
         // Took a grenade off a workbench.
       } else if (this.addFuelIfNear()) {
@@ -929,32 +1081,320 @@ export class Game {
     }
 
     const text = this.player.isClimbing
-      ? this.player.atShutHatch
-        ? "E  Open hatch"
-        : this.player.hasShutHatch
-          ? "W / S climb  ·  E open hatch  ·  Space jump off"
-          : "W / S climb  ·  Space jump off  ·  E let go"
+      ? this.player.hasShutHatch
+        ? "PRESS {E} TO OPEN HATCH"
+        : ""
       : this.player.isInVent
         ? this.player.ventExitInReach()
-          ? "E  Climb out"
-          : this.player.isUnderground
-            ? "W A S D crawl  ·  find a grate"
-            : ""
-        : this.player.ventEntryInReach()
-          ? "E  Enter vent"
-          : this.pickupPrompt()
-            ? this.pickupPrompt()
-            : this.fuelPrompt()
-              ? this.fuelPrompt()
-              : this.player.ladderInReach()
-                ? "E  Climb"
-                : "";
+          ? "PRESS {E} TO CLIMB OUT"
+          : ""
+        : armoryText
+          ? armoryText
+          : this.player.ventEntryInReach()
+            ? "PRESS {E} TO ENTER VENT"
+            : this.ventGrilleInReach()
+              ? "PRESS {E} TO LIFT GRILLE"
+              : this.pickupPrompt()
+                ? this.pickupPrompt()
+                : this.fuelPrompt()
+                  ? this.fuelPrompt()
+                  : this.player.ladderInReach()
+                    ? "PRESS {E} TO CLIMB"
+                    : "";
 
-    if (this.climbPrompt.textContent !== text) {
-      this.climbPrompt.textContent = text;
+    // A key in braces, {E}, is drawn in the key colour.
+    if (this.climbPrompt.dataset.text !== text) {
+      this.climbPrompt.dataset.text = text;
+      this.climbPrompt.replaceChildren(
+        ...text.split(/(\{[^}]+\})/).map((part) => {
+          if (!/^\{[^}]+\}$/.test(part)) {
+            return document.createTextNode(part);
+          }
+
+          const key = document.createElement("b");
+
+          key.textContent = part.slice(1, -1);
+
+          return key;
+        }),
+      );
     }
 
     this.climbPrompt.style.visibility = text ? "visible" : "hidden";
+  }
+
+  private readonly armoryReach = {
+    feet: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 0, z: 0 },
+    dir: { x: 0, y: 0, z: -1 },
+  };
+
+  /** Fills `armoryReach` from the player: feet, eye and the direction looked along. */
+  private fillArmoryReach(): typeof this.armoryReach {
+    const r = this.armoryReach;
+    const yaw = this.player.yaw;
+    const pitch = this.player.pitch;
+    const flat = Math.cos(pitch);
+
+    r.eye.x = this.player.position.x;
+    r.eye.y = this.player.position.y;
+    r.eye.z = this.player.position.z;
+    r.feet.x = r.eye.x;
+    r.feet.y = r.eye.y - this.player.eyeHeight;
+    r.feet.z = r.eye.z;
+    r.dir.x = -Math.sin(yaw) * flat;
+    r.dir.y = Math.sin(pitch);
+    r.dir.z = -Math.cos(yaw) * flat;
+
+    return r;
+  }
+
+  /** Where everyone stands (for the door's swing), the dead excluded. */
+  private armoryStandingFeet(): Array<{ x: number; y: number; z: number }> {
+    const feet = [{ ...this.fillArmoryReach().feet }];
+
+    if (!this.dummy.isDead()) {
+      const at = this.dummy.getPosition();
+
+      feet.push({ x: at.x, y: at.y, z: at.z });
+    }
+
+    return feet;
+  }
+
+  /**
+   * The Armory's chain and door under E. Hauling the chain is a hold (the
+   * shutter only rises while it is held, and falls when it is let go); the
+   * door is a press. Returns the hint to show, or null if neither is in reach
+   * (so the rest of E is untouched).
+   */
+  private updateArmoryControls(key: boolean, pressed: boolean): string | null {
+    this.chainHeld = false;
+
+    if (
+      this.playerCombatant.isDead() ||
+      this.player.isClimbing ||
+      this.player.isInVent ||
+      this.player.isUnderground
+    ) {
+      return null;
+    }
+
+    const reach = this.fillArmoryReach();
+    const wasHauling = this.chainHauling;
+
+    this.chainHauling = false;
+
+    // Taking hold needs the chain under the crosshair; keeping hold only needs
+    // you to stay near it and keep E down, wherever you look.
+    if (chainInReach(reach) || (wasHauling && key && chainNear(reach))) {
+      // Fighting wins: blocking or a punch in progress lets go of the chain
+      // (so the arms are free to react).
+      const busy =
+        this.isBlockHeld() || this.combat.getAttack("player") !== undefined;
+
+      this.chainHeld = key && !busy;
+      this.chainHauling = this.chainHeld;
+
+      if (this.chainHeld) {
+        // Both hands are needed: whatever was in them is put away first, and
+        // nothing is taken out while the chain is hauled.
+        if (this.utilities.selected !== "FISTS") {
+          this.utilities.select("FISTS");
+        }
+
+        this.throwStance.reset();
+
+        // The body stays facing the chain; only the head turns, so far.
+        const turn = angleBetween(ARMORY.CHAIN_YAW, this.input.yaw);
+
+        if (Math.abs(turn) > CLIMB.LOOK_RANGE) {
+          this.input.yaw =
+            ARMORY.CHAIN_YAW + Math.sign(turn) * CLIMB.LOOK_RANGE;
+        }
+      }
+
+      // While it is being hauled the hands say it all.
+      return key ? "" : "HOLD {E} TO RAISE SHUTTER";
+    }
+
+    const aim = doorAim(reach, this.armoryDoor);
+
+    if (!aim) {
+      return this.armoryMessageTime > 0 ? this.armoryMessage : null;
+    }
+
+    const door = this.armoryDoor;
+
+    if (pressed) {
+      // The leaf swings out into the Hall: it will not start with anyone there.
+      const blocked =
+        aim.side === "inside" &&
+        doorSweepBlocked(this.armoryStandingFeet(), door.dir);
+      const result = door.interact(aim.side, blocked);
+
+      this.armoryMessage = this.doorMessage(result);
+      this.armoryMessageTime = this.armoryMessage ? 1.4 : 0;
+    }
+
+    if (this.armoryMessageTime > 0) {
+      return this.armoryMessage;
+    }
+
+    return aim.side === "outside" ? "LOCKED" : "PRESS {E} TO PULL LEVER";
+  }
+
+  private doorMessage(result: HatchResult): string {
+    switch (result) {
+      case "refused-outside":
+        return "Locked";
+      case "refused-blocked":
+        return "BLOCKED";
+      default:
+        return "";
+    }
+  }
+
+  /** The shutter's and the door's collision follow what they are doing now. */
+  private syncArmory(): void {
+    this.shutterSolid.bottom = ARMORY.FLOOR + this.armoryShutter.lift;
+    this.collision.setSolidActive(
+      this.shutterSolid,
+      this.armoryShutter.lift < ChainShutter.MAX_LIFT - 0.02,
+    );
+    this.collision.setSolidActive(this.doorSolid, this.armoryDoor.isSolid);
+    this.collision.setSolidActive(
+      this.openLeafSolid,
+      this.armoryDoor.leafStands,
+    );
+  }
+
+  /** Moves the shutter and the door, then checks the crush before bodies are moved out. */
+  private updateArmory(dt: number): void {
+    this.armoryShutter.update(dt, this.chainHeld);
+    // The leaf stops short of anyone who steps into its sweep.
+    this.armoryDoor.update(
+      dt,
+      this.armoryDoor.isMoving &&
+        doorSweepBlocked(this.armoryStandingFeet(), this.armoryDoor.dir),
+    );
+    this.armoryMessageTime = Math.max(0, this.armoryMessageTime - dt);
+    this.ventDrips.update(dt);
+    this.syncArmory();
+    this.shutterCrush.update();
+    this.armoryView.update(
+      this.armoryShutter,
+      this.armoryDoor,
+      performance.now() / 1000,
+    );
+    this.updateTubes();
+  }
+
+  /** The loose tube dips when its lamp does (the weather system stutters the lamp). */
+  private updateTubes(): void {
+    this.tubeLamp ??=
+      (this.arena.group.getObjectByName("tube-armory-3") as THREE.Light) ??
+      null;
+
+    if (!this.tubeLamp) {
+      return;
+    }
+
+    this.tubeBase = Math.max(this.tubeBase, this.tubeLamp.intensity);
+    this.tubeGlow.setLevel(
+      "tube-armory-3",
+      this.tubeBase > 0 ? this.tubeLamp.intensity / this.tubeBase : 1,
+    );
+  }
+
+  /** Frames since the characters were both loaded (the warm-up waits a few). */
+  private warmUpFrames = 0;
+  private warmedUp = false;
+
+  /**
+   * Everything that first appears mid-game (a throwable taken out, a throw, a
+   * blast, a fire, smoke, the lights they cast) would be compiled and sent to
+   * the graphics card the first time it is drawn, a stutter right when you
+   * act. So once, a few frames after the characters are in, the held items are
+   * built, every hidden object is made visible and uncullable for one draw
+   * (programs compiled, geometry and textures uploaded) and put back. That
+   * draw is overwritten by the frame about to be rendered, so it is never seen.
+   */
+  private warmUp(): void {
+    if (this.warmedUp) {
+      return;
+    }
+
+    if (!this.character.isLoaded || !this.dummy.character.isLoaded) {
+      return;
+    }
+
+    if (++this.warmUpFrames < 3) {
+      return;
+    }
+
+    this.warmedUp = true;
+    this.character.prepareHeldItems();
+    this.dummy.character.prepareHeldItems();
+
+    const scene = this.renderer.scene;
+    const saved: Array<[THREE.Object3D, boolean, boolean]> = [];
+
+    scene.traverse((object) => {
+      saved.push([object, object.visible, object.frustumCulled]);
+      object.visible = true;
+      object.frustumCulled = false;
+    });
+
+    this.renderer.camera.updateMatrixWorld(true);
+    this.renderer.renderer.compile(scene, this.renderer.camera);
+    this.renderer.renderer.render(scene, this.renderer.camera);
+
+    for (const [object, visible, culled] of saved) {
+      object.visible = visible;
+      object.frustumCulled = culled;
+    }
+  }
+
+  /** Which kinds the player has already taken from the Armory's stash this round (one of each). */
+  private readonly stashTaken = new Set<string>();
+
+  /** Whether a pickup is one of the Armory stash's. */
+  private static isStash(pickup: { id: string }): boolean {
+    return pickup.id.startsWith("armory-");
+  }
+
+  /** Whether the player stands on the Armory's roof near its shut vent grille. */
+  private ventGrilleInReach(): boolean {
+    if (
+      this.openHatches.has(VENT_HATCH_ID) ||
+      this.player.isClimbing ||
+      this.player.isInVent
+    ) {
+      return false;
+    }
+
+    const feetY = this.player.position.y - this.player.eyeHeight;
+    const hole = ARMORY_VENT_HOLE;
+
+    return (
+      Math.abs(feetY - ROOF_HIGH) < 0.4 &&
+      Math.hypot(
+        this.player.position.x - (hole.minX + hole.maxX) / 2,
+        this.player.position.z - (hole.minZ + hole.maxZ) / 2,
+      ) <= 2.2
+    );
+  }
+
+  /** E on the roof beside the vent: the grille lifts on its hinge and stays up for good. */
+  private liftVentGrilleIfNear(): boolean {
+    if (!this.ventGrilleInReach()) {
+      return false;
+    }
+
+    this.setHatchOpen(VENT_HATCH_ID, true);
+
+    return true;
   }
 
   /** The most grenades a player may carry (a pickup gives none past this). */
@@ -962,12 +1402,36 @@ export class Game {
 
   /** Draws every pickup in the layout as its real item model. */
   private createPickups(): void {
+    const PICKUP_SCALE = 1;
     const parts = createGrenadeParts();
+    const bottleParts = createBottleParts();
 
     for (const pickup of ARENA_LAYOUT.pickups) {
-      const mesh = createGrenade(parts);
+      let mesh: THREE.Object3D;
+      let lift: number;
 
-      mesh.position.set(pickup.x, pickup.y + 0.07, pickup.z);
+      if (pickup.type === "SMOKE") {
+        mesh = createSmokeCanister(parts);
+        mesh.scale.setScalar(PICKUP_SCALE);
+        lift = 0.085 * PICKUP_SCALE;
+      } else if (pickup.type === "MOLOTOV") {
+        mesh = createBottle(bottleParts);
+        mesh.scale.setScalar(PICKUP_SCALE);
+        // A bottle on a shelf has no flame.
+        const flame = mesh.getObjectByName("flame");
+
+        if (flame) {
+          flame.visible = false;
+        }
+
+        lift = 0.08 * PICKUP_SCALE;
+      } else {
+        mesh = createGrenade(parts);
+        mesh.scale.setScalar(PICKUP_SCALE);
+        lift = 0.065 * PICKUP_SCALE;
+      }
+
+      mesh.position.set(pickup.x, pickup.y + lift, pickup.z);
       mesh.rotation.set(0, pickup.x * 3.1, 0);
       mesh.name = pickup.id;
       this.arena.group.add(mesh);
@@ -1004,7 +1468,7 @@ export class Game {
         this.player.position.z - pickup.z,
       );
 
-      if (rise > 0.2 && rise < 1.8 && distance < bestDistance) {
+      if (rise > 0.1 && rise < 1.8 && distance < bestDistance) {
         best = pickup;
         bestDistance = distance;
       }
@@ -1025,9 +1489,20 @@ export class Game {
 
     const have = this.utilities.quantityOf(pickup.type) ?? 0;
 
+    const name =
+      pickup.type === "SMOKE"
+        ? "smoke grenade"
+        : pickup.type === "MOLOTOV"
+          ? "Molotov"
+          : "grenade";
+
+    if (Game.isStash(pickup) && this.stashTaken.has(pickup.type)) {
+      return "ALREADY TAKEN";
+    }
+
     return have >= Game.GRENADE_CARRY_MAX
-      ? `Grenades full  ·  ${have} / ${Game.GRENADE_CARRY_MAX}`
-      : `E  Take grenade  ·  ${have} / ${Game.GRENADE_CARRY_MAX}`;
+      ? "CAN'T CARRY MORE"
+      : `PRESS {E} TO TAKE ${name.toUpperCase()}`;
   }
 
   /** E at a pickup: adds it to the player's utilities and hides it for a while. */
@@ -1040,8 +1515,17 @@ export class Game {
 
     const have = this.utilities.quantityOf(pickup.type) ?? 0;
 
+    // The stash gives one of each kind, no more.
+    if (Game.isStash(pickup) && this.stashTaken.has(pickup.type)) {
+      return true;
+    }
+
     if (have >= Game.GRENADE_CARRY_MAX) {
       return true;
+    }
+
+    if (Game.isStash(pickup)) {
+      this.stashTaken.add(pickup.type);
     }
 
     this.utilities.add(
@@ -1089,15 +1573,13 @@ export class Game {
       return "";
     }
 
-    const level = `${Math.round(fuel.level)} / ${fuel.capacity}`;
-
     if (fuel.isFull) {
-      return `${near.name}  ·  full  ${level}`;
+      return "";
     }
 
     return (this.utilities.quantityOf("MOLOTOV") ?? 0) > 0
-      ? `E  Add fuel (uses a Molotov)  ·  ${level}`
-      : `${near.name}  ·  needs a Molotov to add fuel  ·  ${level}`;
+      ? "PRESS {E} TO ADD FUEL"
+      : "NEEDS A MOLOTOV";
   }
 
   /** E at a filler cap: pours a Molotov's petrol in. True if at one. */
@@ -1492,6 +1974,10 @@ export class Game {
 
     this.thrownView.update(this.renderer.camera.position);
     this.fireView.update(this.fires.zones, performance.now() / 1000);
+    this.fuelSpillView.update(
+      (id) => this.fuelHazard.stateOf(id),
+      performance.now() / 1000,
+    );
     this.explosionView.update(dt);
     this.smokeView.update(this.renderer.camera, performance.now() / 1000);
     this.updateSmokeOverlay();
@@ -1721,6 +2207,11 @@ export class Game {
 
     if (!this.player.isGrounded) {
       return "jump";
+    }
+
+    // Hauling the chain: feet planted, whatever keys are down.
+    if (this.chainHeld) {
+      return "idle";
     }
 
     /**
@@ -2068,9 +2559,30 @@ export class Game {
    * state. Free-for-all: nothing about a fighter decides where it starts.
    */
   private startRound(): void {
+    // The Armory's shutter is down again. The hatch is not reset: once opened it
+    // stays open for the whole session.
+    this.armoryShutter.reset();
+    this.shutterCrush.reset();
+
+    // The stash is full again: one of each may be taken again.
+    this.stashTaken.clear();
+
+    for (const [id, state] of this.pickupState) {
+      if (id.startsWith("armory-")) {
+        state.readyAt = 0;
+        state.mesh.visible = true;
+      }
+    }
+
+    this.chainHeld = false;
+    this.syncArmory();
+
     // Every roof hatch is shut again for a new round.
+    // (The Armory's vent hatch is not: once lifted it stays up.)
     for (const id of [...this.openHatches]) {
-      this.setHatchOpen(id, false);
+      if (id !== VENT_HATCH_ID) {
+        this.setHatchOpen(id, false);
+      }
     }
 
     const spawns = assignSpawns(["player", "dummy"], {
@@ -2087,6 +2599,7 @@ export class Game {
     this.combat.cancelAttack("player");
     this.projectiles.clear();
     this.fires.clear();
+    this.fuelHazard.reset();
     this.smoke.clear();
     this.throwStance.reset();
     this.playerCombatant.health.reset();
@@ -2215,7 +2728,7 @@ export class Game {
    * The camera never enters a wall, platform or block that is taller than it
    * is, so you can't see the inside of scenery (or through it).
    */
-  private keepCameraOutOfScenery(position: THREE.Vector3): void {
+  private keepCameraOutOfScenery(position: THREE.Vector3, margin = 0.15): void {
     // In the vents the tunnel walls are the bounds; the solid block of the upper
     // floor around an upper tunnel must not push the camera out of it.
     if (this.player.isInVent) {
@@ -2226,7 +2739,7 @@ export class Game {
       position.x,
       position.z,
       0,
-      0.15,
+      margin,
       position.y - 0.05,
       // Only what is at the camera's height gets in its way, not a roof above.
       position.y + 0.1,
@@ -2394,7 +2907,9 @@ export class Game {
     // ----------------------------------------------------------
 
     this.keepUndergroundCameraBelowFloor(this.firstPersonCameraPosition);
-    this.keepCameraOutOfScenery(this.firstPersonCameraPosition);
+    // A small margin: the eye sits at the front of the head, and a wide one
+    // pushes it back into the head when looking down against a wall.
+    this.keepCameraOutOfScenery(this.firstPersonCameraPosition, 0.05);
     this.renderer.camera.position.copy(this.firstPersonCameraPosition);
     this.character.aimEye = this.firstPersonCameraPosition;
 
@@ -2525,6 +3040,12 @@ export class Game {
   // ============================================================
 
   public dispose(): void {
+    this.armoryView.dispose();
+    this.tubeGlow.dispose();
+    this.hangingTubes.dispose();
+    this.fuelSpillView.dispose();
+    this.fuelHazard.dispose();
+    this.ventDrips.dispose();
     this.input.dispose();
 
     this.thrownView.dispose();
