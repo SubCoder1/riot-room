@@ -276,6 +276,20 @@ export class Character {
      */
     this.restoreAimBones();
 
+    // Safety net: nothing that shrinks the arms (a ladder, a vent) is active,
+    // so they are full size. (A shrink left over from an earlier pose would
+    // make every punch and throw look short.)
+    if (this.armsFade >= 1 && !this.ventArmsScaled) {
+      this.scaleArms(1);
+    }
+
+    // Safety net: nothing that shrinks the arms (a ladder, a vent) is active,
+    // so they are full size. (A shrink left over from an earlier pose would
+    // make every punch and throw look short.)
+    if (this.armsFade >= 1 && !this.ventArmsScaled) {
+      this.scaleArms(1);
+    }
+
     /**
      * Existing CharacterAnimator.
      */
