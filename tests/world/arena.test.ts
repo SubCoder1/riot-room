@@ -143,6 +143,20 @@ describe("Ground and walls", () => {
           continue;
         }
 
+        // The Junk Room's crawl hole: only a crouching body (1.1 m) fits.
+        if (room.id === "room-archive" && door.side === "w") {
+          expect(
+            world.isBlocked(
+              room.minX + 0.15,
+              door.at,
+              room.floorY,
+              PLAYER_RADIUS,
+              1.1,
+            ),
+          ).toBe(false);
+          continue;
+        }
+
         const horizontal = door.side === "n" || door.side === "s";
         const edge =
           door.side === "n"

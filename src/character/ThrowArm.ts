@@ -505,6 +505,19 @@ export class ThrowArm {
     }
   }
 
+  /**
+   * Builds everything held in the hand now (the grenade, the canister, the
+   * bottle and the lighter's flame), all hidden, so the first time one is taken
+   * out nothing has to be made, compiled or uploaded at that moment.
+   */
+  public prepare(): void {
+    this.ensureHolder();
+
+    if (!this.lighter) {
+      this.createLighter();
+    }
+  }
+
   /** Shows the lighter flame on the left hand while a Molotov is being lit. */
   private updateLighter(show: boolean): void {
     if (!show && !this.lighter) {

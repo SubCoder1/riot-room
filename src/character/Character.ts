@@ -5,6 +5,7 @@ import { CharacterModel } from "./CharacterModel";
 import { CharacterAnimator } from "./CharacterAnimator";
 import { limitArmReach, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
+import { ChainPullRig, type ChainPullShape } from "./ChainPullPose";
 import { ClimbRig } from "./ClimbPose";
 import { VaultRig, type VaultShape } from "./VaultPose";
 import { VentRig, type VentMoveShape } from "./VentPose";
@@ -297,6 +298,7 @@ export class Character {
     this.applyThrowPose();
 
     this.applyClimbPose(dt);
+    this.applyChainPull(dt);
     this.applyVentMove(dt);
     this.applyVentArms();
     if (this.legsHidden) {
@@ -2038,6 +2040,13 @@ export class Character {
 
     return this.throwArmInstance;
   }
+  /** Builds the held throwables ahead of their first use (see ThrowArm.prepare). */
+  public prepareHeldItems(): void {
+    if (this.isLoaded) {
+      this.throwArm.prepare();
+    }
+  }
+
   private throwPose: ThrowPose | null = null;
   private readonly throwForward = new THREE.Vector3();
   private readonly throwAim = new THREE.Vector3();
@@ -2096,6 +2105,83 @@ export class Character {
     this.climbing = active;
     this.climbed = climbedHeight;
   }
+
+  // ------------------------------------------------------------
+  // Hauling the armory's hand chain (both hands, hand over hand)
+  // ------------------------------------------------------------
+
+  private chainPullRigInstance: ChainPullRig | null = null;
+  private chainPullShape: ChainPullShape | null = null;
+  private chainPullMix = 0;
+  private readonly chainPullForward = new THREE.Vector3();
+
+  /**
+   * Whether the character is hauling the chain, and how far it has been drawn
+   * (null when not). The hands follow the chain's own travel, so they move
+   * only as it does; letting go (null) brings the arms back to normal.
+   */
+  public setChainPull(shape: ChainPullShape | null): void {
+    this.chainPullShape = shape;
+  }
+
+  private applyChainPull(dt: number): void {
+    // Full-size arms for the solve (as for the ladder); they shrink again below
+    // if the head is turned away from the chain.
+    if (this.armsFade < 1) {
+      this.scaleArms(1);
+      this.armsFade = 1;
+    }
+
+    const target = this.chainPullShape ? 1 : 0;
+    // Quick to take hold, a touch quicker to let go.
+    const rate = target > this.chainPullMix ? 0.18 : 0.12;
+
+    this.chainPullMix +=
+      Math.sign(target - this.chainPullMix) *
+      Math.min(dt / rate, Math.abs(target - this.chainPullMix));
+
+    if (this.chainPullMix < 0.002) {
+      return;
+    }
+
+    this.chainPullRigInstance ??= new ChainPullRig(
+      this.group,
+      (bone, from, to) => this.rotateBoneBetween(bone, from, to),
+    );
+
+    // The way the body faces (flat), toward the chain.
+    this.group.getWorldQuaternion(this.pitchQuat);
+    this.chainPullForward.set(0, 0, 1).applyQuaternion(this.pitchQuat);
+    this.chainPullForward.y = 0;
+    this.chainPullForward.normalize();
+
+    // Letting go: the hands stay where the chain left them as they fade out.
+    this.chainPullLast = this.chainPullShape ?? this.chainPullLast;
+    this.chainPullRigInstance.applyPull(
+      this.chainPullMix,
+      this.chainPullForward,
+      this.chainPullLast ?? { travel: 0 },
+    );
+
+    // In first person the camera sits among the shoulders, so with the head
+    // turned away from the chain it would look through the arms from inside.
+    // They shrink away as the head turns (the hands are out of view by then),
+    // as on a ladder, and come back as it turns back.
+    if (this.upperBodyFollowsLook) {
+      const wanted = THREE.MathUtils.clamp(
+        1 - (Math.abs(this.bodyYawOffset) - 0.3) / 0.35,
+        0,
+        1,
+      );
+
+      if (wanted < 1) {
+        this.armsFade = wanted;
+        this.scaleArms(Math.max(wanted, 0.001));
+      }
+    }
+  }
+
+  private chainPullLast: ChainPullShape | null = null;
 
   // ------------------------------------------------------------
   // Vaulting over a railing or a box

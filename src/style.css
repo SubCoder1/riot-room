@@ -47,7 +47,7 @@ canvas {
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
 }
 
-/* "E  Climb" hint, and the keys while on a ladder. */
+/* The hints ("PRESS E TO CLIMB"): the key is picked out in amber. */
 .climb-prompt {
   position: fixed;
   left: 50%;
@@ -57,10 +57,17 @@ canvas {
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.55);
   color: #f1f5f9;
-  font-size: 16px;
+  font-size: 18px;
   pointer-events: none;
   z-index: 10;
   visibility: hidden;
+  letter-spacing: 0.06em;
+}
+
+.climb-prompt b {
+  color: #ffc83d;
+  font-weight: 400;
+  font-size: 1.15em;
 }
 
 /* ------------------------------------------------------------------

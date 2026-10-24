@@ -8,6 +8,8 @@ import {
   applyFriction,
 } from "./SourceMovement";
 import {
+  CROUCH_HEADROOM,
+  HEADROOM,
   PLAYER_RADIUS,
   SNAP_DOWN,
   STEP_UP,
@@ -483,6 +485,23 @@ export class Player {
    */
   public isCrouching = false;
 
+  /** Set by the game while both hands are busy (the chain): no walking, sprinting or jumping, only looking. */
+  public movementLocked = false;
+
+  /** True if there is no room to stand up where the player is (a low ceiling or shutter over them). */
+  public get mustStayLow(): boolean {
+    return (
+      !!this.world &&
+      this.grounded &&
+      this.world.isBlocked(
+        this.position.x,
+        this.position.z,
+        this.position.y - this.eyeHeight,
+        PLAYER_RADIUS,
+      )
+    );
+  }
+
   /**
    * Punch state. Set by Game.ts; slows movement while a punch plays.
    */
@@ -797,11 +816,15 @@ export class Player {
      * ======================================================
      */
 
-    const moveX =
-      (input.isPressed("KeyD") ? 1 : 0) - (input.isPressed("KeyA") ? 1 : 0);
+    // Hauling a chain holds both hands and the feet: they can only look around
+    // until they let go.
+    const moveX = this.movementLocked
+      ? 0
+      : (input.isPressed("KeyD") ? 1 : 0) - (input.isPressed("KeyA") ? 1 : 0);
 
-    const moveZ =
-      (input.isPressed("KeyW") ? 1 : 0) - (input.isPressed("KeyS") ? 1 : 0);
+    const moveZ = this.movementLocked
+      ? 0
+      : (input.isPressed("KeyW") ? 1 : 0) - (input.isPressed("KeyS") ? 1 : 0);
 
     /**
      * ======================================================
@@ -920,6 +943,7 @@ export class Player {
           this.velocity.z * dt,
           this.position.y - this.eyeHeight,
           PLAYER_RADIUS,
+          this.isCrouching ? CROUCH_HEADROOM : HEADROOM,
         );
 
         // Crashing into a wall in mid-air stops the jump's forward run: what is
@@ -971,7 +995,7 @@ export class Player {
      */
     // Forgiving timing: a press just before landing still jumps (buffer), and a
     // press just after running off a ledge still jumps (coyote time).
-    if (input.consumeJump()) {
+    if (input.consumeJump() && !this.movementLocked) {
       this.jumpBufferLeft = this.jumpBufferTime;
     } else {
       this.jumpBufferLeft = Math.max(0, this.jumpBufferLeft - dt);
@@ -1102,6 +1126,10 @@ export class Player {
         this.position.z,
         this.position.y - this.eyeHeight,
         PLAYER_RADIUS,
+        undefined,
+        this.position.y -
+          this.eyeHeight +
+          (this.isCrouching ? CROUCH_HEADROOM : HEADROOM),
       );
 
       this.position.x = free.x;

@@ -45,6 +45,8 @@ export interface VaultPlan {
  * hanging over the arena, a roof over a room, a beam over a deck.
  */
 export const HEADROOM = 1.8;
+/** The height a crouching body needs overhead (m): it can duck under a half-lowered shutter. */
+export const CROUCH_HEADROOM = 1.1;
 
 /** Walking down stairs or a ramp keeps the feet glued to the surface up to this drop. */
 export const SNAP_DOWN = 0.4;
@@ -65,6 +67,9 @@ const THIN_TOP = 0.85;
 const TALL_POST = 1.4;
 
 /** Spatial lookup: cells of this size, and the furthest a query can reach past a solid's edge. */
+/** How far a wedged body may be moved to free it (m). */
+const FREE_SPOT_REACH = 1.5;
+
 const CELL_SIZE = 4;
 const CELL_REACH = 1;
 const CELL_OFFSET = 64;
@@ -299,6 +304,52 @@ export class ArenaCollision {
     }
 
     return lowest;
+  }
+
+  /**
+   * Adds a solid that is not part of the layout: a door or shutter that moves.
+   * The caller changes its `bottom` or `height` as it moves and switches it on
+   * and off with `setSolidActive`. Only its footprint is fixed.
+   */
+  public addMovable(solid: BoxSolid): void {
+    this.solids.push(solid);
+
+    for (
+      let j = this.cellIndex(solid.minZ - CELL_REACH);
+      j <= this.cellIndex(solid.maxZ + CELL_REACH);
+      j++
+    ) {
+      for (
+        let i = this.cellIndex(solid.minX - CELL_REACH);
+        i <= this.cellIndex(solid.maxX + CELL_REACH);
+        i++
+      ) {
+        const key = j * CELL_STRIDE + i;
+        const list = this.cells.get(key);
+
+        if (list) {
+          list.push(solid);
+        } else {
+          this.cells.set(key, [solid]);
+        }
+      }
+    }
+
+    if (
+      solid.role === "wall" &&
+      Math.min(solid.maxX - solid.minX, solid.maxZ - solid.minZ) < THIN_TOP
+    ) {
+      this.thin.add(solid);
+    }
+  }
+
+  /** Switches a movable solid on or off (off: it is not there). */
+  public setSolidActive(solid: BoxSolid, active: boolean): void {
+    if (active) {
+      this.opened.delete(solid);
+    } else {
+      this.opened.add(solid);
+    }
   }
 
   /** Opens or shuts a solid by id (a hatch). Returns false if there is no such solid. */
@@ -562,14 +613,34 @@ export class ArenaCollision {
       return null;
     }
 
-    const distance = far + PLAYER_RADIUS + 0.1;
-    const landX = x + dx * distance;
-    const landZ = z + dz * distance;
-    const landFeet = this.groundHeight(landX, landZ, topY);
     const clearFeet = topY - VAULT_SINK;
-    const endFeet = Math.max(landFeet, clearFeet - 0.5);
+    // Landing 0.1 m clear of the far side; if something stands there (a wall
+    // crossing at the end of a short barricade), a little nearer in.
+    let distance = far + PLAYER_RADIUS + 0.1;
+    let landFeet = NO_SURFACE;
+    let endFeet = NO_SURFACE;
+    let landed = false;
 
-    if (this.isBlocked(landX, landZ, endFeet, PLAYER_RADIUS)) {
+    for (const slack of [0.1, 0.05, 0.0]) {
+      distance = far + PLAYER_RADIUS + slack;
+      landFeet = this.groundHeight(x + dx * distance, z + dz * distance, topY);
+      endFeet = Math.max(landFeet, clearFeet - 0.5);
+
+      if (
+        !this.isBlocked(
+          x + dx * distance,
+          z + dz * distance,
+          endFeet,
+          PLAYER_RADIUS,
+        )
+      ) {
+        landed = true;
+
+        break;
+      }
+    }
+
+    if (!landed) {
       return null;
     }
 
@@ -613,6 +684,7 @@ export class ArenaCollision {
     z: number,
     feetY: number,
     radius: number,
+    headroom = HEADROOM,
   ): boolean {
     if (
       Math.abs(x) > this.halfX - radius ||
@@ -629,7 +701,7 @@ export class ArenaCollision {
           z,
           radius,
           feetY + STEP_UP + 1e-6,
-          feetY + HEADROOM,
+          feetY + headroom,
         )
       ) {
         return true;
@@ -650,14 +722,15 @@ export class ArenaCollision {
     dz: number,
     feetY: number,
     radius = PLAYER_RADIUS,
+    headroom = HEADROOM,
   ): { x: number; z: number } {
-    if (!this.isBlocked(x + dx, z + dz, feetY, radius)) {
+    if (!this.isBlocked(x + dx, z + dz, feetY, radius, headroom)) {
       return { x: x + dx, z: z + dz };
     }
 
     // Slide along the surface that was hit, so a diagonal run round a corner
     // keeps going instead of stopping where both axes are blocked.
-    const normal = this.contactNormal(x + dx, z + dz, feetY, radius);
+    const normal = this.contactNormal(x + dx, z + dz, feetY, radius, headroom);
 
     if (normal) {
       const into = dx * normal.x + dz * normal.z;
@@ -669,18 +742,23 @@ export class ArenaCollision {
           const sx = dx - into * normal.x + normal.x * push;
           const sz = dz - into * normal.z + normal.z * push;
 
-          if (!this.isBlocked(x + sx, z + sz, feetY, radius)) {
+          // A push that sends the body back against where it was headed would
+          // bounce it off the next wall in a corner, frame after frame.
+          if (
+            sx * dx + sz * dz >= 0 &&
+            !this.isBlocked(x + sx, z + sz, feetY, radius, headroom)
+          ) {
             return { x: x + sx, z: z + sz };
           }
         }
       }
     }
 
-    if (dx !== 0 && !this.isBlocked(x + dx, z, feetY, radius)) {
+    if (dx !== 0 && !this.isBlocked(x + dx, z, feetY, radius, headroom)) {
       return { x: x + dx, z };
     }
 
-    if (dz !== 0 && !this.isBlocked(x, z + dz, feetY, radius)) {
+    if (dz !== 0 && !this.isBlocked(x, z + dz, feetY, radius, headroom)) {
       return { x, z: z + dz };
     }
 
@@ -693,6 +771,7 @@ export class ArenaCollision {
     z: number,
     feetY: number,
     radius: number,
+    headroom: number,
   ): { x: number; z: number } | null {
     let best: { x: number; z: number } | null = null;
     let bestDistance = Infinity;
@@ -705,7 +784,7 @@ export class ArenaCollision {
           z,
           radius,
           feetY + STEP_UP + 1e-6,
-          feetY + HEADROOM,
+          feetY + headroom,
         )
       ) {
         continue;
@@ -825,19 +904,103 @@ export class ArenaCollision {
 
     // Pushing away from a corner column can land in the sealed corner behind
     // it, which is still inside the column's reach. If anything still holds
-    // the character, walk it toward the middle of the arena until it is free.
-    for (
-      let n = 0;
-      n < 40 && this.heldBySolid(px, pz, radius, topLimit, headTop, body);
-      n++
-    ) {
-      const length = Math.hypot(px, pz) || 1;
+    // the character, free it:
+    if (this.heldBySolid(px, pz, radius, topLimit, headTop, body)) {
+      if (this.heldBySolid(px, pz, 0.02, topLimit, headTop, body)) {
+        // Its centre is inside a solid: walk it toward the middle of the arena
+        // until it is out.
+        for (
+          let n = 0;
+          n < 40 && this.heldBySolid(px, pz, radius, topLimit, headTop, body);
+          n++
+        ) {
+          const length = Math.hypot(px, pz) || 1;
 
-      px -= (px / length) * 0.25;
-      pz -= (pz / length) * 0.25;
+          px -= (px / length) * 0.25;
+          pz -= (pz / length) * 0.25;
+        }
+      } else {
+        // Only wedged between solids (its centre is clear): to the nearest
+        // free place close by that is not through a wall. If there is none it
+        // stays where it is: carrying a wedged body across the map (through
+        // walls, out of a room) is worse than leaving it wedged.
+        const spot = this.nearestFreeSpot(
+          px,
+          pz,
+          radius,
+          topLimit,
+          headTop,
+          body,
+        );
+
+        if (spot) {
+          px = spot.x;
+          pz = spot.z;
+        }
+      }
     }
 
     return { x: px, z: pz };
+  }
+
+  /**
+   * The nearest place within a short walk where the body is free, reached
+   * without its centre crossing any wall or solid (so never out of the room it
+   * is in). Null if there is none.
+   */
+  private nearestFreeSpot(
+    x: number,
+    z: number,
+    radius: number,
+    topLimit: number,
+    headTop: number,
+    body: boolean,
+  ): { x: number; z: number } | null {
+    // The centre line of the walk must stay clear of every solid (a point
+    // test), so the spot is never on the far side of a wall.
+    const crosses = (cx: number, cz: number): boolean => {
+      const length = Math.hypot(cx - x, cz - z);
+
+      for (let s = 0.05; s < length; s += 0.05) {
+        const t = s / length;
+
+        if (
+          this.heldBySolid(
+            x + (cx - x) * t,
+            z + (cz - z) * t,
+            0.02,
+            topLimit,
+            headTop,
+            body,
+          )
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    // Looking toward the middle of the arena first (where it has always led a
+    // body that is held), then round the circle.
+    const toMiddle = Math.atan2(-z, -x);
+
+    for (let r = 0.1; r <= FREE_SPOT_REACH; r += 0.1) {
+      for (let k = 0; k < 16; k++) {
+        const a = toMiddle + (k / 16) * Math.PI * 2;
+        const cx = x + Math.cos(a) * r;
+        const cz = z + Math.sin(a) * r;
+
+        if (
+          !this.heldBySolid(cx, cz, radius, topLimit, headTop, body) &&
+          !crosses(cx, cz)
+        ) {
+          return { x: cx, z: cz };
+        }
+      }
+    }
+
+    return null;
   }
 
   private heldBySolid(
