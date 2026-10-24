@@ -16,6 +16,36 @@ export interface FireZone {
   age: number;
   /** Varies the look of each fire (never the gameplay). */
   readonly seed: number;
+  /** A pool of spilled fuel burning: wider, taller and harder (see `MolotovConfig`). */
+  fuel?: boolean;
+  /**
+   * Drawn only: the patches the oil lies in (world x, z and radius), so a fuel
+   * fire burns over the pool's own shape and not in a round patch.
+   */
+  shape?: Array<{ x: number; z: number; r: number }>;
+}
+
+/**
+ * The age the fire's look and strength follow: a fuel fire holds at full size
+ * for a few seconds longer than a Molotov's (`FUEL_FIRE_EXTRA_DURATION`), then
+ * dies back the same way.
+ */
+export function fireAge(zone: Pick<FireZone, "age" | "fuel">): number {
+  if (!zone.fuel || zone.age <= SPREAD_END) {
+    return zone.age;
+  }
+
+  return Math.max(SPREAD_END, zone.age - C.FUEL_FIRE_EXTRA_DURATION);
+}
+
+/** Seconds a zone lasts from ignition. */
+export function zoneLifetime(zone: Pick<FireZone, "fuel">): number {
+  return LIFE + (zone.fuel ? C.FUEL_FIRE_EXTRA_DURATION : 0);
+}
+
+/** The burning radius of a zone: `fireRadius`, wider for a fuel fire. */
+export function zoneRadius(zone: Pick<FireZone, "age" | "fuel">): number {
+  return fireRadius(fireAge(zone)) * (zone.fuel ? C.FUEL_FIRE_RADIUS_SCALE : 1);
 }
 
 const SPREAD_END = C.MOLOTOV_SPREAD_TIME;
@@ -132,7 +162,11 @@ export class FireSystem {
    * Starts a fire where a bottle broke. It is put on the surface below the
    * impact (never in mid-air), and the oldest fire goes out if there are too many.
    */
-  public ignite(ownerId: string, impact: THREE.Vector3): FireZone {
+  public ignite(
+    ownerId: string,
+    impact: THREE.Vector3,
+    options: { fuel?: boolean } = {},
+  ): FireZone {
     while (this.list.length >= C.MOLOTOV_MAX_ZONES) {
       this.remove(0);
     }
@@ -146,6 +180,7 @@ export class FireSystem {
       position: new THREE.Vector3(impact.x, y, impact.z),
       age: 0,
       seed: Math.random() * 1000,
+      ...(options.fuel ? { fuel: true } : {}),
     };
 
     this.list.push(zone);
@@ -173,7 +208,7 @@ export class FireSystem {
     for (let i = this.list.length - 1; i >= 0; i--) {
       this.list[i].age += dt;
 
-      if (this.list[i].age >= LIFE) {
+      if (this.list[i].age >= zoneLifetime(this.list[i])) {
         this.remove(i);
       }
     }
@@ -187,22 +222,28 @@ export class FireSystem {
   private fireAround(target: Combatant): FireZone | null {
     target.getPosition(this.feet);
 
+    let found: FireZone | null = null;
+
     for (const zone of this.list) {
-      const radius = fireRadius(zone.age) + C.MOLOTOV_BODY_RADIUS;
+      const radius = zoneRadius(zone) + C.MOLOTOV_BODY_RADIUS;
       const dx = this.feet.x - zone.position.x;
       const dz = this.feet.z - zone.position.z;
       const dy = this.feet.y - zone.position.y;
+      const reach = zone.fuel
+        ? C.FUEL_FIRE_VERTICAL_REACH
+        : C.MOLOTOV_VERTICAL_REACH;
 
-      if (
-        dx * dx + dz * dz <= radius * radius &&
-        dy >= -0.6 &&
-        dy <= C.MOLOTOV_VERTICAL_REACH
-      ) {
-        return zone;
+      if (dx * dx + dz * dz <= radius * radius && dy >= -0.6 && dy <= reach) {
+        // A fuel fire's harder burn wins over an ordinary one it overlaps.
+        if (zone.fuel) {
+          return zone;
+        }
+
+        found ??= zone;
       }
     }
 
-    return null;
+    return found;
   }
 
   private burn(target: Combatant, dt: number): void {
@@ -240,7 +281,10 @@ export class FireSystem {
         attackerId: zone.ownerId,
         targetId: target.id,
         hurtbox: "legs",
-        damage: this.tickDamage(state.exposure),
+        damage: Math.round(
+          this.tickDamage(state.exposure) *
+            (zone.fuel ? C.FUEL_FIRE_DAMAGE_MULTIPLIER : 1),
+        ),
       });
     }
   }

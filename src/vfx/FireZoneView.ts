@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import {
+  fireAge,
   fireIntensity,
   fireDyingFactor,
   fireRadius,
@@ -17,7 +18,9 @@ import {
   createFlameMaterial,
 } from "./ThrowableMeshes";
 
-const FLAMES = 52;
+const FLAMES = 110;
+/** An ordinary fire draws this many tongues; a fuel fire all of them. */
+const ORDINARY_FLAMES = 68;
 /** The tongues come in clumps: this many, unevenly placed. */
 const CLUMPS = 7;
 const EMBERS = 10;
@@ -97,6 +100,16 @@ export class FireZoneView {
   private readonly coreGeometry = createFlameGeometry(
     FLAME_INNER_BOTTOM,
     FLAME_INNER_TOP,
+  );
+  // A fuel fire burns hotter and darker: red at the foot going to purple, with
+  // a pink-violet core.
+  private readonly fuelFlameGeometry = createFlameGeometry(
+    new THREE.Color(0xe01808),
+    new THREE.Color(0x6a1840),
+  );
+  private readonly fuelCoreGeometry = createFlameGeometry(
+    new THREE.Color(0xff4a1a),
+    new THREE.Color(0xc42a2a),
   );
   private readonly flameMaterial = createFlameMaterial(0.92);
   private readonly emberGeometry = new THREE.SphereGeometry(1, 5, 4);
@@ -181,18 +194,36 @@ export class FireZoneView {
   private draw(entry: Entry, zone: FireZone, time: number): void {
     // Tongues stay where they stand once the fire has spread: in the fade they
     // only die out, they never slide inward with the shrinking burn radius.
-    const radius = fireRadius(Math.min(zone.age, FIRE_SPREAD_DONE));
-    const intensity = fireIntensity(zone.age);
+    const fuel = zone.fuel === true;
+    const radius =
+      fireRadius(Math.min(fireAge(zone), FIRE_SPREAD_DONE)) *
+      (fuel ? MOLOTOV_CONFIG.FUEL_FIRE_RADIUS_SCALE : 1);
+    // A fuel fire roars: much taller flames, a little broader.
+    const tall = fuel ? MOLOTOV_CONFIG.FUEL_FIRE_HEIGHT_SCALE : 1;
+    const broad = fuel ? 1.5 : 1;
+    const intensity = fireIntensity(fireAge(zone));
+    const count = fuel ? FLAMES : ORDINARY_FLAMES;
+    // A fuel fire is violent: it flickers and sways much faster and harder.
+    const fury = fuel ? 1.7 : 1;
+    entry.flames.count = count;
+    entry.cores.count = count;
     const seed = zone.seed;
 
     entry.group.position.copy(zone.position);
+    const flameGeometry = fuel ? this.fuelFlameGeometry : this.flameGeometry;
+    const coreGeometry = fuel ? this.fuelCoreGeometry : this.coreGeometry;
+
+    if (entry.flames.geometry !== flameGeometry) {
+      entry.flames.geometry = flameGeometry;
+      entry.cores.geometry = coreGeometry;
+    }
 
     // The glow covers exactly the gameplay radius.
     // (The flat glow disc is not drawn: it hung in the air over uneven ground
     // and showed as a hard-edged ring. The fire's light does its job.)
     entry.glow.visible = false;
 
-    for (let i = 0; i < FLAMES; i++) {
+    for (let i = 0; i < count; i++) {
       // Each tongue belongs to a clump (the fire is a few patches burning
       // harder than the rest, not an even scatter). Its place is the clump's
       // centre and a short random offset; it is kept inside the fire's radius.
@@ -217,12 +248,14 @@ export class FireZoneView {
       const flicker =
         0.7 +
         0.3 *
-          Math.sin(time * (6 + hash(seed, i, 2) * 6) + hash(seed, i, 3) * 6.28);
+          Math.sin(
+            time * fury * (6 + hash(seed, i, 2) * 6) + hash(seed, i, 3) * 6.28,
+          );
       // Flames come and go a little, leaving gaps.
       const alive = 0.5 + 0.5 * Math.sin(time * 1.7 + hash(seed, i, 4) * 6.28);
       // As the fire dies the tongues go out one at a time, each at its own
       // moment, sinking and guttering first; the last few are low and ragged.
-      const dying = fireDyingFactor(zone.age, hash(seed, i, 30));
+      const dying = fireDyingFactor(fireAge(zone), hash(seed, i, 30));
       const gutter =
         dying < 1 ? 0.75 + 0.25 * Math.sin(time * 23 + i * 3.1) : 1;
       const height =
@@ -233,15 +266,45 @@ export class FireZoneView {
         gutter *
         intensity *
         flicker *
+        tall *
         (0.55 + 0.45 * alive);
       // Tongues differ in width and in how flat they are (never a row of copies).
-      const width = 0.1 + 0.14 * hash(seed, i, 6);
-      const flat = 0.6 + 0.8 * hash(seed, i, 10);
+      const width = (0.1 + 0.11 * hash(seed, i, 6)) * broad;
+      const flat = 0.8 + 0.4 * hash(seed, i, 10);
+      // A tongue is never lower than it is wide (until the fire is dying): no
+      // flat discs lying on the ground.
+      const tongue =
+        dying >= 1
+          ? Math.max(height, width * 1.7 * intensity * (0.8 + 0.2 * flicker))
+          : height;
       // Tongues lean and sway a little, each in its own rhythm.
       const sway = hash(seed, i, 9) * 6.28;
 
-      const fx = Math.cos(angle) * along * radius;
-      const fz = Math.sin(angle) * along * radius;
+      let fx = Math.cos(angle) * along * radius;
+      let fz = Math.sin(angle) * along * radius;
+
+      // A fuel fire burns over the oil's own shape (the pool, its lobes and
+      // the trail to the drum), not in a round patch.
+      if (fuel && zone.shape && zone.shape.length > 0) {
+        const total = zone.shape.reduce((sum, l) => sum + l.r * l.r, 0);
+        let pick = hash(seed, i, 50) * total;
+        let lobe = zone.shape[0];
+
+        for (const l of zone.shape) {
+          pick -= l.r * l.r;
+          lobe = l;
+
+          if (pick <= 0) {
+            break;
+          }
+        }
+
+        const a = hash(seed, i, 51) * Math.PI * 2;
+        const d = Math.sqrt(hash(seed, i, 52)) * lobe.r * 0.92;
+
+        fx = lobe.x + Math.cos(a) * d - zone.position.x;
+        fz = lobe.z + Math.sin(a) * d - zone.position.z;
+      }
       const ground = this.surfaceY
         ? Math.min(
             Math.max(
@@ -258,19 +321,19 @@ export class FireZoneView {
 
       this.position.set(fx, ground, fz);
       this.euler.set(
-        0.26 * Math.sin(time * 3 + sway),
+        0.26 * fury * Math.sin(time * 3 * fury + sway),
         hash(seed, i, 7) * 6.28,
-        0.26 * Math.cos(time * 2.6 + sway),
+        0.26 * fury * Math.cos(time * 2.6 * fury + sway),
       );
       this.rotation.setFromEuler(this.euler);
-      this.scale.set(width * flat, Math.max(height, 0.001), width / flat);
+      this.scale.set(width * flat, Math.max(tongue, 0.001), width / flat);
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.flames.setMatrixAt(i, this.matrix);
 
       // The hot core: narrower and shorter, in the same place.
       this.scale.set(
         width * flat * 0.55,
-        Math.max(height * 0.68, 0.001),
+        Math.max(tongue * 0.68, 0.001),
         (width / flat) * 0.55,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);
@@ -320,6 +383,8 @@ export class FireZoneView {
     this.glowMaterial.dispose();
     this.flameGeometry.dispose();
     this.coreGeometry.dispose();
+    this.fuelFlameGeometry.dispose();
+    this.fuelCoreGeometry.dispose();
     this.flameMaterial.dispose();
     this.emberGeometry.dispose();
     this.emberMaterial.dispose();

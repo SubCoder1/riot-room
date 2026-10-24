@@ -54,4 +54,19 @@ export const MOLOTOV_CONFIG = {
   MOLOTOV_BODY_RADIUS: 0.3,
   /** How far above / below the fire a body's feet can be and still burn, metres. */
   MOLOTOV_VERTICAL_REACH: 1.2,
+
+  // ---- A fuel fire (a spilled-fuel pool set alight: see FuelHazard) ----
+  // A violent fire over a pool of fuel: wider (it reaches the leaking drum),
+  // taller (too high to jump over), and it hurts more. Its duration is the
+  // Molotov's own.
+  /** Its radius against an ordinary Molotov fire's. */
+  FUEL_FIRE_RADIUS_SCALE: 1.3,
+  /** How much taller its flames are drawn. */
+  FUEL_FIRE_HEIGHT_SCALE: 4.4,
+  /** How far above the floor a body still burns in it (a jump does not clear it), metres. */
+  FUEL_FIRE_VERTICAL_REACH: 3.2,
+  /** Each tick of damage against an ordinary fire's (the cap is lifted by the same). */
+  FUEL_FIRE_DAMAGE_MULTIPLIER: 2.5,
+  /** Seconds a fuel fire burns at full size beyond a Molotov's own duration. */
+  FUEL_FIRE_EXTRA_DURATION: 3,
 } as const;
