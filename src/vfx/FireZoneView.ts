@@ -18,6 +18,8 @@ import {
 } from "./ThrowableMeshes";
 
 const FLAMES = 52;
+/** The tongues come in clumps: this many, unevenly placed. */
+const CLUMPS = 7;
 const EMBERS = 10;
 
 /** A stable pseudo-random number in [0, 1) from a seed, an index and a channel. */
@@ -144,6 +146,12 @@ export class FireZoneView {
       EMBERS,
     );
 
+    // Colours are set per tongue as it burns; giving the meshes their colour
+    // buffer now means the first fire does not switch them to a shader
+    // variant that must be compiled mid-game (see Game.warmUp).
+    flames.setColorAt(0, this.color.setRGB(1, 1, 1));
+    cores.setColorAt(0, this.color.setRGB(1, 1, 1));
+
     glow.rotation.x = -Math.PI / 2;
     glow.position.y = 0.03;
     flames.frustumCulled = false;
@@ -185,11 +193,27 @@ export class FireZoneView {
     entry.glow.visible = false;
 
     for (let i = 0; i < FLAMES; i++) {
-      const angle = hash(seed, i, 0) * Math.PI * 2;
+      // Each tongue belongs to a clump (the fire is a few patches burning
+      // harder than the rest, not an even scatter). Its place is the clump's
+      // centre and a short random offset; it is kept inside the fire's radius.
+      const clump = i % CLUMPS;
+      const clumpAngle = hash(seed, clump, 40) * Math.PI * 2;
+      const clumpAlong = 0.15 + 0.6 * Math.sqrt(hash(seed, clump, 41));
+      const spread = 0.12 + 0.22 * hash(seed, clump, 42);
+      const offsetAngle = hash(seed, i, 0) * Math.PI * 2;
+      const offsetAlong = Math.sqrt(hash(seed, i, 1)) * spread;
+      const px =
+        Math.cos(clumpAngle) * clumpAlong + Math.cos(offsetAngle) * offsetAlong;
+      const pz =
+        Math.sin(clumpAngle) * clumpAlong + Math.sin(offsetAngle) * offsetAlong;
+      const angle = Math.atan2(pz, px);
       // An uneven edge: flames stay inside the radius, some a little short of it.
       const edge =
         0.82 + 0.18 * Math.sin(angle * 3 + seed) * Math.cos(angle * 2 - seed);
-      const along = Math.sqrt(hash(seed, i, 1)) * edge;
+      const along = Math.min(Math.hypot(px, pz), edge);
+      // Taller in the heart of a clump, low at its edges: a tongue's share of
+      // its clump's height falls with its distance from the clump's centre.
+      const heart = 1 - 0.55 * Math.min(offsetAlong / spread, 1);
       const flicker =
         0.7 +
         0.3 *
@@ -202,13 +226,17 @@ export class FireZoneView {
       const gutter =
         dying < 1 ? 0.75 + 0.25 * Math.sin(time * 23 + i * 3.1) : 1;
       const height =
-        (0.4 + 0.6 * hash(seed, i, 5)) *
+        (0.45 + 0.6 * hash(seed, i, 5)) *
+        (0.6 + 0.5 * hash(seed, clump, 43)) *
+        heart *
         dying *
         gutter *
         intensity *
         flicker *
         (0.55 + 0.45 * alive);
-      const width = 0.13 + 0.12 * hash(seed, i, 6);
+      // Tongues differ in width and in how flat they are (never a row of copies).
+      const width = 0.1 + 0.14 * hash(seed, i, 6);
+      const flat = 0.6 + 0.8 * hash(seed, i, 10);
       // Tongues lean and sway a little, each in its own rhythm.
       const sway = hash(seed, i, 9) * 6.28;
 
@@ -230,20 +258,20 @@ export class FireZoneView {
 
       this.position.set(fx, ground, fz);
       this.euler.set(
-        0.18 * Math.sin(time * 3 + sway),
+        0.26 * Math.sin(time * 3 + sway),
         hash(seed, i, 7) * 6.28,
-        0.18 * Math.cos(time * 2.6 + sway),
+        0.26 * Math.cos(time * 2.6 + sway),
       );
       this.rotation.setFromEuler(this.euler);
-      this.scale.set(width, Math.max(height, 0.001), width);
+      this.scale.set(width * flat, Math.max(height, 0.001), width / flat);
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.flames.setMatrixAt(i, this.matrix);
 
       // The hot core: narrower and shorter, in the same place.
       this.scale.set(
-        width * 0.55,
+        width * flat * 0.55,
         Math.max(height * 0.68, 0.001),
-        width * 0.55,
+        (width / flat) * 0.55,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.cores.setMatrixAt(i, this.matrix);
