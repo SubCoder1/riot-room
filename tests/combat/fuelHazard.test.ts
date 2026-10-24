@@ -4,8 +4,13 @@ import { describe, expect, it } from "vitest";
 import type { CombatEvent } from "../../src/combat/CombatEvents";
 import { CombatSystem } from "../../src/combat/CombatSystem";
 import { ExplosionSystem } from "../../src/combat/Explosions";
-import { FIRE_LIFETIME, FireSystem } from "../../src/combat/FireZones";
+import {
+  FIRE_LIFETIME,
+  FireSystem,
+  zoneRadius,
+} from "../../src/combat/FireZones";
 import { FuelHazard } from "../../src/combat/FuelHazard";
+import { MOLOTOV_CONFIG as C } from "../../src/combat/MolotovConfig";
 import type { ThrowWorld } from "../../src/combat/ThrowableFlight";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 import { TestFighter } from "./helpers";
@@ -41,8 +46,9 @@ describe("Fuel spill (the designated fuel hazard)", () => {
     expect(spill.x).toBeLessThan(-1.3);
     expect(spill.z).toBeGreaterThan(-23.7);
     expect(spill.z).toBeLessThan(-16.3);
-    // Not in the lane between the south door (x -8) and the east door (z -20).
-    expect(Math.hypot(spill.x + 8, spill.z + 17)).toBeGreaterThan(3);
+    // Pooled round the doorway between the two rooms (x -1, z -21 to -19).
+    expect(Math.abs(spill.x + 1)).toBeLessThan(2);
+    expect(Math.abs(spill.z + 20)).toBeLessThan(1);
   });
 
   it("a Molotov that breaks on it lights it with one fire at its centre", () => {
@@ -52,7 +58,7 @@ describe("Fuel spill (the designated fuel hazard)", () => {
 
     expect(hazard.stateOf(spill.id)).toBe("burning");
     expect(fires.zones).toHaveLength(2);
-    expect(fires.zones[1].position.x).toBeCloseTo(spill.x);
+    expect(fires.zones[1].position.x).toBeCloseTo(spill.fire!.x);
     expect(fires.zones[1].ownerId).toBe("thrower");
   });
 
@@ -68,10 +74,32 @@ describe("Fuel spill (the designated fuel hazard)", () => {
   it("a Molotov elsewhere in the room leaves it alone", () => {
     const { fires, hazard } = setup();
 
-    fires.ignite("thrower", at(-9, -19));
+    fires.ignite("thrower", at(-9, -17.5));
 
     expect(hazard.stateOf(spill.id)).toBe("intact");
     expect(fires.zones).toHaveLength(1);
+  });
+
+  it("the puddle reaches through the east doorway into the Generator Room, and a bottle breaking there lights it", () => {
+    const lobe = spill.lobes!.find((l) => l.x > -1)!;
+
+    expect(lobe).toBeDefined();
+    // Only a little way in (not deep across the rooms).
+    expect(lobe.x + lobe.r).toBeLessThan(2);
+
+    const { fires, hazard } = setup();
+
+    fires.ignite("thrower", at(lobe.x + 0.4, lobe.z));
+    expect(hazard.stateOf(spill.id)).toBe("burning");
+    // The one fire is at the heart of the puddle.
+    expect(
+      fires.zones.some((z) => Math.abs(z.position.x - spill.fire!.x) < 0.01),
+    ).toBe(true);
+
+    const off = setup();
+
+    off.fires.ignite("thrower", at(lobe.x + lobe.r + 2.5, lobe.z));
+    expect(off.hazard.stateOf(spill.id)).toBe("intact");
   });
 
   it("a grenade close to it lights it, one far off does not", () => {
@@ -83,7 +111,7 @@ describe("Fuel spill (the designated fuel hazard)", () => {
 
     const far = setup();
 
-    far.explosions.detonate("thrower", at(-10, -17));
+    far.explosions.detonate("thrower", at(-9, -17.5));
     expect(far.hazard.stateOf(spill.id)).toBe("intact");
     expect(far.fires.zones).toHaveLength(0);
   });
@@ -99,7 +127,7 @@ describe("Fuel spill (the designated fuel hazard)", () => {
     expect(fires.zones).toHaveLength(2);
     expect(events.filter((e) => e.type === "explosion")).toHaveLength(1);
 
-    for (let t = 0; t < FIRE_LIFETIME + 0.5; t += 1 / 30) {
+    for (let t = 0; t < FIRE_LIFETIME + 4; t += 1 / 30) {
       fires.update(1 / 30);
     }
 
@@ -128,7 +156,8 @@ describe("Fuel spill (the designated fuel hazard)", () => {
       t += 1 / 30;
     }
 
-    expect(t).toBeCloseTo(FIRE_LIFETIME, 1);
+    // A fuel fire burns a few seconds longer than a Molotov's own.
+    expect(t).toBeCloseTo(FIRE_LIFETIME + C.FUEL_FIRE_EXTRA_DURATION, 1);
   });
 
   it("burns a body standing in it (the usual fire damage, no extra)", () => {
@@ -142,5 +171,56 @@ describe("Fuel spill (the designated fuel hazard)", () => {
     }
 
     expect(victim.health.current).toBeLessThan(before);
+  });
+
+  it("a burning pool is a violent fuel fire: it reaches the leaking drum and is too high to jump over", () => {
+    const { fires, victim } = setup();
+
+    fires.ignite("thrower", at(spill.x, spill.z));
+
+    const zone = fires.zones[0];
+
+    expect(zone.fuel).toBe(true);
+
+    for (let t = 0; t < 1.5; t += 1 / 30) {
+      fires.update(1 / 30);
+    }
+
+    // Its radius reaches the drum's mouth where the oil runs out.
+    expect(zoneRadius(zone)).toBeGreaterThan(
+      Math.hypot(
+        spill.source.x - spill.fire!.x,
+        spill.source.z - spill.fire!.z,
+      ),
+    );
+
+    // A body in mid-jump (2 m up) still burns.
+    victim.position.set(spill.x + 1, spill.y + 2.0, spill.z);
+
+    const before = victim.health.current;
+
+    for (let t = 0; t < 1.5; t += 1 / 30) {
+      fires.update(1 / 30);
+    }
+
+    expect(victim.health.current).toBeLessThan(before);
+  });
+
+  it("a fuel fire hurts more than an ordinary Molotov fire", () => {
+    const burnt = (fuel: boolean): number => {
+      const { fires, victim } = setup();
+      const at0 = fuel ? at(spill.x, spill.z) : at(-9, -17.5);
+
+      victim.position.set(at0.x, at0.y, at0.z);
+      fires.ignite("thrower", at0);
+
+      for (let t = 0; t < 1.6; t += 1 / 30) {
+        fires.update(1 / 30);
+      }
+
+      return 100 - victim.health.current;
+    };
+
+    expect(burnt(true)).toBeGreaterThan(burnt(false) * 2);
   });
 });

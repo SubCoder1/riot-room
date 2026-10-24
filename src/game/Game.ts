@@ -60,7 +60,12 @@ import { CombatSystem } from "../combat/CombatSystem";
 import { PlayerCombatant } from "../combat/PlayerCombatant";
 import { ProjectileSystem, PROFILES } from "../combat/Projectiles";
 import { THROW_CONFIG } from "../combat/ThrowConfig";
-import { FireSystem, fireIntensity, fireRadius } from "../combat/FireZones";
+import {
+  FireSystem,
+  fireAge,
+  fireIntensity,
+  zoneRadius,
+} from "../combat/FireZones";
 import { ExplosionSystem } from "../combat/Explosions";
 import { FuelHazard } from "../combat/FuelHazard";
 import { SmokeSystem } from "../combat/Smoke";
@@ -1876,7 +1881,7 @@ export class Game {
     const burning = this.fires.zones
       .map((zone) => ({
         zone,
-        strength: fireIntensity(zone.age),
+        strength: fireIntensity(fireAge(zone)),
         distance: zone.position.distanceTo(eye),
       }))
       .filter((f) => f.strength > 0)
@@ -1900,7 +1905,7 @@ export class Game {
 
       // The light grows and shrinks with the fire: its reach follows the
       // burning radius, and it sinks as the tongues die back.
-      const radius = fireRadius(fire.zone.age);
+      const radius = zoneRadius(fire.zone);
 
       light.position.copy(fire.zone.position);
       light.position.y += 0.4 + 0.5 * fire.strength;
@@ -1974,10 +1979,7 @@ export class Game {
 
     this.thrownView.update(this.renderer.camera.position);
     this.fireView.update(this.fires.zones, performance.now() / 1000);
-    this.fuelSpillView.update(
-      (id) => this.fuelHazard.stateOf(id),
-      performance.now() / 1000,
-    );
+    this.fuelSpillView.update((id) => this.fuelHazard.stateOf(id));
     this.explosionView.update(dt);
     this.smokeView.update(this.renderer.camera, performance.now() / 1000);
     this.updateSmokeOverlay();

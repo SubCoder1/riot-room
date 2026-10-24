@@ -14,6 +14,8 @@ const BOTTLE_REACH = C.MOLOTOV_START_RADIUS;
 const BLAST_REACH = 2.2;
 /** A fire already burning this close to the spill's centre is the spill's fire. */
 const SAME_FIRE = 0.8;
+/** How close to the oil's trail a bottle breaks to light it (m). */
+const TRAIL_REACH = 0.7;
 /** Vertical reach: the event must be on the spill's floor. */
 const FLOOR_REACH = 1.2;
 
@@ -31,6 +33,42 @@ const FLOOR_REACH = 1.2;
  *     fire has gone out). A burning or spent pool ignores everything, and
  *     the hazard starts no explosion of its own, so nothing can chain.
  */
+/** The patches a spill lies in: the pool, its lobes, and a few along its trail. */
+function poolShape(
+  spill: FuelSpillDefinition,
+): Array<{ x: number; z: number; r: number }> {
+  return [
+    { x: spill.x, z: spill.z, r: spill.radius * 0.8 },
+    ...(spill.lobes ?? []),
+    ...(spill.path ?? []).map((p) => ({ x: p.x, z: p.z, r: 0.5 })),
+  ];
+}
+
+/** How far (x, z) is from the spill's trail (Infinity if it has none). */
+function trailDistance(
+  spill: FuelSpillDefinition,
+  x: number,
+  z: number,
+): number {
+  const path = spill.path ?? [];
+  let best = Infinity;
+
+  for (let i = 1; i < path.length; i++) {
+    const ax = path[i - 1].x;
+    const az = path[i - 1].z;
+    const dx = path[i].x - ax;
+    const dz = path[i].z - az;
+    const t = Math.min(
+      Math.max(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz), 0),
+      1,
+    );
+
+    best = Math.min(best, Math.hypot(x - (ax + dx * t), z - (az + dz * t)));
+  }
+
+  return best;
+}
+
 export class FuelHazard {
   private readonly states = new Map<
     string,
@@ -63,9 +101,15 @@ export class FuelHazard {
       if (event.type === "fire-started") {
         for (const spill of this.spills) {
           const d = Math.hypot(event.x - spill.x, event.z - spill.z);
+          const onTrail =
+            trailDistance(spill, event.x, event.z) <= TRAIL_REACH ||
+            (spill.lobes ?? []).some(
+              (l) =>
+                Math.hypot(event.x - l.x, event.z - l.z) <= l.r + BOTTLE_REACH,
+            );
 
           if (
-            d <= spill.radius + BOTTLE_REACH &&
+            (d <= spill.radius + BOTTLE_REACH || onTrail) &&
             this.onFloor(spill, event.y)
           ) {
             this.light(spill, event.ownerId, event.zoneId, d);
@@ -125,6 +169,19 @@ export class FuelHazard {
 
     // A bottle that broke at the pool's heart already made its fire.
     if (bottleZoneId >= 0 && distance <= SAME_FIRE) {
+      const zone = this.fires.zones.find((z) => z.id === bottleZoneId);
+
+      // The bottle's own fire becomes the fuel fire, at the heart of the pool.
+      if (zone) {
+        zone.fuel = true;
+        zone.shape = poolShape(spill);
+        zone.position.set(
+          spill.fire?.x ?? spill.x,
+          zone.position.y,
+          spill.fire?.z ?? spill.z,
+        );
+      }
+
       entry.zoneId = bottleZoneId;
 
       return;
@@ -133,10 +190,18 @@ export class FuelHazard {
     this.lighting = true;
 
     try {
-      entry.zoneId = this.fires.ignite(
+      const lit = this.fires.ignite(
         ownerId,
-        new THREE.Vector3(spill.x, spill.y, spill.z),
-      ).id;
+        new THREE.Vector3(
+          spill.fire?.x ?? spill.x,
+          spill.y,
+          spill.fire?.z ?? spill.z,
+        ),
+        { fuel: true },
+      );
+
+      lit.shape = poolShape(spill);
+      entry.zoneId = lit.id;
     } finally {
       this.lighting = false;
     }

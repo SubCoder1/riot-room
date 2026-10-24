@@ -59,10 +59,33 @@ const Z0 = -23.7;
 /** Where the leaking drum's oil collects (also the fuel hazard, see below). */
 export const JUNK_FUEL_SPILL = {
   id: "fuel-junk-room",
-  x: -3.0,
-  z: -21.8,
-  radius: 1.3,
-  source: { x: -2.3, z: -22.9 },
+  // A wide puddle like standing rainwater, pooled round the doorway between the
+  // two rooms (the east door, z -21 to -19), fed by the leaking drum in the
+  // north-east corner, and running a little way into each room, not deep.
+  x: -1.7,
+  z: -20.3,
+  radius: 2.0,
+  source: { x: -2.3, z: -22.97 },
+  path: [
+    { x: -2.3, z: -22.97 },
+    { x: -2.2, z: -22.0 },
+    { x: -1.9, z: -21.0 },
+  ],
+  // The fuel fire burns between the pool and the leaking drum, so it covers
+  // the drum, the doorway and the whole puddle.
+  fire: { x: -2.1, z: -21.7 },
+  // Warning signs: on the north wall over the drum and on the east wall by the doorway.
+  signs: [
+    { x: -3.1, y: 1.45, z: -23.69, nx: 0, nz: 1 },
+    { x: -1.31, y: 1.5, z: -22.4, nx: -1, nz: 0 },
+  ],
+  lobes: [
+    // Through the doorway into the Generator Room.
+    { x: -0.1, z: -20.1, r: 1.1 },
+    // Back into the Junk Room, and a side lobe towards the south.
+    { x: -3.4, z: -19.6, r: 0.9 },
+    { x: -2.2, z: -18.6, r: 0.6 },
+  ],
 } as const;
 
 const pick = <T>(random: () => number, list: readonly T[]): T =>
@@ -1185,8 +1208,8 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
   {
     const p = new Pieces();
 
-    // The leaking drum in the north-east corner, on its side: a dent, a
-    // rusty split near its low side, and the oil trail to the pool.
+    // The leaking drum, on its side in the north-east corner: a dent, a
+    // rusty split near its low side, and the oil running out of it.
     drumSide(p, -1.9, -23.3, 0.2, DRUM_GREEN);
     p.box(-2.1, 0.12, -22.98, 0.18, 0.1, 0.03, shade(DRUM_GREEN, 0.45));
     p.box(-2.3, 0.04, -22.97, 0.1, 0.07, 0.035, RUSTY[1]);
@@ -1305,5 +1328,9 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
     z: JUNK_FUEL_SPILL.z,
     radius: JUNK_FUEL_SPILL.radius,
     source: { ...JUNK_FUEL_SPILL.source },
+    path: JUNK_FUEL_SPILL.path.map((point) => ({ ...point })),
+    lobes: JUNK_FUEL_SPILL.lobes.map((lobe) => ({ ...lobe })),
+    fire: { ...JUNK_FUEL_SPILL.fire },
+    signs: JUNK_FUEL_SPILL.signs.map((sign) => ({ ...sign })),
   });
 }

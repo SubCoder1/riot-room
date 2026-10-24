@@ -553,6 +553,21 @@ export interface FuelSpillDefinition {
   radius: number;
   /** Where the oil comes from (the leaking drum's mouth), for the trail. */
   source: { x: number; z: number };
+  /**
+   * The trail from the leak on through the pool (and past it), as points on
+   * the floor: the oil is drawn along it, and a bottle that breaks within
+   * `TRAIL_REACH` of it (a body's width) lights the spill too.
+   */
+  path?: Array<{ x: number; z: number }>;
+  /** Further lobes of the pool (a wide puddle runs into several), drawn and lit like it. */
+  lobes?: Array<{ x: number; z: number; r: number }>;
+  /** Where the fuel fire burns (the heart of the burning), if not the pool's centre. */
+  fire?: { x: number; z: number };
+  /**
+   * Warning signs on the walls round it (a flammable-spill notice): where one
+   * hangs (`y` above the floor) and the unit step out from its wall.
+   */
+  signs?: Array<{ x: number; y: number; z: number; nx: number; nz: number }>;
 }
 
 /** A fuel-powered generator with a filler cap a player can pour into. */
