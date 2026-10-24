@@ -227,7 +227,10 @@ export function furnishMessyWiring(map: MapBuilder): void {
   const solids = allSolids(layout);
   const random = rng(7741);
   // Only lamps that are up and lit get wiring (a lamp taken down has none).
-  const lamps: LightDefinition[] = nightLights(layout).filter((l) => l.target);
+  const lamps: LightDefinition[] = nightLights(layout).filter(
+    // (A hanging bulb has its own wiring, on the wall: see JunkRoom.)
+    (l) => l.target && !l.id.startsWith("bulb-"),
+  );
   const byLevel = new Map<number, Pieces>();
   const wrapped = new Set<string>();
   const piecesAt = (level: number): Pieces => {

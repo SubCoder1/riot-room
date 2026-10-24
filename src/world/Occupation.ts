@@ -1,3 +1,4 @@
+import { BREAK_BULB, JUNK_BULBS, bulbFitting } from "./JunkRoom";
 import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
 import {
@@ -274,7 +275,7 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
 
   // =============================================================== ARCHIVE
   // The Industrial Junk Room (see JunkRoom): damp on the
-  // west wall and two weak warm caged lamps.
+  // west wall and two weak warm hanging bulbs.
   {
     const p = new Pieces();
 
@@ -284,36 +285,27 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     }
 
     map.createFitting("occupation-archive", F, p.elements, []);
-    // The caged lamps (drawn in JunkRoom): weak amber pools over the pile and the middle.
-    map.addLight({
-      id: "light-room-archive",
-      castShadow: true,
-      x: -10.9,
-      y: F + 2.75,
-      z: -21.0,
-      color: 0xffc47a,
-      intensity: 32,
-      distance: 11,
-    });
-    map.addLight({
-      id: "light-room-archive-b",
-      castShadow: true,
-      x: -4.2,
-      y: F + 2.75,
-      z: -20.4,
-      color: 0xffbd70,
-      intensity: 28,
-      distance: 9,
-    });
-    map.addLight({
-      id: "light-room-archive-c",
-      castShadow: true,
-      x: -11.4,
-      y: F + 2.7,
-      z: -18.6,
-      color: 0xffb870,
-      intensity: 16,
-      distance: 7,
+    // The hanging bulbs (drawn in JunkRoom): weak amber pools over the pile and the middle.
+    // Each bulb is a downward cone of light from just under its glass, with a
+    // visible beam like the halogens (see LightGlow); no lamp head, only the bulb.
+    [
+      ["bulb-junk-a", 0xffc47a, 80, 11],
+      ["bulb-junk-b", 0xffbd70, 72, 9],
+    ].forEach(([id, color, intensity, distance], n) => {
+      const bulb = JUNK_BULBS[n];
+
+      map.addLight({
+        id: id as string,
+        castShadow: true,
+        x: bulb.x,
+        y: F + bulb.y - 0.16,
+        z: bulb.z,
+        color: color as number,
+        intensity: intensity as number,
+        distance: distance as number,
+        target: { x: bulb.x, y: F, z: bulb.z },
+        angle: 1.15,
+      });
     });
   }
 
@@ -369,20 +361,23 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
   {
     const p = new Pieces();
 
-    bulb(p, 27.2, 7.3, 0.9, true);
+    // A bare hanging bulb (its glass is drawn with `createJunkBulbGlow`).
+    bulbFitting(p, BREAK_BULB.x, BREAK_BULB.z, BREAK_BULB.y);
     tally(p, "z", 1, 3.3, 23.0, 1.2, 2);
     scrawl(p, "z", 1, 3.3, 30.6, 1.5, 0.3);
     crudeX(p, "x", -1, 31.7, 10.6, 1.4, 0.28, PAINT_RED);
     map.createFitting("occupation-break", F, p.elements, []);
     map.addLight({
-      id: "light-room-break",
+      id: "bulb-break-a",
       castShadow: true,
-      x: 27.2,
-      y: F + 2.75,
-      z: 7.3,
+      x: BREAK_BULB.x,
+      y: F + BREAK_BULB.y - 0.16,
+      z: BREAK_BULB.z,
       color: 0xffd9a0,
-      intensity: 12,
+      intensity: 70,
       distance: 8,
+      target: { x: BREAK_BULB.x, y: F, z: BREAK_BULB.z },
+      angle: 1.15,
     });
   }
 

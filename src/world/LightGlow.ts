@@ -55,7 +55,9 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   const to = new THREE.Vector3(light.target.x, light.target.y, light.target.z);
   const colour = new THREE.Color(light.color);
   const length = Math.min(light.distance * 0.7, MAX_BEAM);
-  const angle = light.angle ?? 0.8;
+  // (A hanging bulb's visible rays are narrower than its light, so the cone's
+  // edge does not show as a pale triangle on the walls.)
+  const angle = (light.angle ?? 0.8) * (light.id.startsWith("bulb-") ? 0.5 : 1);
 
   root.name = `glow-${light.id}`;
   root.position.copy(from);
@@ -129,7 +131,11 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.34), lensMaterial);
 
   lens.position.z = light.id.startsWith("halogen-") ? 0.25 : 0.4;
-  group.add(lens);
+
+  // A hanging bulb has its own glass (drawn with its room): only the beam here.
+  if (!light.id.startsWith("bulb-")) {
+    group.add(lens);
+  }
 
   // The cone: apex at the lamp, widening toward the target.
   const radius = length * Math.tan(angle * 0.85);
@@ -138,7 +144,10 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   geometry.translate(0, -length / 2, 0);
   geometry.rotateX(-Math.PI / 2);
 
-  const beamStrength = Math.min(0.1 + light.intensity / 700, 0.2);
+  // (A hanging bulb's rays are as strong as a halogen's.)
+  const beamStrength = light.id.startsWith("bulb-")
+    ? 0.14
+    : Math.min(0.1 + light.intensity / 700, 0.2);
   const beamMaterial = new THREE.ShaderMaterial({
     vertexShader: BEAM_VERTEX,
     fragmentShader: BEAM_FRAGMENT,

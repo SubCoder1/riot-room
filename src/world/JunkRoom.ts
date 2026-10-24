@@ -26,7 +26,7 @@ import {
  *     corner, its oil trail running to the fuel pool: see `FuelSpillView`);
  *   - a heavy cable spool in the south-east corner and loose scraps round
  *     the edges;
- *   - the beams, cable tray, pipe and caged lamps overhead.
+ *   - the beams, cable tray, pipe and hanging bulbs overhead.
  *
  * The middle of the room (between the south door at x -9 to -7 and the east
  * door at z -21 to -19) is kept open: only low scraps lie along its edges.
@@ -581,6 +581,8 @@ interface Heap {
   minZ: number;
   maxZ: number;
   /** Height of its hidden collision box. */
+  /** Kept as given (the mound is a solid block, however it is drawn). */
+  exact?: boolean;
   top: number;
   /** How high the debris is drawn there (the box is as high or higher). */
   visual: number;
@@ -906,8 +908,39 @@ function overhead(map: MapBuilder, F: number): void {
 
   // Steel conduit along the north wall (with clamps) and junction boxes,
   // one of them hanging open.
-  p.bar(-7.5, 2.65, -23.62, 12.0, 0.05, STEEL_BARE, 0);
-  p.bar(-7.5, 2.78, -23.62, 12.0, 0.035, PIPE, 0);
+  // The run goes on through the wall into the Generator Room, where it meets
+  // the cable tray along its north wall (x -0.75).
+  p.bar(-7.1, 2.65, -23.62, 12.8, 0.05, STEEL_BARE, 0);
+  p.bar(-7.1, 2.78, -23.62, 12.8, 0.035, PIPE, 0);
+
+  // Where it comes out in the Generator Room: a bush in the wall, and a
+  // red and a black cable dropping from the conduit's end onto the tray.
+  p.box(-0.98, 2.58, -23.63, 0.06, 0.26, 0.1, CHARCOAL);
+  p.cable(-0.84, 2.63, -23.58, 0.3, 0.04, 0x8a2a24, 0, 0, -0.35);
+  p.cable(-0.84, 2.61, -23.5, 0.3, 0.04, BLACK, 0, 0, -0.3);
+
+  // Each bulb's supply: its flex up to the ceiling, along the ceiling to the
+  // north wall (a flat cable on clips), and down the wall to the conduit.
+  for (const bulb of JUNK_BULBS) {
+    const run = bulb.z + 23.5;
+
+    p.cable(
+      bulb.x,
+      3.74,
+      bulb.z - run / 2,
+      Math.abs(run),
+      0.025,
+      BLACK,
+      Math.PI / 2,
+    );
+
+    for (let z = bulb.z - 0.6; z > -23.4; z -= 1.4) {
+      p.box(bulb.x, 3.7, z, 0.04, 0.03, 0.05, GUNMETAL);
+    }
+
+    p.cableUp(bulb.x, 2.72, -23.56, 3.74 - 2.72, 0.025, BLACK);
+    p.box(bulb.x, 2.55, -23.63, 0.07, 0.2, 0.06, CHARCOAL);
+  }
 
   for (const x of [-13.0, -10.5, -8.0, -5.5, -3.0, -1.9]) {
     p.box(x, 2.6, -23.64, 0.06, 0.14, 0.04, CHARCOAL);
@@ -1055,13 +1088,10 @@ function overhead(map: MapBuilder, F: number): void {
     p.bar(x, 3.56, -17.2, 0.05, 0.18, CHARCOAL, 0);
   }
 
-  // Caged lamps on chains over the pile, the middle and the fuel pool.
-  for (const [x, z, drop] of [
-    [-10.5, -20.5, 0.85],
-    [-6.0, -20.5, 0.8],
-    [-2.8, -18.4, 0.95],
-  ] as const) {
-    cagedLamp(p, x, z, drop);
+  // The bulbs' fittings, over the pile, the middle and the fuel pool (each
+  // over its light, see Occupation; the glass is `createJunkBulbGlow`).
+  for (const bulb of JUNK_BULBS) {
+    bulbFitting(p, bulb.x, bulb.z, bulb.y);
   }
 
   // The floor: dust on the concrete and oil stains, a split bag of cement.
@@ -1074,28 +1104,172 @@ function overhead(map: MapBuilder, F: number): void {
   map.createFitting("fittings-junk-wall", F, p.elements, []);
 }
 
-/** An old caged lamp on a chain: a steel shade, a bulb, a wire cage. */
-function cagedLamp(p: Pieces, x: number, z: number, drop: number): void {
-  const top = 3.8 - 0.08;
-  const y = top - drop;
+/** The Junk Room's two hanging bulbs: where each sits (the glass's centre height above the floor). */
+export const JUNK_BULBS: ReadonlyArray<{ x: number; z: number; y: number }> = [
+  { x: -10.9, z: -21.0, y: 2.95 },
+  { x: -4.2, z: -20.4, y: 2.95 },
+];
 
-  p.cableUp(x, y + 0.34, z, drop - 0.34, 0.012, BLACK);
+/** The Generator Room's bulb, over the middle of the room (see PowerGrid). */
+export const POWER_BULB = { x: 3.2, z: -20.5, y: 2.95 } as const;
 
-  for (let k = 0; k < 6; k++) {
-    p.box(x, y + 0.34 + k * 0.07, z, 0.03, 0.05, 0.016, GUNMETAL, k * 0.8);
+/** A second one over the generator end of the Generator Room. */
+export const POWER_BULB_B = { x: 5.4, z: -20.3, y: 2.95 } as const;
+
+/** The Break room's bulb (see Occupation). */
+export const BREAK_BULB = { x: 27.2, z: 7.3, y: 2.95 } as const;
+
+/** Every hanging bulb with a glowing glass (see `createJunkBulbGlow`). */
+const GLOWING_BULBS: ReadonlyArray<{ x: number; z: number; y: number }> = [
+  ...JUNK_BULBS,
+  POWER_BULB,
+  POWER_BULB_B,
+  BREAK_BULB,
+];
+
+/**
+ * What a bare bulb hangs from: a porcelain ceiling rose, a black flex and a
+ * bakelite socket with a brass screw collar. The glass itself glows: see
+ * `createJunkBulbGlow`. Each lamp's light hangs a little under its bulb.
+ */
+export function bulbFitting(
+  p: Pieces,
+  x: number,
+  z: number,
+  bulbY: number,
+): void {
+  const ceiling = 3.8;
+
+  p.cableUp(x, ceiling - 0.05, z, 0.05, 0.11, 0xcfc8b6);
+  p.cableUp(x, ceiling - 0.07, z, 0.02, 0.06, 0x2a2420);
+  p.cableUp(x, bulbY + 0.2, z, ceiling - 0.07 - (bulbY + 0.2), 0.014, BLACK);
+  p.cableUp(x, bulbY + 0.1, z, 0.1, 0.055, 0x2a2420);
+  p.cableUp(x, bulbY + 0.085, z, 0.025, 0.062, 0x8a7a4a);
+}
+
+export interface JunkBulbGlow {
+  group: THREE.Group;
+  dispose(): void;
+}
+
+/**
+ * The glass of each bulb, lit from inside: a pear-shaped mesh drawn at full
+ * brightness (not lit by the scene), with a soft round halo round it. Drawn
+ * only: the light is the room lamp over the floor.
+ */
+export function createJunkBulbGlow(floorY: number): JunkBulbGlow {
+  const group = new THREE.Group();
+  // A standard bulb: a lathe of (radius, height) points, a narrow neck into
+  // the socket, a round belly, a rounded tip.
+  const profile = (
+    [
+      [0.0, 0.09],
+      [0.015, 0.09],
+      [0.021, 0.07],
+      [0.036, 0.048],
+      [0.05, 0.02],
+      [0.057, -0.015],
+      [0.054, -0.05],
+      [0.04, -0.08],
+      [0.019, -0.099],
+      [0.0, -0.104],
+    ] as const
+  ).map(([r, y]) => new THREE.Vector2(r, y));
+  const geometry = new THREE.LatheGeometry(profile, 20);
+  // The glass: warm and slightly see-through, and the hot filament inside it.
+  const glassMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffdf9c,
+    toneMapped: false,
+    fog: false,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.92,
+  });
+  const coreMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    toneMapped: false,
+    fog: false,
+  });
+  // The bloom: a smooth gaussian falloff, in a 256 px texture filtered
+  // linearly (a small nearest-filtered one shows as square blocks).
+  const size = 256;
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot((x + 0.5) / size - 0.5, (y + 0.5) / size - 0.5) * 2;
+      // Gaussian, taken down to zero at the rim so there is no visible edge.
+      const a =
+        Math.max(0, Math.exp(-d * d * 7) - Math.exp(-7)) / (1 - Math.exp(-7));
+      const o = (y * size + x) * 4;
+
+      data[o] = 255;
+      data[o + 1] = 200;
+      data[o + 2] = 130;
+      data[o + 3] = Math.round(255 * a);
+    }
   }
 
-  p.post(x, y + 0.2, z, 0.12, 0.34, 0x3a3f46);
-  p.post(x, y + 0.15, z, 0.05, 0.1, 0xe3d6b0);
-  p.post(x, y + 0.06, z, 0.12, 0.18, 0xe8dcb0);
+  const haloTexture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
 
-  for (let k = 0; k < 4; k++) {
-    const a = (k / 4) * Math.PI;
+  haloTexture.magFilter = THREE.LinearFilter;
+  haloTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  haloTexture.generateMipmaps = true;
+  haloTexture.needsUpdate = true;
 
-    p.bar(x, y + 0.1, z, 0.22, 0.012, STEEL_BARE, a, Math.PI / 2 - 0.15);
+  // Two layers: a tight bright bloom and a wide faint one.
+  const tightMaterial = new THREE.SpriteMaterial({
+    map: haloTexture,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.9,
+    fog: false,
+  });
+  const wideMaterial = new THREE.SpriteMaterial({
+    map: haloTexture,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.28,
+    fog: false,
+  });
+
+  for (const bulb of GLOWING_BULBS) {
+    const y = floorY + bulb.y;
+    const glass = new THREE.Mesh(geometry, glassMaterial);
+    const core = new THREE.Mesh(geometry, coreMaterial);
+
+    glass.position.set(bulb.x, y, bulb.z);
+    core.position.set(bulb.x, y - 0.005, bulb.z);
+    core.scale.setScalar(0.5);
+    group.add(glass, core);
+
+    for (const [material, scale] of [
+      [tightMaterial, 0.32],
+      [wideMaterial, 1.3],
+    ] as const) {
+      const halo = new THREE.Sprite(material);
+
+      halo.position.set(bulb.x, y - 0.02, bulb.z);
+      halo.scale.setScalar(scale);
+      halo.renderOrder = 6;
+      group.add(halo);
+    }
   }
 
-  p.post(x, y, z, 0.012, 0.22, GUNMETAL);
+  return {
+    group,
+    dispose(): void {
+      geometry.dispose();
+      glassMaterial.dispose();
+      coreMaterial.dispose();
+      tightMaterial.dispose();
+      wideMaterial.dispose();
+      haloTexture.dispose();
+      group.removeFromParent();
+    },
+  };
 }
 
 export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
@@ -1108,9 +1282,33 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
   // It is a solid mound (the boxes are over 1.45 m, more than anyone can
   // vault or jump onto), so nobody stands on its uneven top or in its corner.
   const heaps: Heap[] = [
-    { minX: X0, maxX: -11.5, minZ: Z0, maxZ: -21.5, top: 2.4, visual: 2.0 },
-    { minX: -11.5, maxX: -9.9, minZ: Z0, maxZ: -22.2, top: 1.5, visual: 1.35 },
-    { minX: X0, maxX: -12.5, minZ: -21.5, maxZ: -21.0, top: 1.5, visual: 1.3 },
+    {
+      minX: X0,
+      maxX: -11.5,
+      minZ: Z0,
+      maxZ: -21.5,
+      top: 2.4,
+      visual: 2.0,
+      exact: true,
+    },
+    {
+      minX: -11.5,
+      maxX: -9.9,
+      minZ: Z0,
+      maxZ: -22.2,
+      top: 1.5,
+      visual: 1.35,
+      exact: true,
+    },
+    {
+      minX: X0,
+      maxX: -12.5,
+      minZ: -21.5,
+      maxZ: -21.0,
+      top: 1.5,
+      visual: 1.3,
+      exact: true,
+    },
   ];
   {
     const p = new Pieces();

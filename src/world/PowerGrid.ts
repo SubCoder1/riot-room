@@ -1,6 +1,7 @@
 import { ROOF_HIGH } from "./ArenaLayout";
 import { FUEL_CAPACITY } from "./GeneratorFuel";
 import { Pieces } from "./FittingPieces";
+import { POWER_BULB, POWER_BULB_B, bulbFitting } from "./JunkRoom";
 import type { MapBuilder } from "./MapParts";
 import { extinguisher, warningSign } from "./RoomKit";
 import { drum } from "./StorageRoom";
@@ -1183,6 +1184,7 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
   // ----------------------------------------------- power room furnishing
   furnishPowerRoom(map, F, main);
   furnishPowerRoomWiring(map, F);
+  furnishPowerRoomMoreWiring(map, F);
   furnishOpenSwitchgear(map, F);
 
   // ---------------------------------------------------- roof generator
@@ -1423,10 +1425,10 @@ function furnishPowerRoom(
     p.box(5.2 - 0.07 + i * 0.07, 2.0, zBack + 0.26, 0.012, 0.24, 0.012, BLACK);
   }
 
-  // A caged pendant light in the middle of the room, on a short chain.
-  p.post(3.2, 3.15, -20.5, 0.65, 0.02, GUNMETAL);
-  p.box(3.2, 2.9, -20.5, 0.26, 0.26, 0.26, GUNMETAL);
-  p.box(3.2, 2.88, -20.5, 0.2, 0.03, 0.2, 0xf0c878); // its lens: a warm bulb
+  // A bare hanging bulb in the middle of the room, as in the Junk Room (its
+  // glass is drawn with `createJunkBulbGlow`).
+  bulbFitting(p, POWER_BULB.x, POWER_BULB.z, POWER_BULB.y);
+  bulbFitting(p, POWER_BULB_B.x, POWER_BULB_B.z, POWER_BULB_B.y);
 
   map.createFitting("fittings-main-panel", F, p.elements, [
     { minX: X0, maxX: X1, minZ: zBack, maxZ: zf, top: 2.16 },
@@ -1443,16 +1445,302 @@ function furnishPowerRoom(
     target: { x: 6.0, y: F + 0.5, z: -22.6 },
     angle: 0.95,
   });
+  // A second one over the generator end.
   map.addLight({
-    id: "light-power-room-pendant",
+    id: "bulb-power-b",
     castShadow: true,
-    x: 3.2,
-    y: F + 2.8,
-    z: -20.5,
-    color: 0xd9e2ec,
-    intensity: 3.2,
-    distance: 7,
+    x: POWER_BULB_B.x,
+    y: F + POWER_BULB_B.y - 0.16,
+    z: POWER_BULB_B.z,
+    color: 0xffbd70,
+    intensity: 90,
+    distance: 8,
+    target: { x: POWER_BULB_B.x, y: F, z: POWER_BULB_B.z },
+    angle: 1.15,
   });
+
+  // The bulb's light: a downward cone with visible rays, like the Junk Room's.
+  map.addLight({
+    id: "bulb-power-a",
+    castShadow: true,
+    x: POWER_BULB.x,
+    y: F + POWER_BULB.y - 0.16,
+    z: POWER_BULB.z,
+    color: 0xffbd70,
+    intensity: 110,
+    distance: 10,
+    target: { x: POWER_BULB.x, y: F, z: POWER_BULB.z },
+    angle: 1.15,
+  });
+}
+
+/** A cable along 3D points: a short straight length between each pair. */
+function wire3(
+  p: Pieces,
+  points: ReadonlyArray<readonly [number, number, number]>,
+  diameter: number,
+  color: number,
+): void {
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay, az] = points[i - 1];
+    const [bx, by, bz] = points[i];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const dz = bz - az;
+    const flat = Math.hypot(dx, dz);
+
+    p.cable(
+      (ax + bx) / 2,
+      (ay + by) / 2,
+      (az + bz) / 2,
+      Math.hypot(flat, dy) + diameter * 0.8,
+      diameter,
+      color,
+      // Yaw to the heading in the floor plane, then pitch up or down it.
+      Math.atan2(-dz, dx),
+      Math.atan2(dy, flat),
+    );
+  }
+}
+
+/**
+ * More wiring in the power room, coming in from here and there: a ceiling
+ * bundle across the room with cables dropping to the generator, the two
+ * switchgear cabinets and the main cabinet; junction boxes on the south wall
+ * either side of the door with conduits up to the ceiling bundle and cables
+ * snaking across the floor; a conduit run along the east wall to a junction
+ * box; and a plate in the west wall (from the Junk Room) with cables out of
+ * it. Drawn only, and kept off the middle of the floor.
+ */
+function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
+  const p = new Pieces();
+  const SIGNAL = 0x1b1d21;
+  const ceilingY = 3.74;
+  const southWall = -17.32;
+  const eastWall = 6.64;
+  const rnd = lcg(5151);
+  const jitter = (n: number): number => (rnd() - 0.5) * n;
+
+  // A junction box on a wall, small and dark, with a lid screw and a label.
+  const box = (
+    x: number,
+    y: number,
+    z: number,
+    facing: "s" | "e" | "w",
+  ): void => {
+    if (facing === "e") {
+      p.box(x, y, z, 0.12, 0.3, 0.34, CHARCOAL);
+      p.box(x - 0.07, y + 0.04, z, 0.02, 0.22, 0.26, GUNMETAL);
+    } else if (facing === "w") {
+      p.box(x, y, z, 0.12, 0.3, 0.34, CHARCOAL);
+      p.box(x + 0.07, y + 0.04, z, 0.02, 0.22, 0.26, GUNMETAL);
+    } else {
+      p.box(x, y, z, 0.34, 0.3, 0.12, CHARCOAL);
+      p.box(x, y + 0.04, z + 0.07, 0.26, 0.22, 0.02, GUNMETAL);
+    }
+  };
+
+  // ------------------------------------------------ the ceiling bundle
+  // A steel conduit and three cables along the ceiling, west to east, with
+  // clamps; the supply for everything below.
+  const bundleZ = -21.7;
+
+  p.bar(3.0, ceilingY, bundleZ, 8.0, 0.05, MAST_WORN);
+
+  for (const [dz, d, color] of [
+    [-0.07, 0.04, CABLES[0]],
+    [0.06, 0.04, SIGNAL],
+    [0.0, 0.035, CABLES[2]],
+  ] as const) {
+    p.cable(3.0, ceilingY - 0.05, bundleZ + dz, 8.0, d, color);
+  }
+
+  for (let x = -0.6; x < 6.8; x += 1.0) {
+    p.box(x, ceilingY - 0.09, bundleZ, 0.05, 0.14, 0.12, GUNMETAL);
+  }
+
+  // Drops from the bundle: to the generator's top, to each switchgear
+  // cabinet's top and to the main cabinet's, two cables each, sagging.
+  const drops: Array<[number, number, number, number, number]> = [
+    // [x on the bundle, x at the equipment, z at the equipment, top of it, spread]
+    [5.8, 6.25, -22.8, 1.25, 0.06],
+    [6.2, 6.0, -22.4, 1.25, -0.06],
+    [1.1, 1.0, -23.2, 2.03, 0.05],
+    [1.5, 1.4, -23.1, 2.03, -0.05],
+    [2.3, 2.2, -23.2, 2.03, 0.05],
+    [3.0, 3.3, -23.3, 2.17, 0.05],
+  ];
+
+  drops.forEach(([bx, ex, ez, top, spread], n) => {
+    const color = n % 2 ? CABLES[1] : SIGNAL;
+
+    wire3(
+      p,
+      [
+        [bx, ceilingY - 0.05, bundleZ + spread],
+        [
+          bx + (ex - bx) * 0.15 + jitter(0.08),
+          ceilingY - 0.5,
+          bundleZ + (ez - bundleZ) * 0.2,
+        ],
+        [
+          bx + (ex - bx) * 0.55 + jitter(0.08),
+          (ceilingY + top) / 2,
+          bundleZ + (ez - bundleZ) * 0.6,
+        ],
+        [ex + jitter(0.05), top + 0.3, ez + (bundleZ - ez) * 0.1],
+        [ex, top - 0.02, ez],
+      ],
+      0.04,
+      color,
+    );
+  });
+
+  // ------------------------------------------- the south wall, both sides of the door
+  for (const [bx, by, count] of [
+    [0.3, 1.55, 3],
+    [5.2, 1.6, 4],
+  ] as const) {
+    box(bx, by, southWall, "s");
+
+    // Conduit up the wall to the ceiling, then a cable along the ceiling to the bundle.
+    p.cableUp(
+      bx - 0.08,
+      by + 0.3,
+      southWall + 0.04,
+      ceilingY - by - 0.3,
+      0.045,
+      MAST_WORN,
+    );
+    p.cable(
+      bx - 0.08,
+      ceilingY,
+      (southWall + bundleZ) / 2,
+      southWall - bundleZ - 0.2,
+      0.04,
+      SIGNAL,
+      Math.PI / 2,
+    );
+    p.cable(
+      bx - 0.03,
+      ceilingY - 0.02,
+      (southWall + bundleZ) / 2,
+      southWall - bundleZ - 0.2,
+      0.035,
+      CABLES[0],
+      Math.PI / 2,
+    );
+
+    // Cables out of the bottom of the box, across the wall and onto the floor.
+    for (let k = 0; k < count; k++) {
+      const x = bx - 0.12 + k * 0.08;
+
+      wire3(
+        p,
+        [
+          [x, by - 0.03, southWall + 0.06],
+          [x + jitter(0.1), by - 0.5, southWall + 0.1],
+          [x + jitter(0.3), 0.1, southWall + 0.35],
+          [x + jitter(0.9), 0.03, southWall + 0.8 + k * 0.1],
+        ],
+        0.04,
+        k % 2 ? SIGNAL : CABLES[k % 4],
+      );
+    }
+  }
+
+  // Floor cables from those boxes, wandering to the equipment (low, off the middle).
+  wire3(
+    p,
+    [
+      [5.3, 0.03, -17.6],
+      [5.0, 0.03, -18.8],
+      [5.5, 0.03, -20.1],
+      [5.7, 0.03, -21.4],
+      [5.75, 0.03, -22.2],
+    ],
+    0.045,
+    CABLES[1],
+  );
+  wire3(
+    p,
+    [
+      [5.35, 0.03, -17.65],
+      [5.2, 0.03, -19.0],
+      [5.7, 0.03, -20.5],
+      [5.8, 0.03, -21.9],
+    ],
+    0.04,
+    SIGNAL,
+  );
+  wire3(
+    p,
+    [
+      [0.4, 0.03, -17.7],
+      [0.2, 0.03, -19.3],
+      [0.5, 0.03, -21.0],
+      [0.9, 0.03, -22.4],
+    ],
+    0.045,
+    CABLES[0],
+  );
+  wire3(
+    p,
+    [
+      [0.45, 0.03, -17.7],
+      [0.4, 0.03, -19.5],
+      [0.8, 0.03, -21.2],
+      [1.4, 0.03, -22.4],
+    ],
+    0.04,
+    SIGNAL,
+  );
+
+  // ------------------------------------------------ the east wall
+  // A conduit along it at 2.4 m, a junction box, and cables down to the floor.
+  p.bar(eastWall, 2.4, -20.4, 6.2, 0.05, MAST_WORN, Math.PI / 2);
+
+  for (const z of [-23.0, -21.4, -19.8, -18.2]) {
+    p.box(eastWall, 2.34, z, 0.05, 0.12, 0.08, GUNMETAL);
+  }
+
+  box(eastWall - 0.06, 1.3, -19.6, "e");
+  p.cableUp(eastWall - 0.02, 1.6, -19.6, 0.8, 0.045, MAST_WORN);
+
+  for (let k = 0; k < 3; k++) {
+    wire3(
+      p,
+      [
+        [eastWall - 0.06, 1.3 + 0.03, -19.6 - 0.1 + k * 0.1],
+        [eastWall - 0.12 + jitter(0.06), 0.8, -19.6 - 0.1 + k * 0.1],
+        [eastWall - 0.3 + jitter(0.2), 0.1, -19.5 + jitter(0.4)],
+        [eastWall - 0.9 + jitter(0.4), 0.03, -19.4 + k * 0.25],
+      ],
+      0.04,
+      k === 1 ? SIGNAL : CABLES[k],
+    );
+  }
+
+  // ----------------------------------- the west wall: a plate from the Junk Room
+  p.box(-0.95, 0.9, -22.2, 0.05, 0.4, 0.45, GUNMETAL);
+
+  for (let k = 0; k < 4; k++) {
+    const z = -22.4 + k * 0.12;
+
+    wire3(
+      p,
+      [
+        [-0.92, 1.0 + (k % 2) * 0.1, z],
+        [-0.8, 0.5, z + jitter(0.1)],
+        [-0.5 + jitter(0.2), 0.04, z + 0.2 + jitter(0.2)],
+        [0.0 + jitter(0.3), 0.03, z + 0.5 + jitter(0.3)],
+      ],
+      0.04,
+      k % 2 ? SIGNAL : CABLES[k % 4],
+    );
+  }
+
+  map.createFitting("fittings-power-room-more-wiring", F, p.elements, []);
 }
 
 /**

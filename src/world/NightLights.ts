@@ -96,11 +96,12 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
   {
     "light-room-warehouse-a": { scale: 0.88, color: 0xffc78a, reach: 1 },
     "light-room-warehouse-b": { scale: 0.8, color: 0xffc78a, reach: 1 },
-    "light-room-archive": { scale: 0.88, color: 0xffb870, reach: 1 },
-    "light-room-archive-b": { scale: 0.88, color: 0xffb870, reach: 1 },
-    "light-room-archive-c": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "bulb-junk-a": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "bulb-junk-b": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "bulb-power-a": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "bulb-power-b": { scale: 0.88, color: 0xffb870, reach: 1 },
     "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
-    "light-room-break": { scale: 0.96, reach: 1 },
+    "bulb-break-a": { scale: 0.96, reach: 1 },
     "light-room-barracks": { scale: 0.96, reach: 1 },
     "light-room-yard": { scale: 1.04, reach: 1 },
     "light-room-hall-a": { scale: 0.96, reach: 1 },
@@ -108,14 +109,11 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     "workshop-light-bench": { scale: 2.2 },
     "workshop-light-machines": { scale: 2.2 },
     "light-power-room-work": { scale: 1, reach: 1 },
-    // The room's centre lamp: a dim, yellowish bulb, a little stronger than before.
-    "light-power-room-pendant": { scale: 2.4, color: 0xffc766, reach: 1.0 },
   };
 
 /** Work lights with a loose fitting: they stutter now and then. */
 export const FLICKERING = new Set([
   "light-power-room-work",
-  "light-power-room-pendant",
   // The Armory's loose tube: the one fluorescent that stutters now and then.
   "tube-armory-3",
 ]);

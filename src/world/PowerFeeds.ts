@@ -44,6 +44,7 @@ function isRoomLamp(l: LightDefinition): boolean {
     l.y > F + 1 &&
     l.y < F + 6.6 &&
     (l.id.startsWith("light-room-") ||
+      l.id === "bulb-break-a" ||
       l.id.startsWith("indicator-") ||
       l.id === "halogen-wall-room-armory")
   );

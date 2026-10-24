@@ -25,6 +25,7 @@ import {
 import { ArmoryMechanismView } from "../world/ArmoryMechanismView";
 import { createTubeGlow } from "../world/ArmoryLighting";
 import { createHangingTubeGlow } from "../world/HangingTubes";
+import { createJunkBulbGlow } from "../world/JunkRoom";
 import {
   ARMORY_VENT_HOLE,
   VENT_HATCH_ID,
@@ -40,6 +41,7 @@ import {
   ARENA_HALF_Z,
   PERIMETER_WALL_HEIGHT,
   ROOF_HIGH,
+  UPPER_FLOOR_Y,
 } from "../world/ArenaLayout";
 import { ARENA_LAYOUT } from "../world/UpperFloorMap";
 import { GeneratorFuel } from "../world/GeneratorFuel";
@@ -232,6 +234,7 @@ export class Game {
   private readonly tubeGlow = createTubeGlow();
   /** The Warehouse's hanging tubes. */
   private readonly hangingTubes = createHangingTubeGlow();
+  private readonly junkBulbs = createJunkBulbGlow(UPPER_FLOOR_Y);
   /** Rain through the Armory vent's grille. */
   private readonly ventDrips = new VentDrips(
     ventDripPoints(),
@@ -598,6 +601,7 @@ export class Game {
     this.arena.group.add(this.armoryView.group);
     this.arena.group.add(this.tubeGlow.group);
     this.arena.group.add(this.hangingTubes.group);
+    this.arena.group.add(this.junkBulbs.group);
     this.arena.group.add(this.ventDrips.group);
     this.renderer.scene.add(
       this.flameLight,
@@ -1354,6 +1358,10 @@ export class Game {
     this.renderer.camera.updateMatrixWorld(true);
     this.renderer.renderer.compile(scene, this.renderer.camera);
     this.renderer.renderer.render(scene, this.renderer.camera);
+    // The fuel fire's flames are their own geometry: draw them once as well.
+    this.fireView.previewFuel(true);
+    this.renderer.renderer.render(scene, this.renderer.camera);
+    this.fireView.previewFuel(false);
 
     for (const [object, visible, culled] of saved) {
       object.visible = visible;
@@ -2546,7 +2554,7 @@ export class Game {
 
         const entry = segmentCapsuleEntry(from, to, this.armBodyShape);
 
-        if (entry !== null) {
+        if (entry !== null && Number.isFinite(entry)) {
           fraction = Math.min(fraction, entry);
         }
       }
@@ -3045,6 +3053,7 @@ export class Game {
     this.armoryView.dispose();
     this.tubeGlow.dispose();
     this.hangingTubes.dispose();
+    this.junkBulbs.dispose();
     this.fuelSpillView.dispose();
     this.fuelHazard.dispose();
     this.ventDrips.dispose();
