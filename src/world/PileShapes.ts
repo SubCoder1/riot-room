@@ -649,7 +649,17 @@ function barricade(random: () => number): PileShape {
   return { ...shape, boxes: boxes.length > 0 ? boxes : shape.boxes };
 }
 
-export type BarrierStyle = "pipes" | "brick";
+/**
+ * "brick-low" is a brick barricade that a jump clears (its top 0.75 to 0.9 m).
+ * "brick-high" is flat along its whole length at 1.35 m: the feet must be 0.9 m
+ * up (a jump takes 0.45 m of step-up and reaches 0.93 m) for far longer than a
+ * jump lasts, so only a vault or a hop crosses it (a vault takes up to 1.45 m).
+ */
+export type BarrierStyle = "pipes" | "brick" | "brick-low" | "brick-high";
+
+/** The tallest top a plain jump clears, and the shortest that needs a vault. */
+export const BRICK_LOW_MAX = 0.9;
+export const BRICK_HIGH_MIN = 1.35;
 
 /**
  * A barrier of `length` x `thick` x `height` metres, along x, centred, with
@@ -759,7 +769,17 @@ export function buildBarrierShape(
   // Brick: courses of 0.15 m, bricks 0.4 m long, the top two courses ragged.
   const brickH = 0.15;
   const brickL = 0.4;
-  const courses = Math.max(2, Math.round(height / brickH));
+  // The two barricade classes have courses of their own: 6 (0.9 m) or 8 (1.2 m).
+  const courses =
+    style === "brick-low"
+      ? 6
+      : style === "brick-high"
+        ? 9
+        : Math.max(2, Math.round(height / brickH));
+  // Most columns stand to the full height; the odd one has lost a course (two
+  // in the plain brick style). The high barricade loses none: it is the same
+  // height all along, so no low spot lets a jump through.
+  const mostLost = style === "brick" ? 3 : style === "brick-high" ? 1 : 2;
   const columns = Math.ceil(length / (brickL / 2));
   const colW = length / columns;
   // How many top courses are missing at each half-brick column (0 to 2).
@@ -767,8 +787,8 @@ export function buildBarrierShape(
   let level = 0;
 
   for (let c = 0; c < columns; c++) {
-    if (random() < 0.3) {
-      level = Math.floor(random() * 3);
+    if (random() < (style === "brick" ? 0.3 : 0.22)) {
+      level = Math.floor(random() * mostLost);
     }
 
     lost.push(level);

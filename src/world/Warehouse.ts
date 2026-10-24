@@ -178,12 +178,14 @@ export function furnishWarehouse(map: MapBuilder, floorY: number): void {
       DRUM_GREEN,
     ];
 
-    pallet(p, 28.85, 15.8, 1.2, 1.2, 0.0);
-    pallet(p, 29.65, 15.8, 1.0, 1.2, 0.0);
+    // (Pulled 0.65 m off the east shelving: the lane between them is 1.45 m,
+    // wide enough to walk.)
+    pallet(p, 28.2, 15.8, 1.2, 1.2, 0.0);
+    pallet(p, 29.0, 15.8, 1.0, 1.2, 0.0);
 
     let i = 0;
 
-    for (const x of [28.5, 29.1, 29.7]) {
+    for (const x of [27.85, 28.45, 29.05]) {
       for (const z of [15.5, 16.1]) {
         drum(p, x, z, colors[i % colors.length], i % 2 === 0, 0.13);
         i++;
@@ -191,9 +193,9 @@ export function furnishWarehouse(map: MapBuilder, floorY: number): void {
     }
 
     // Two more laid across the top of the back row.
-    lyingDrum(p, 28.8, 1.02, 15.5, DRUM_RED, 0.1);
+    lyingDrum(p, 28.15, 1.02, 15.5, DRUM_RED, 0.1);
     map.createFitting("stack-wh-3", F, p.elements, [
-      { minX: 28.2, maxX: 30.2, minZ: 14.8, maxZ: 16.8, top: 1.7 },
+      { minX: 27.55, maxX: 29.55, minZ: 14.8, maxZ: 16.8, top: 1.7 },
     ]);
   }
 
