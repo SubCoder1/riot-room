@@ -941,7 +941,14 @@ export function furnishConstructionSite(map: MapBuilder, floorY: number): void {
       { minX: -27.74, maxX: -27.46, minZ: -0.54, maxZ: -0.26, top: 0.36 },
       { minX: -26.34, maxX: -26.06, minZ: 0.31, maxZ: 0.59, top: 0.36 },
       { minX: -26.3, maxX: -24.7, minZ: 0.9, maxZ: 1.9, top: 0.55 },
-      { minX: -24.8, maxX: -24.48, minZ: -2.4, maxZ: -0.85, top: 1.05 },
+      {
+        minX: -24.8,
+        maxX: -24.48,
+        minZ: -2.4,
+        maxZ: -0.85,
+        top: 1.05,
+        exact: true,
+      },
     ]);
   }
 

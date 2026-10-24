@@ -1003,9 +1003,20 @@ export function furnishArmoryStash(map: MapBuilder, floorY: number): void {
     // The damaged one, by the ammunition stack.
     brokenCrate(p, -23.0, 0, 5.86, { w: 0.78, h: 0.46, d: 0.6 }, 0.18);
     map.createFitting("armory-crates-north", F, p.elements, [
-      { ...bounds(-25.9, 5.82, 0.9, 0.7, 0.08), top: 0.95 },
-      { ...bounds(-24.45, 5.85, 0.8, 0.6, -0.12), top: 0.42 },
-      { ...bounds(-23.0, 5.86, 0.78, 0.6, 0.18), top: 0.5 },
+      // (Already measured from the crates themselves: kept as they are.)
+      { ...bounds(-25.9, 5.82, 0.9, 0.7, 0.08), top: 0.95, exact: true },
+      { ...bounds(-24.45, 5.85, 0.8, 0.6, -0.12), top: 0.42, exact: true },
+      { ...bounds(-23.0, 5.86, 0.78, 0.6, 0.18), top: 0.5, exact: true },
+      // The 0.5 m between the first two is too narrow for a body: a low block
+      // there, so nobody can wedge a foot into it and hang on the rims.
+      {
+        minX: -25.42,
+        maxX: -24.88,
+        minZ: 5.55,
+        maxZ: 6.1,
+        top: 0.3,
+        exact: true,
+      },
     ]);
   }
 

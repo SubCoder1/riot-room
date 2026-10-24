@@ -142,6 +142,219 @@ export interface RailingOptions {
  * staircases, ladders, railings, ledges). Everything lands in a plain
  * ArenaLayout, so the map stays easy to rearrange.
  */
+/** Half the size of a piece's turned box along each world axis. */
+function halfExtents(e: PileElement): [number, number, number] {
+  const ca = Math.cos(e.rx);
+  const sa = Math.sin(e.rx);
+  const cb = Math.cos(e.ry);
+  const sb = Math.sin(e.ry);
+  const cc = Math.cos(e.rz);
+  const sc = Math.sin(e.rz);
+  // The rotation matrix of an XYZ Euler turn (rows are world x, y, z).
+  const m = [
+    [cb * cc, -cb * sc, sb],
+    [ca * sc + sa * sb * cc, ca * cc - sa * sb * sc, -sa * cb],
+    [sa * sc - ca * sb * cc, sa * cc + ca * sb * sc, ca * cb],
+  ];
+  const s = [e.sx / 2, e.sy / 2, e.sz / 2];
+
+  return m.map((row) =>
+    row.reduce((sum, v, i) => sum + Math.abs(v) * s[i], 0),
+  ) as [number, number, number];
+}
+
+interface FitBox {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  top: number;
+  bottom?: number;
+}
+
+/**
+ * Fits a collision box to what is drawn in it (never bigger than the pieces):
+ * the box's floor plan is cut into 10 cm cells, each cell's height is the top
+ * of the highest piece over it, and runs of cells of one height are joined
+ * into boxes. A stepped stack of crates becomes a few boxes, one to each
+ * step, and the air beside and over it is empty (a shot or a throw passes).
+ * Falls back to one fitted box if the shape is too ragged to split well.
+ */
+function fitBoxToPieces<T extends FitBox>(
+  box: T,
+  baseY: number,
+  elements: PileElement[],
+): T[] {
+  const margin = 0.15;
+  const low = baseY + (box.bottom ?? 0);
+  const high = baseY + box.top;
+  const pad = 0.03;
+  const near: Array<{
+    x0: number;
+    x1: number;
+    z0: number;
+    z1: number;
+    top: number;
+  }> = [];
+
+  for (const e of elements) {
+    const y = baseY + e.y;
+
+    if (
+      e.x < box.minX - margin ||
+      e.x > box.maxX + margin ||
+      e.z < box.minZ - margin ||
+      e.z > box.maxZ + margin ||
+      y < low - margin ||
+      y > high + margin
+    ) {
+      continue;
+    }
+
+    const [hx, hy, hz] = halfExtents(e);
+
+    // A hair-thin piece (a label, a stain) is not an obstacle.
+    if (Math.max(hx, hz) < 0.02 || hy < 0.01) {
+      continue;
+    }
+
+    near.push({
+      x0: e.x - hx - pad,
+      x1: e.x + hx + pad,
+      z0: e.z - hz - pad,
+      z1: e.z + hz + pad,
+      top: y + hy - baseY,
+    });
+  }
+
+  if (near.length === 0) {
+    return [box];
+  }
+
+  const CELL = 0.1;
+  const STEP = 0.2;
+  const cols = Math.max(1, Math.ceil((box.maxX - box.minX) / CELL));
+  const rows = Math.max(1, Math.ceil((box.maxZ - box.minZ) / CELL));
+  const heights: number[][] = [];
+
+  for (let r = 0; r < rows; r++) {
+    const row: number[] = [];
+
+    for (let c = 0; c < cols; c++) {
+      const x0 = box.minX + c * CELL;
+      const z0 = box.minZ + r * CELL;
+      let h = 0;
+
+      // A cell is filled if any piece reaches into it.
+      for (const n of near) {
+        if (n.x0 < x0 + CELL && n.x1 > x0 && n.z0 < z0 + CELL && n.z1 > z0) {
+          h = Math.max(h, n.top);
+        }
+      }
+
+      // Round up to a step of 20 cm, never above the box's own top.
+      row.push(h > 0 ? Math.min(box.top, Math.ceil(h / STEP) * STEP) : 0);
+    }
+
+    heights.push(row);
+  }
+
+  // Join runs: left to right, then down while the whole run matches.
+  const taken = heights.map((row) => row.map(() => false));
+  const parts: T[] = [];
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const h = heights[r][c];
+
+      if (taken[r][c] || h <= 0) {
+        continue;
+      }
+
+      let c1 = c;
+
+      while (c1 + 1 < cols && !taken[r][c1 + 1] && heights[r][c1 + 1] === h) {
+        c1++;
+      }
+
+      let r1 = r;
+
+      grow: while (r1 + 1 < rows) {
+        for (let k = c; k <= c1; k++) {
+          if (taken[r1 + 1][k] || heights[r1 + 1][k] !== h) {
+            break grow;
+          }
+        }
+
+        r1++;
+      }
+
+      for (let rr = r; rr <= r1; rr++) {
+        for (let cc = c; cc <= c1; cc++) {
+          taken[rr][cc] = true;
+        }
+      }
+
+      parts.push({
+        ...box,
+        minX: box.minX + c * CELL,
+        maxX: Math.min(box.maxX, box.minX + (c1 + 1) * CELL),
+        minZ: box.minZ + r * CELL,
+        maxZ: Math.min(box.maxZ, box.minZ + (r1 + 1) * CELL),
+        top: h,
+      });
+    }
+  }
+
+  // Too ragged (many small boxes) or a sliver: one box fitted to the extents.
+  const big = parts.filter(
+    (q) => q.maxX - q.minX >= 0.2 && q.maxZ - q.minZ >= 0.2,
+  );
+
+  if (big.length === 0 || big.length > 10) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    let top = 0;
+
+    for (const n of near) {
+      minX = Math.min(minX, n.x0 + pad);
+      maxX = Math.max(maxX, n.x1 - pad);
+      minZ = Math.min(minZ, n.z0 + pad);
+      maxZ = Math.max(maxZ, n.z1 - pad);
+      top = Math.max(top, n.top);
+    }
+
+    return [
+      {
+        ...box,
+        minX: Math.max(box.minX, minX - 0.02),
+        maxX: Math.min(box.maxX, maxX + 0.02),
+        minZ: Math.max(box.minZ, minZ - 0.02),
+        maxZ: Math.min(box.maxZ, maxZ + 0.02),
+        top: Math.max((box.bottom ?? 0) + 0.1, Math.min(box.top, top + 0.02)),
+      },
+    ];
+  }
+
+  return big;
+}
+
+/**
+ * Fittings whose boxes stay as authored: their gaps were set on purpose (a
+ * body must not fit between them, or must clearly fit), or they are solid
+ * blocks however they are drawn.
+ */
+const EXACT_FITTINGS = [
+  "junk-pile",
+  "bunk-barracks",
+  "armory-crates",
+  "armory-bay",
+  "site-work-area",
+  "fittings-yard-drums",
+];
+
 export class MapBuilder {
   private readonly layout: ArenaLayout;
 
@@ -1065,13 +1278,32 @@ export class MapBuilder {
       bottom?: number;
       /** Parts that stop a shot (a framework); the box still stops a body. */
       frame?: FramePart[];
+      /** Keep the box exactly as given (do not fit it to the drawn pieces). */
+      exact?: boolean;
     }>,
   ): PileDefinition {
     const solids: string[] = [];
 
-    boxes.forEach((b, index) => {
-      const solidId = boxes.length === 1 ? id : `${id}-${index + 1}`;
+    // The border is strict: a box is never bigger than what is drawn in it,
+    // so a shot or a throw passes through what looks like an opening.
+    const fitted: Array<{ box: (typeof boxes)[number]; id: string }> = [];
 
+    boxes.forEach((given, index) => {
+      const base = boxes.length === 1 ? id : `${id}-${index + 1}`;
+      const parts =
+        given.frame ||
+        given.exact ||
+        EXACT_FITTINGS.some((prefix) => id.startsWith(prefix))
+          ? [given]
+          : fitBoxToPieces(given, baseY, elements);
+
+      // The first part keeps the box's own id, the rest are numbered after it.
+      parts.forEach((part, k) =>
+        fitted.push({ box: part, id: k === 0 ? base : `${base}+${k + 1}` }),
+      );
+    });
+
+    fitted.forEach(({ box: b, id: solidId }) => {
       this.layout.walls.push({
         kind: "box",
         id: solidId,
