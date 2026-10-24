@@ -25,12 +25,22 @@ import {
 import { ArmoryMechanismView } from "../world/ArmoryMechanismView";
 import { createTubeGlow } from "../world/ArmoryLighting";
 import { createHangingTubeGlow } from "../world/HangingTubes";
-import { createJunkBulbGlow } from "../world/JunkRoom";
+import { POWER_BULB, createJunkBulbGlow } from "../world/JunkRoom";
 import {
-  ARMORY_VENT_HOLE,
-  VENT_HATCH_ID,
+  ARMORY_VENT_HATCHES,
+  isVentHatchId,
   ventDripPoints,
 } from "../world/ArmoryVent";
+import {
+  CEILING_SLAB_BULB_LIGHT,
+  CEILING_SLAB_ID,
+  CeilingSlabState,
+  canBreakCeilingSlab,
+  onCeilingSlab,
+  type PlayerRole,
+} from "../world/CeilingSlab";
+import { slabBulb } from "../world/CeilingSlabMesh";
+import { SlabDebris } from "../vfx/SlabDebris";
 import { VentDrips } from "../vfx/VentDrips";
 import type { BoxSolid } from "../world/ArenaLayout";
 import { ShutterCrush } from "../combat/ShutterCrush";
@@ -207,6 +217,11 @@ export class Game {
   private readonly explosions: ExplosionSystem;
   private readonly smoke: SmokeSystem;
   private readonly fireView = new FireZoneView();
+  /** The Generator Room's wooden slab: one state for the round (see CeilingSlab). */
+  private readonly ceilingSlab = new CeilingSlabState();
+  private readonly slabDebris = new SlabDebris();
+  /** Who this client plays (testing: either role may break the slab). */
+  private readonly localRole: PlayerRole = "batman";
   private readonly fuelSpillView = new FuelSpillView(
     ARENA_LAYOUT.fuelSpills ?? [],
   );
@@ -502,7 +517,7 @@ export class Game {
     this.smokeView = new SmokeCloudView(this.smoke);
     // A Molotov that breaks starts a fire where it landed.
     this.projectiles.onBurst = (item, point) => {
-      this.fires.ignite(item.ownerId, point);
+      this.burstFire(item.ownerId, point, item.velocity);
     };
     // A grenade whose fuse ran out explodes; a smoke grenade starts to emit.
     // Each item is gone before this is called, so it goes off exactly once.
@@ -603,6 +618,7 @@ export class Game {
     this.arena.group.add(this.hangingTubes.group);
     this.arena.group.add(this.junkBulbs.group);
     this.arena.group.add(this.ventDrips.group);
+    this.arena.group.add(this.slabDebris.group);
     this.renderer.scene.add(
       this.flameLight,
       this.blastLight,
@@ -631,6 +647,8 @@ export class Game {
     this.renderer.scene.add(this.thrownView.group);
     this.fireView.surfaceY = (x, z, fromY) =>
       this.collision.groundHeight(x, z, fromY);
+    this.fireView.lineClear = (x0, y, z0, x1, z1) =>
+      this.collision.segmentClearFraction(x0, y, z0, x1, y, z1) >= 0.999;
     this.renderer.scene.add(this.fireView.group);
     this.renderer.scene.add(this.fuelSpillView.group);
     this.renderer.scene.add(this.explosionView.group);
@@ -1049,6 +1067,8 @@ export class Game {
         } else {
           this.player.releaseLadder();
         }
+      } else if (this.breakCeilingSlabIfOn()) {
+        // Broke through the Generator Room's wooden slab from the roof.
       } else if (this.liftVentGrilleIfNear()) {
         // Lifted the Armory vent's grille from the roof.
       } else if (this.takePickupIfNear()) {
@@ -1101,15 +1121,17 @@ export class Game {
           ? armoryText
           : this.player.ventEntryInReach()
             ? "PRESS {E} TO ENTER VENT"
-            : this.ventGrilleInReach()
-              ? "PRESS {E} TO LIFT GRILLE"
-              : this.pickupPrompt()
-                ? this.pickupPrompt()
-                : this.fuelPrompt()
-                  ? this.fuelPrompt()
-                  : this.player.ladderInReach()
-                    ? "PRESS {E} TO CLIMB"
-                    : "";
+            : this.ceilingSlabInReach()
+              ? "PRESS {E} TO BREAK THROUGH"
+              : this.ventGrilleInReach()
+                ? "PRESS {E} TO LIFT GRILLE"
+                : this.pickupPrompt()
+                  ? this.pickupPrompt()
+                  : this.fuelPrompt()
+                    ? this.fuelPrompt()
+                    : this.player.ladderInReach()
+                      ? "PRESS {E} TO CLIMB"
+                      : "";
 
     // A key in braces, {E}, is drawn in the key colour.
     if (this.climbPrompt.dataset.text !== text) {
@@ -1289,6 +1311,7 @@ export class Game {
     );
     this.armoryMessageTime = Math.max(0, this.armoryMessageTime - dt);
     this.ventDrips.update(dt);
+    this.slabDebris.update(dt);
     this.syncArmory();
     this.shutterCrush.update();
     this.armoryView.update(
@@ -1369,49 +1392,199 @@ export class Game {
     }
   }
 
-  /** Which kinds the player has already taken from the Armory's stash this round (one of each). */
-  private readonly stashTaken = new Set<string>();
-
-  /** Whether a pickup is one of the Armory stash's. */
-  private static isStash(pickup: { id: string }): boolean {
-    return pickup.id.startsWith("armory-");
-  }
-
-  /** Whether the player stands on the Armory's roof near its shut vent grille. */
-  private ventGrilleInReach(): boolean {
-    if (
-      this.openHatches.has(VENT_HATCH_ID) ||
-      this.player.isClimbing ||
-      this.player.isInVent
-    ) {
-      return false;
+  /**
+   * The shut vent grille of the Armory's roof the player is beside (within
+   * 1.4 m of its edge), the nearest one; null if none, or off the roof.
+   */
+  private ventGrilleInReach(): string | null {
+    if (this.player.isClimbing || this.player.isInVent) {
+      return null;
     }
 
     const feetY = this.player.position.y - this.player.eyeHeight;
-    const hole = ARMORY_VENT_HOLE;
 
+    if (Math.abs(feetY - ROOF_HIGH) >= 0.4) {
+      return null;
+    }
+
+    let best: string | null = null;
+    let bestDistance = 1.4;
+
+    for (const { id, area } of ARMORY_VENT_HATCHES) {
+      if (this.openHatches.has(id)) {
+        continue;
+      }
+
+      // Distance from the player to the grille's rectangle.
+      const dx = Math.max(
+        area.minX - this.player.position.x,
+        0,
+        this.player.position.x - area.maxX,
+      );
+      const dz = Math.max(
+        area.minZ - this.player.position.z,
+        0,
+        this.player.position.z - area.maxZ,
+      );
+      const distance = Math.hypot(dx, dz);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = id;
+      }
+    }
+
+    return best;
+  }
+
+  /** The body, for the wooden slab's checks. */
+  private slabBody(): { x: number; z: number; feetY: number } {
+    return {
+      x: this.player.position.x,
+      z: this.player.position.z,
+      feetY: this.player.position.y - this.player.eyeHeight,
+    };
+  }
+
+  /** Whether the prompt to break the wooden slab shows: intact, allowed, standing on it. */
+  private ceilingSlabInReach(): boolean {
     return (
-      Math.abs(feetY - ROOF_HIGH) < 0.4 &&
-      Math.hypot(
-        this.player.position.x - (hole.minX + hole.maxX) / 2,
-        this.player.position.z - (hole.minZ + hole.maxZ) / 2,
-      ) <= 2.2
+      !this.ceilingSlab.broken &&
+      !this.player.isClimbing &&
+      !this.player.isInVent &&
+      canBreakCeilingSlab(this.localRole) &&
+      onCeilingSlab(this.slabBody())
     );
   }
 
-  /** E on the roof beside the vent: the grille lifts on its hinge and stays up for good. */
-  private liftVentGrilleIfNear(): boolean {
-    if (!this.ventGrilleInReach()) {
+  /** E on the slab: it breaks (once) and the boards go from under the player's feet. */
+  private breakCeilingSlabIfOn(): boolean {
+    if (!this.ceilingSlabInReach()) {
       return false;
     }
 
-    this.setHatchOpen(VENT_HATCH_ID, true);
+    // (A networked game sends this request and applies the answer.)
+    const result = this.ceilingSlab.tryBreak(
+      "player",
+      this.localRole,
+      this.slabBody(),
+    );
+
+    if (result === "broken") {
+      this.applySlabBroken();
+    }
+
+    return result !== "denied";
+  }
+
+  /**
+   * The slab is broken (whoever broke it): its collision goes, so the opening
+   * is genuinely passable, its boards are hidden and the splinters fall. Safe
+   * to apply again.
+   */
+  private applySlabBroken(): void {
+    if (this.collision.setOpen(CEILING_SLAB_ID, true)) {
+      const boards = this.arena.group.getObjectByName(
+        `slab:${CEILING_SLAB_ID}`,
+      );
+
+      if (boards?.visible) {
+        boards.visible = false;
+        this.slabDebris.spawn();
+      }
+
+      // The bulb under it goes with the boards, and the rain comes in.
+      this.junkBulbs.setLit(POWER_BULB, false);
+      slabBulb.power.value = 0;
+      this.arena.setLampBroken(CEILING_SLAB_BULB_LIGHT, true);
+      this.arena.setRainOpening(true);
+    }
+  }
+
+  /** A new round: the slab is whole again. */
+  private restoreSlab(): void {
+    this.ceilingSlab.setBroken(null);
+    this.collision.setOpen(CEILING_SLAB_ID, false);
+    this.slabDebris.clear();
+    this.junkBulbs.setLit(POWER_BULB, true);
+    slabBulb.power.value = 1;
+    this.arena.setLampBroken(CEILING_SLAB_BULB_LIGHT, false);
+    this.arena.setRainOpening(false);
+
+    const boards = this.arena.group.getObjectByName(`slab:${CEILING_SLAB_ID}`);
+
+    if (boards) {
+      boards.visible = true;
+    }
+  }
+
+  /** E on the roof beside a vent: its grille lifts on its hinge and stays up for good. */
+  private liftVentGrilleIfNear(): boolean {
+    const id = this.ventGrilleInReach();
+
+    if (!id) {
+      return false;
+    }
+
+    this.setHatchOpen(id, true);
 
     return true;
   }
 
-  /** The most grenades a player may carry (a pickup gives none past this). */
-  private static readonly GRENADE_CARRY_MAX = 5;
+  /**
+   * A Molotov broke at `point` (moving with `velocity`): the fire starts on
+   * the floor, never on a wall. Against a wall, or on the top of one, the
+   * bottle falls and burns on the floor beside it (the first free spot,
+   * backing away from the way it flew). On a vent grating it burns the grating
+   * and, through it, the floor of the room below as well.
+   */
+  private burstFire(
+    ownerId: string,
+    point: THREE.Vector3,
+    velocity: THREE.Vector3,
+  ): void {
+    const back = Math.atan2(-velocity.z, -velocity.x);
+    const offsets: Array<[number, number]> = [[0, 0]];
+
+    for (const r of [0.4, 0.8, 1.2]) {
+      for (let k = 0; k < 8; k++) {
+        const a = back + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.785;
+
+        offsets.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
+    }
+
+    const isVent = (id: string): boolean =>
+      id.startsWith("vent-grating-") || isVentHatchId(id);
+
+    for (const [dx, dz] of offsets) {
+      const x = point.x + dx;
+      const z = point.z + dz;
+      const surface = this.collision.floorBelow(x, z, point.y);
+
+      // Free of walls and blocks at that spot (a body's width is not needed).
+      if (this.collision.isBlocked(x, z, surface.y, 0.15)) {
+        continue;
+      }
+
+      this.fires.ignite(ownerId, new THREE.Vector3(x, surface.y, z));
+
+      if (isVent(surface.id)) {
+        const below = this.collision.floorBelow(x, z, surface.y - 0.2, isVent);
+
+        this.fires.ignite(ownerId, new THREE.Vector3(x, below.y, z));
+      }
+
+      return;
+    }
+
+    this.fires.ignite(ownerId, point);
+  }
+
+  /** The most of each a player may carry (a pickup gives none past this): 2 grenades, 2 smokes, 1 Molotov. */
+  private static carryMax(type: string): number {
+    return type === "MOLOTOV" ? 1 : 2;
+  }
 
   /** Draws every pickup in the layout as its real item model. */
   private createPickups(): void {
@@ -1509,11 +1682,7 @@ export class Game {
           ? "Molotov"
           : "grenade";
 
-    if (Game.isStash(pickup) && this.stashTaken.has(pickup.type)) {
-      return "ALREADY TAKEN";
-    }
-
-    return have >= Game.GRENADE_CARRY_MAX
+    return have >= Game.carryMax(pickup.type)
       ? "CAN'T CARRY MORE"
       : `PRESS {E} TO TAKE ${name.toUpperCase()}`;
   }
@@ -1528,22 +1697,14 @@ export class Game {
 
     const have = this.utilities.quantityOf(pickup.type) ?? 0;
 
-    // The stash gives one of each kind, no more.
-    if (Game.isStash(pickup) && this.stashTaken.has(pickup.type)) {
+    // Anything below the carry limit can be topped up (used ones are replaced).
+    if (have >= Game.carryMax(pickup.type)) {
       return true;
-    }
-
-    if (have >= Game.GRENADE_CARRY_MAX) {
-      return true;
-    }
-
-    if (Game.isStash(pickup)) {
-      this.stashTaken.add(pickup.type);
     }
 
     this.utilities.add(
       pickup.type,
-      Math.min(pickup.amount, Game.GRENADE_CARRY_MAX - have),
+      Math.min(pickup.amount, Game.carryMax(pickup.type) - have),
     );
 
     const state = this.pickupState.get(pickup.id);
@@ -2439,6 +2600,7 @@ export class Game {
     this.combat.update(dt);
     this.projectiles.update(dt);
     this.fires.update(dt);
+    this.fuelHazard.update();
     this.smoke.update(dt);
     this.combatDebug.update(this.combat);
   }
@@ -2574,8 +2736,7 @@ export class Game {
     this.armoryShutter.reset();
     this.shutterCrush.reset();
 
-    // The stash is full again: one of each may be taken again.
-    this.stashTaken.clear();
+    // The stash is full again.
 
     for (const [id, state] of this.pickupState) {
       if (id.startsWith("armory-")) {
@@ -2587,10 +2748,12 @@ export class Game {
     this.chainHeld = false;
     this.syncArmory();
 
+    this.restoreSlab();
+
     // Every roof hatch is shut again for a new round.
     // (The Armory's vent hatch is not: once lifted it stays up.)
     for (const id of [...this.openHatches]) {
-      if (id !== VENT_HATCH_ID) {
+      if (!isVentHatchId(id)) {
         this.setHatchOpen(id, false);
       }
     }
@@ -3057,6 +3220,7 @@ export class Game {
     this.fuelSpillView.dispose();
     this.fuelHazard.dispose();
     this.ventDrips.dispose();
+    this.slabDebris.dispose();
     this.input.dispose();
 
     this.thrownView.dispose();
