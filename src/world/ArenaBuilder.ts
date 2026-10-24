@@ -20,6 +20,7 @@ import { createCurvedTops } from "./CurvedTops";
 import { createDecals, createPiles } from "./PileMeshes";
 import { createSteelStructure } from "./SteelStructure";
 import { createTankMesh } from "./TankMesh";
+import { VENT_GRATING_PREFIX, VENT_HATCH_ID, grilleBars } from "./ArmoryVent";
 import { VENT_CELL, ventBlocks, ventCeilingY, ventFloorY } from "./Vents";
 import {
   brickGroup,
@@ -132,6 +133,9 @@ const materials = {
   pillar: new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
 };
 
+/** The ladders' worn yellow metal, shared by anything else made to match it (the armory's chain). */
+export const ladderMaterial = materials.ladder;
+
 /** Floors and walls are not here: their concrete and brick come from the material library. */
 const roleMaterials: Record<
   Exclude<PartRole, "floor" | "wall">,
@@ -196,6 +200,15 @@ function mergedBoxes(
 
   return mesh;
 }
+
+/** The Armory vent's grille: the floor grating's steel, a little lighter so it reads overhead. */
+const ventGrille = new THREE.MeshStandardMaterial({
+  name: "VentGrille",
+  color: 0x050506,
+  roughness: 0.7,
+  metalness: 0.3,
+  emissive: 0x000000,
+});
 
 const ventInterior = new THREE.MeshStandardMaterial({
   name: "VentInterior",
@@ -508,6 +521,11 @@ export function createPlatform(
     mesh.renderOrder = 2;
   }
 
+  // The Armory vent's fixed gratings: open bars, solid to stand on.
+  if (solid.id.startsWith(VENT_GRATING_PREFIX)) {
+    return createVentGrating(solid);
+  }
+
   // A hatch is a panel a touch smaller than its hole, so it never fights the roof.
   if (solid.role === "hatch") {
     return createHatchPanel(solid, mesh);
@@ -594,6 +612,26 @@ export function createPlatform(
   return mesh;
 }
 
+/** A fixed vent grating: the hatch grille's bars and frame, not on a hinge. */
+function createVentGrating(solid: BoxSolid): THREE.Group {
+  const group = new THREE.Group();
+
+  group.name = `grating:${solid.id}`;
+  group.position.set(
+    solid.minX + 0.02,
+    solid.height + 0.01,
+    (solid.minZ + solid.maxZ) / 2,
+  );
+
+  const grille = mergedBoxes(grilleBars(solid), ventGrille, false);
+
+  if (grille) {
+    group.add(grille);
+  }
+
+  return group;
+}
+
 /**
  * The hatch panel on a hinge along its west edge. Shut it lies in the roof; open
  * (rotation.z about +1.75 rad, set by the game) it stands up at the hinge,
@@ -602,6 +640,25 @@ export function createPlatform(
  */
 function createHatchPanel(solid: BoxSolid, mesh: THREE.Mesh): THREE.Group {
   const pivot = new THREE.Group();
+
+  if (solid.id === VENT_HATCH_ID) {
+    // The Armory vent: a netted grille with real gaps, on a hinge on its west edge.
+    pivot.name = `hatch:${solid.id}`;
+    pivot.position.set(
+      solid.minX + 0.02,
+      solid.height + 0.01,
+      (solid.minZ + solid.maxZ) / 2,
+    );
+
+    const grille = mergedBoxes(grilleBars(solid), ventGrille, false);
+
+    if (grille) {
+      pivot.add(grille);
+    }
+
+    return pivot;
+  }
+
   const width = (solid.maxX - solid.minX) * 0.96;
 
   pivot.name = `hatch:${solid.id}`;

@@ -15,7 +15,7 @@ import { pallet } from "./StorageRoom";
  *     buckets, a shovel and offcuts.
  *   ACTIVE WORK (the west terrace): tubular scaffolding against the barracks
  *     wall, a leaning work ladder, a mortar board on trestles with a bucket and
- *     trowel, a mason's line and a stake with caution tape, loose bricks by the
+ *     trowel, a stake with caution tape, loose bricks by the
  *     half-built nook wall.
  *   RAW STRUCTURE: reinforcement bars sprouting from the tops of the hall's
  *     columns and from the ends of the unfinished rooftop walls.
@@ -918,10 +918,6 @@ export function furnishConstructionSite(map: MapBuilder, floorY: number): void {
     p.box(-26.9, 0, 0.5, 0.5, 0.006, 0.4, MORTAR, 0.3);
     p.box(-27.0, 0.3, 3.9, 0.05, 0.9, 0.025, 0xb0a884, 0.0, 0.0, 0.0);
 
-    // A mason's line: two nails in the nook wall's ends, a taut line between.
-    p.box(-27.25, 2.4, 1.3, 0.04, 0.04, 0.04, STEEL_BARE);
-    p.box(-27.25, 2.4, 4.9, 0.04, 0.04, 0.04, STEEL_BARE);
-    p.cable(-27.0, 2.4, 3.1, 3.6, 0.008, 0xc9c6b4, Math.PI / 2);
     // The stake and the caution tape across the open end of the scaffold bay.
     p.post(-24.55, 0, -0.9, 1.05, 0.04, TIMBER);
 
@@ -938,7 +934,15 @@ export function furnishConstructionSite(map: MapBuilder, floorY: number): void {
       );
     }
 
-    map.createFitting("site-work-area", F, p.elements, []);
+    // Solid for bodies as well as shots: the trestle, the two buckets, the
+    // barrow, and the stake with its tape.
+    map.createFitting("site-work-area", F, p.elements, [
+      { minX: -27.4, maxX: -26.2, minZ: -0.5, maxZ: 0.1, top: 0.78 },
+      { minX: -27.74, maxX: -27.46, minZ: -0.54, maxZ: -0.26, top: 0.36 },
+      { minX: -26.34, maxX: -26.06, minZ: 0.31, maxZ: 0.59, top: 0.36 },
+      { minX: -26.3, maxX: -24.7, minZ: 0.9, maxZ: 1.9, top: 0.55 },
+      { minX: -24.8, maxX: -24.48, minZ: -2.4, maxZ: -0.85, top: 1.05 },
+    ]);
   }
 
   // ======================================================== RAW STRUCTURE

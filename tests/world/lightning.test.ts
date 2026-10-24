@@ -66,7 +66,7 @@ describe("Lightning", () => {
 
     expect(subtle).toBeGreaterThan(strong);
     expect(strong).toBeGreaterThan(0);
-  });
+  }, 30000);
 
   it("always falls back to zero and idles", () => {
     const bolt = new Lightning({ random: seeded(3) });

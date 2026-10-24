@@ -20,23 +20,27 @@ import {
 } from "./RoomKit";
 
 /**
- * The Server room (x 22 to 32, z -12 to -5, floor 4; inside x 22.3 to 31.7):
- * two rows of server racks with their fronts to the middle aisle and their
- * backs, with the cable bundles, to the outer lanes; ladder trays overhead; a
+ * The Server room (x 22 to 32, z -12 to -5, floor 4, ceiling 6.5 m up; inside
+ * x 22.3 to 31.7): two short rows of 2.6 m server racks each side of a 2.2 m
+ * aisle, their backs, with the cable bundles, to the outer lanes; ladder
+ * trays, beams and a duct overhead; a
  * wall patch cabinet; a maintenance console closing the east end of the
  * aisle; a spare-parts shelf and a service trolley in the west corners.
  *
- * The racks keep the footprints, heights and ids of the graybox racks they
- * replace (so the lanes, 1.4 m or wider, are unchanged): one fitting per row.
- * The aisle stays open from the door (z -9 to -7) to the console.
+ * Fewer racks than before, one fitting per row. The aisle stays open from the
+ * door (z -9 to -7) to the console, and the cross lane between the row ends
+ * stays open for flanking.
  */
 
 const WIRE_DARK = 0x1b1d21;
 const WIRE_RED = 0x4a2a2a;
 const WIRE_BLUE = 0x2a4260;
 const WIRE_GREY = 0x6a707a;
-const CEILING = 3.8;
-const TRAY_Y = 2.32;
+/** The room is as tall as the Storage room: 6.5 m to the ceiling. */
+const CEILING = 6.5;
+/** The racks stand 2.6 m, well under the trays and beams above them. */
+const RACK_H = 2.6;
+const TRAY_Y = 3.9;
 
 /** A rack in use, one stripped bare with its door open, or one with a unit pulled out. */
 type RackState = "live" | "empty" | "pulled";
@@ -60,8 +64,8 @@ function rack(
 
   // The cabinet: a plinth, the body and a top cap, with a side rail each side.
   p.box(cx, 0, cz, w - 0.01, 0.06, 1.0, BLACK);
-  p.box(cx, 0.06, cz, w - 0.02, 1.91, 0.98, GUNMETAL);
-  p.box(cx, 1.97, cz, w - 0.01, 0.03, 1.0, CHARCOAL);
+  p.box(cx, 0.06, cz, w - 0.02, RACK_H - 0.09, 0.98, GUNMETAL);
+  p.box(cx, RACK_H - 0.03, cz, w - 0.01, 0.03, 1.0, CHARCOAL);
 
   for (const s of [-1, 1]) {
     p.box(
@@ -69,7 +73,7 @@ function rack(
       0.06,
       fz + front * 0.01,
       0.04,
-      1.91,
+      RACK_H - 0.09,
       0.024,
       STEEL,
     );
@@ -102,7 +106,7 @@ function rack(
         ];
   let index = 0;
 
-  while (y < 1.72 && state !== "empty") {
+  while (y < RACK_H - 0.28 && state !== "empty") {
     let unit = order[index % order.length];
 
     index++;
@@ -121,7 +125,7 @@ function rack(
             : 0.045;
     const z = fz + front * 0.006;
 
-    if (y + h > 1.88) {
+    if (y + h > RACK_H - 0.12) {
       break;
     }
 
@@ -247,9 +251,9 @@ function rack(
   if (state === "empty") {
     // Stripped: a dark open frame with its rail holes, the door swung back
     // and left hanging, a few cable ends and a coil on the floor.
-    p.box(cx, 0.1, fz + front * 0.004, pw + 0.04, 1.8, 0.02, 0x232a34);
+    p.box(cx, 0.1, fz + front * 0.004, pw + 0.04, RACK_H - 0.2, 0.02, 0x232a34);
 
-    for (let k = 0; k < 14; k++) {
+    for (let k = 0; k < 20; k++) {
       for (const sx of [-1, 1]) {
         p.box(
           cx + sx * (pw / 2),
@@ -268,7 +272,7 @@ function rack(
       0.1,
       fz + front * 0.3,
       0.025,
-      1.85,
+      RACK_H - 0.15,
       0.56,
       GUNMETAL,
     );
@@ -308,9 +312,9 @@ function rack(
   }
 
   // The back: a power strip up one side and a bundle of cables to the tray.
-  p.box(cx + (w / 2 - 0.09), 0.3, bz - front * 0.03, 0.05, 1.3, 0.05, BLACK);
+  p.box(cx + (w / 2 - 0.09), 0.3, bz - front * 0.03, 0.05, 1.9, 0.05, BLACK);
 
-  for (let k = 0; k < 5; k++) {
+  for (let k = 0; k < 8; k++) {
     p.box(
       cx + (w / 2 - 0.09),
       0.4 + k * 0.22,
@@ -324,15 +328,16 @@ function rack(
 
   const bundle = [WIRE_DARK, WIRE_RED, WIRE_BLUE][Math.floor(random() * 3)];
 
-  p.cableUp(cx - 0.1, 0.24, bz - front * 0.04, 2.06, 0.038, bundle);
-  p.cableUp(cx - 0.06, 0.4, bz - front * 0.04, 1.9, 0.026, WIRE_DARK);
+  // The bundle rises past the rack's top to the overhead tray.
+  p.cableUp(cx - 0.1, 0.24, bz - front * 0.04, TRAY_Y - 0.2, 0.038, bundle);
+  p.cableUp(cx - 0.06, 0.4, bz - front * 0.04, RACK_H - 0.3, 0.026, WIRE_DARK);
 
-  for (const by of [0.6, 1.1, 1.6]) {
+  for (const by of [0.6, 1.1, 1.6, 2.1, 2.6, 3.1, 3.5]) {
     p.box(cx - 0.08, by, bz - front * 0.04, 0.09, 0.03, 0.07, STEEL_LIGHT);
   }
 
   // A small label on the top front edge.
-  plate(p, cx, 1.9, fz + front * 0.012, w - 0.2, 0.05, "z", front);
+  plate(p, cx, RACK_H - 0.1, fz + front * 0.012, w - 0.2, 0.05, "z", front);
 }
 
 /** A row of racks across `x0` to `x1`; the last is a network cabinet. */
@@ -368,45 +373,18 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
   const random = rng(7301);
 
   // ------------------------------------------------------------ the racks
+  // Fewer racks and a wider aisle: two short rows each side of a 2.2 m aisle
+  // (z -9.95 to -7.75), a 3.3 m cross lane between the row ends, and a lane
+  // behind each row.
+  const NORTH_Z = -10.45;
+  const SOUTH_Z = -7.25;
   const rows: Array<
     [string, number, number, number, 1 | -1, number, RackState[]]
   > = [
-    [
-      "rack-server-1",
-      23.7,
-      26.2,
-      -9.7,
-      1,
-      3,
-      ["live", "empty", "live", "live"],
-    ],
-    [
-      "rack-server-2",
-      27.9,
-      31.7,
-      -9.7,
-      1,
-      0,
-      ["live", "live", "pulled", "live", "empty", "live"],
-    ],
-    [
-      "rack-server-3",
-      23.8,
-      27.0,
-      -7.2,
-      -1,
-      2,
-      ["live", "live", "live", "empty", "live"],
-    ],
-    [
-      "rack-server-4",
-      28.6,
-      31.7,
-      -7.2,
-      -1,
-      4,
-      ["live", "pulled", "live", "live", "live"],
-    ],
+    ["rack-server-1", 24.4, 26.3, NORTH_Z, 1, 2, ["live", "empty", "live"]],
+    ["rack-server-2", 29.5, 31.7, NORTH_Z, 1, 0, ["live", "pulled", "live"]],
+    ["rack-server-3", 24.6, 26.7, SOUTH_Z, -1, 2, ["live", "live", "empty"]],
+    ["rack-server-4", 29.5, 31.7, SOUTH_Z, -1, 1, ["pulled", "live", "live"]],
   ];
 
   for (const [id, x0, x1, cz, front, network, states] of rows) {
@@ -414,29 +392,63 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
 
     row(p, random, x0, x1, cz, front, network, states);
     map.createFitting(id, F, p.elements, [
-      { minX: x0, maxX: x1, minZ: cz - 0.5, maxZ: cz + 0.5, top: 2.0 },
+      { minX: x0, maxX: x1, minZ: cz - 0.5, maxZ: cz + 0.5, top: RACK_H },
     ]);
   }
 
   // --------------------------------------- overhead trays (drawn only)
   {
     const p = new Pieces();
+    const northRear = NORTH_Z - 0.54;
+    const southRear = SOUTH_Z + 0.54;
 
-    // A trunk along the north wall, a branch down over the gap between the
-    // racks, and one tray over each row.
-    trayX(p, 22.6, 31.5, TRAY_Y + 0.0, -11.7, 0.34, CEILING, [
+    // Steel beams across the room under the ceiling, every 2.6 m.
+    for (let x = 23.3; x < 31.8; x += 2.6) {
+      p.box(x, CEILING - 0.6, -8.65, 0.3, 0.05, 6.4, STEEL);
+      p.box(x, CEILING - 0.32, -8.65, 0.3, 0.05, 6.4, STEEL);
+      p.box(x, CEILING - 0.55, -8.65, 0.06, 0.23, 6.3, CHARCOAL);
+    }
+
+    // The high ventilation duct along the south wall, with flanges and drops.
+    p.box(27.0, CEILING - 1.6, -5.9, 9.0, 0.7, 0.8, GUNMETAL);
+
+    for (let x = 22.8; x < 31.5; x += 1.8) {
+      p.box(x, CEILING - 1.63, -5.9, 0.07, 0.76, 0.86, STEEL);
+    }
+
+    for (const x of [24.0, 29.0]) {
+      p.box(x, CEILING - 1.85, -5.9, 0.5, 0.25, 0.5, CHARCOAL);
+    }
+
+    // A trunk along the north wall, a branch over the cross lane, and one
+    // tray behind each row, where its cables rise.
+    trayX(p, 22.6, 31.5, TRAY_Y, -11.7, 0.34, CEILING - 0.6, [
       WIRE_DARK,
       WIRE_BLUE,
     ]);
-    trayZ(p, 27.05, TRAY_Y, -11.7, -7.2, 0.34, CEILING, [WIRE_DARK, WIRE_RED]);
-    trayX(p, 23.7, 31.7, TRAY_Y, -9.7, 0.4, CEILING, [
+    trayZ(p, 28.1, TRAY_Y, -11.7, southRear, 0.34, CEILING - 0.6, [
+      WIRE_DARK,
+      WIRE_RED,
+    ]);
+    trayX(p, 24.4, 31.7, TRAY_Y, northRear, 0.4, CEILING - 0.6, [
       WIRE_DARK,
       WIRE_RED,
       WIRE_BLUE,
     ]);
-    trayX(p, 23.8, 31.7, TRAY_Y, -7.2, 0.4, CEILING, [WIRE_DARK, WIRE_BLUE]);
+    trayX(p, 24.6, 31.7, TRAY_Y, southRear, 0.4, CEILING - 0.6, [
+      WIRE_DARK,
+      WIRE_BLUE,
+    ]);
     // A drop from the trunk to the wall cabinet.
     p.cableUp(24.55, 1.5, -11.76, TRAY_Y - 1.4, 0.04, WIRE_DARK);
+
+    // Light fittings over the aisle: a pair of high-bay lamps on rods.
+    for (const x of [25.0, 29.0]) {
+      p.post(x, CEILING - 1.2, -8.75, 0.7, 0.025, CHARCOAL);
+      p.box(x, CEILING - 1.35, -8.75, 0.7, 0.16, 0.34, CHARCOAL);
+      p.box(x, CEILING - 1.37, -8.75, 0.58, 0.03, 0.26, 0xdfe6ea);
+    }
+
     map.createFitting("fittings-server-trays", F, p.elements, []);
   }
 
@@ -577,11 +589,11 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
 
     for (const dx of [x0 + 0.03, x1 - 0.03]) {
       for (const dz of [z0 + 0.03, z1 - 0.03]) {
-        p.box(dx, 0, dz, 0.05, 1.75, 0.05, CHARCOAL);
+        p.box(dx, 0, dz, 0.05, 2.7, 0.05, CHARCOAL);
       }
     }
 
-    for (let level = 0; level < 4; level++) {
+    for (let level = 0; level < 6; level++) {
       const y = 0.2 + level * 0.45;
 
       p.box(xc, y, zc, x1 - x0 - 0.02, 0.03, z1 - z0 - 0.02, STEEL);
@@ -623,6 +635,10 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
           Math.PI / 2,
           Math.PI / 2,
         );
+      } else if (level > 3) {
+        // Sealed spares boxes, stacked on the upper tiers.
+        p.box(xc, y + 0.03, z0 + 0.35, 0.45, 0.3, 0.45, CARDBOARD);
+        p.box(xc, y + 0.03, z0 + 0.95, 0.45, 0.24, 0.4, 0x6f5d40, 0.05);
       } else {
         // A toolbox and loose cable ends.
         p.box(xc, y + 0.03, z0 + 0.3, 0.35, 0.14, 0.5, 0x8a3a30);
@@ -632,7 +648,7 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
     }
 
     map.createFitting("fittings-server-spares", F, p.elements, [
-      { minX: x0, maxX: x1, minZ: z0, maxZ: z1, top: 1.75 },
+      { minX: x0, maxX: x1, minZ: z0, maxZ: z1, top: 2.7 },
     ]);
   }
 

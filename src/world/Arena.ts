@@ -192,6 +192,18 @@ export class Arena {
         }
 
         this.group.add(spot);
+        this.group.add(spot.target);
+
+        if (FLICKERING.has(light.id)) {
+          flickering.push(spot);
+        }
+
+        // A tube light is a lamp in a fixture of its own (drawn with its room):
+        // no halogen head, no beam, no moths.
+        if (light.id.startsWith("tube-")) {
+          continue;
+        }
+
         mothLamps.push({
           position: spot.position.clone(),
           aim: spot.target.position.clone(),
@@ -204,7 +216,6 @@ export class Arena {
           halogens.push({ light: spot, glow });
         }
 
-        this.group.add(spot.target);
         continue;
       }
 
@@ -222,6 +233,19 @@ export class Arena {
       }
 
       lamp.position.set(light.x, light.y, light.z);
+
+      // A room lamp with shadows: its light stops at the walls (and at the
+      // racks and the pile), so it does not shine out through them onto the
+      // floors and walls of the next room.
+      if (light.castShadow === true) {
+        lamp.castShadow = true;
+        lamp.shadow.mapSize.set(512, 512);
+        lamp.shadow.camera.near = 0.3;
+        lamp.shadow.camera.far = light.distance;
+        lamp.shadow.bias = -0.002;
+        lamp.shadow.normalBias = 0.03;
+      }
+
       this.group.add(lamp);
     }
 

@@ -1445,6 +1445,7 @@ function furnishPowerRoom(
   });
   map.addLight({
     id: "light-power-room-pendant",
+    castShadow: true,
     x: 3.2,
     y: F + 2.8,
     z: -20.5,

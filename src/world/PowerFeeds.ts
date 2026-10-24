@@ -10,7 +10,7 @@ import { openAt } from "./Debris";
 import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
 import { poleOf } from "./MessyWiring";
-import { nightLights } from "./NightLights";
+import { nightLights, WALL_LAMPS } from "./NightLights";
 import { CHARCOAL, GUNMETAL, STEEL_BARE } from "./RoomKit";
 
 /**
@@ -42,10 +42,20 @@ type Vec = [number, number, number];
 function isRoomLamp(l: LightDefinition): boolean {
   return (
     l.y > F + 1 &&
-    l.y < F + 4.3 &&
-    (l.id.startsWith("light-room-") || l.id.startsWith("indicator-"))
+    l.y < F + 6.6 &&
+    (l.id.startsWith("light-room-") ||
+      l.id.startsWith("indicator-") ||
+      l.id === "halogen-wall-room-armory")
   );
 }
+
+/**
+ * Where along its wall a wall lamp's cable comes down, when that is not
+ * straight under the lamp (the armory's lamp sits over the shutter housing).
+ */
+const WALL_DROP: Record<string, number> = {
+  "halogen-wall-room-armory": 6.5,
+};
 
 function isFirstFloorFloodlight(l: LightDefinition): boolean {
   return l.id.startsWith("light-support-");
@@ -360,7 +370,16 @@ export function furnishPowerFeeds(map: MapBuilder): void {
     );
   const byRoom = new Map<string, LightDefinition[]>();
 
+  const wallLamps: LightDefinition[] = [];
+
   for (const lamp of nightLights(layout).filter(isRoomLamp)) {
+    // A lamp bolted to a wall has a cable of its own (below), not the ceiling's.
+    if (WALL_LAMPS[lamp.id]) {
+      wallLamps.push(lamp);
+
+      continue;
+    }
+
     const room = roomOf(lamp);
 
     if (room) {
@@ -437,6 +456,33 @@ export function furnishPowerFeeds(map: MapBuilder): void {
     }
 
     floorRun([wx, wz]);
+  }
+
+  // -------------------------------------------------------- the wall lamps
+  // Each one's cable goes into the wall behind it, along the wall to where
+  // it is clear of the fittings (if the lamp is not over such a place), then
+  // down the wall's face, clamped, to the floor and away to the feed.
+  for (const lamp of wallLamps) {
+    const toWall = WALL_LAMPS[lamp.id];
+    const wx = lamp.x + toWall[0] * 0.32;
+    const wz = lamp.z + toWall[1] * 0.32;
+    const top = lamp.y - F - 0.12;
+    // Down the wall here, or at the lamp's own spot when it has no entry.
+    const alongX = toWall[0] === 0;
+    const down = WALL_DROP[lamp.id];
+    const dx = alongX && down !== undefined ? down : wx;
+    const dz = !alongX && down !== undefined ? down : wz;
+
+    wire([lamp.x, top, lamp.z], [wx, top, wz]);
+    sag([wx, top, wz], [dx, top, dz]);
+    wire([dx, top, dz], [dx, diameter / 2, dz]);
+    clamp(wx, top, wz);
+
+    for (let y = 0.6; y < top; y += 0.9) {
+      clamp(dx, y, dz);
+    }
+
+    floorRun([dx, dz]);
   }
 
   // ---------------------------------------- the first-floor floodlights

@@ -1,3 +1,4 @@
+import { fixedVentBlocks } from "../../src/world/ArmoryVent";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
@@ -65,6 +66,8 @@ describe("Arena meshes", () => {
         ventBlocks(ARENA_LAYOUT.upperVents).length +
         1 + // the upper network's floor (its walls are the cut floor)
         2 + // the north and south wings, cut round the upper grating
+        1 + // the Armory vent hatch's grille (one merged mesh)
+        fixedVentBlocks().length + // and each fixed grating of the vent row
         pileMeshes + // bags, bricks, planks, chunks: one merged mesh each
         ARENA_LAYOUT.curves.length + // a geometry per wavy-topped barrier
         (ARENA_LAYOUT.decals.length > 0 ? 1 : 0) + // the floor marks

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { LightDefinition } from "./ArenaLayout";
+import { WALL_LAMPS } from "./NightLights";
 
 /**
  * What a floodlight looks like when it is on: a glowing lens and a faint
@@ -76,9 +77,30 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
     root.add(mast);
   }
 
+  // A wall lamp is held off its wall by an arm and a back plate.
+  const wall = WALL_LAMPS[light.id];
+
+  if (wall) {
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.55, 0.45),
+      housing,
+    );
+    const arm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.08, 0.08),
+      housing,
+    );
+    const mount = new THREE.Group();
+
+    mount.rotation.y = Math.atan2(-wall[1], wall[0]);
+    plate.position.x = 0.36;
+    arm.position.x = 0.18;
+    mount.add(plate, arm);
+    root.add(mount);
+  }
+
   // A halogen floodlight head of its own (the map's fixtures are modelled
   // already): a housing, a front rim and a visor.
-  if (light.id.startsWith("halogen-")) {
+  if (light.id.startsWith("halogen-") || wall) {
     const body = new THREE.Mesh(
       new THREE.BoxGeometry(0.55, 0.38, 0.3),
       housing,

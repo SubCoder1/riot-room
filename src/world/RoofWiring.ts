@@ -172,4 +172,54 @@ export function furnishRoofWiring(map: MapBuilder): void {
 
     map.createFitting(`roof-wiring-${roof}`, roof, p.elements, []);
   }
+
+  furnishWallLampWiring(map);
+}
+
+/**
+ * The cable of a wall-mounted halogen: out of the back plate, up the wall's
+ * face under clips, over the top and down the far side to a junction box on
+ * the roof, and from there along the roof to a feed box.
+ */
+function furnishWallLampWiring(map: MapBuilder): void {
+  const lamp = EXTRA_LAMPS.find((l) => l.id === "halogen-wall-storage");
+
+  if (!lamp) {
+    return;
+  }
+
+  const roof = 8.1;
+  const face = lamp.x - 0.36 + 0.04;
+  const back = face - 0.46;
+  const top = 1.9;
+  const p = new Pieces();
+  const up = lamp.y - roof - 0.2;
+
+  // Up the face from the plate, across the wall top, down the yard side.
+  p.cableUp(face, up, lamp.z, top - up + 0.04, 0.03, CABLE);
+  p.cable((face + back) / 2, top + 0.03, lamp.z, face - back, 0.03, CABLE);
+  p.cableUp(back, 0.3, lamp.z, top - 0.3, 0.03, CABLE);
+
+  for (const y of [up + 0.2, up + 0.6, 0.6, 1.2]) {
+    const x = y > top - 0.1 || y < up ? back : face;
+
+    p.box(x, y, lamp.z - 0.035, 0.05, 0.07, 0.07, GUNMETAL);
+  }
+
+  // The junction box at the foot of the wall, and a clipped run to a feed box.
+  p.box(back - 0.1, 0, lamp.z - 0.1, 0.18, 0.3, 0.2, CHARCOAL);
+  p.box(back - 0.1, 0.3, lamp.z - 0.1, 0.2, 0.025, 0.22, GUNMETAL);
+  run(
+    p,
+    [
+      [back - 0.1, lamp.z],
+      [back - 0.1, lamp.z - 1.5],
+      [back - 2.4, lamp.z - 1.5],
+    ],
+    0.035,
+    CABLE,
+  );
+  feedBox(p, back - 2.55, lamp.z - 1.5);
+
+  map.createFitting("roof-wiring-wall-lamp", roof, p.elements, []);
 }

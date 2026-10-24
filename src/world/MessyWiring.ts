@@ -6,7 +6,7 @@ import {
 } from "./ArenaLayout";
 import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
-import { nightLights } from "./NightLights";
+import { nightLights, WALL_LAMPS } from "./NightLights";
 import { GUNMETAL, STEEL_BARE } from "./RoomKit";
 
 /**
@@ -249,6 +249,13 @@ export function furnishMessyWiring(map: MapBuilder): void {
     random() < 0.6 ? pickRed() : OTHER[Math.floor(random() * OTHER.length)];
 
   for (const lamp of lamps) {
+    // A lamp bolted to a wall has its own cable run (RoofWiring), and a tube
+    // light hangs in a fixture with its own conduit (ArmoryLighting): neither
+    // has a pole to wind a lead round.
+    if (WALL_LAMPS[lamp.id] || lamp.id.startsWith("tube-")) {
+      continue;
+    }
+
     const level = floorUnder(solids, lamp.x, lamp.z, lamp.y - 1);
     const p = piecesAt(level);
     // Round the foot: a few runs sprawling out, a coil, and a couple of drapes.

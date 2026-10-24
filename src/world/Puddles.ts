@@ -97,9 +97,9 @@ const FRAGMENT = /* glsl */ `
         hash(vec2(cycle, float(i) + vSeed * 9.0)),
         hash(vec2(float(i) + vSeed * 4.0, cycle))
       ) - 0.5) * 1.1;
-      float radius = age * 0.55;
+      float radius = age * 0.2;
       float dist = abs(length(p - centre) - radius);
-      float ring = smoothstep(0.09, 0.0, dist) * smoothstep(0.0, 0.03, radius);
+      float ring = smoothstep(0.04, 0.0, dist) * smoothstep(0.0, 0.03, radius);
 
       rings += ring * (1.0 - age) * (1.0 - age);
     }
@@ -142,10 +142,11 @@ export function createPuddles(
     ...ventBlocks(layout.upperVents),
   ];
   const spots: Spot[] = [];
-  const levels = [0, 4, 8.1, 9.3, 10.8];
-  const lit = lights.filter((l) => l.target);
+  // Ground, first floor, the balconies (2.8 and 5.2) and the three roof layers.
+  const levels = [0, 4, 2.8, 8.1, 5.2, 9.3, 10.8];
+  const lit = lights.filter((l) => l.target && !l.id.startsWith("tube-"));
 
-  for (let tries = 0; tries < 6000 && spots.length < COUNT; tries++) {
+  for (let tries = 0; tries < 40000 && spots.length < COUNT; tries++) {
     // Half of them in or near a lamp's pool, so they are seen.
     const lamp =
       lit.length > 0 && spots.length % 2 === 0
@@ -159,12 +160,42 @@ export function createPuddles(
       : (random() * 2 - 1) * (halfZ - 1);
     const y = collision.groundHeight(x, z, TOP);
 
-    // Open to the sky: the rain lands here, so no roof is overhead.
-    if (!levels.some((level) => Math.abs(level - y) < 0.02)) {
+    // Open to the sky: the rain lands here, so no roof is overhead. They are
+    // shared out over the levels in turn, so some are on balconies and roofs.
+    const want = levels[tries % levels.length];
+    const here = spots.filter((o) => Math.abs(o.y - want) < 0.02).length;
+
+    if (here >= Math.ceil(COUNT / levels.length) + 2) {
+      continue;
+    }
+
+    if (Math.abs(want - y) > 0.02) {
       continue;
     }
 
     const radius = 0.5 + random() * 0.7;
+
+    // The whole patch lies on this one surface: no edge of a roof, balcony or
+    // step under it, or the water would hang in the air.
+    let flat = true;
+
+    for (let k = 0; k < 16 && flat; k++) {
+      const a = (k / 16) * Math.PI * 2;
+
+      for (const reach of [0.5, 1.0, 1.4]) {
+        const px = x + Math.cos(a) * radius * reach * 1.3 + Math.cos(a) * 0.15;
+        const pz = z + Math.sin(a) * radius * reach * 1.3 + Math.sin(a) * 0.15;
+
+        if (Math.abs(collision.groundHeight(px, pz, y + 0.3) - y) > 0.02) {
+          flat = false;
+          break;
+        }
+      }
+    }
+
+    if (!flat) {
+      continue;
+    }
 
     if (
       !openAt(solids, x, z, y) ||

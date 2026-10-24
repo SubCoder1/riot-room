@@ -21,6 +21,20 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     distance: 4.5,
   },
   {
+    id: "halogen-wall-room-armory",
+    // Bolted to the outside of the east wall over the shutter, lighting the
+    // walkway and the way in.
+    x: -19.84,
+    y: 8.3,
+    z: 8,
+    // The warm yellow of the site's work halogens (the scaffold's).
+    color: 0xffcf94,
+    intensity: 130,
+    distance: 15,
+    target: { x: -18.6, y: 4.0, z: 8 },
+    angle: 0.9,
+  },
+  {
     id: "halogen-roof-east",
     x: 12,
     y: 15.3,
@@ -32,19 +46,31 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     angle: 0.62,
   },
   {
-    id: "halogen-roof-storage",
-    // Moved to the yard roof, beside the slanted glass cover over the storage
-    // room, and turned to face it: its beam goes in through the glass.
-    x: -13,
-    y: 12.6,
-    z: 22,
+    id: "halogen-wall-storage",
+    // Bolted to a short wall on the yard roof, beside the slanted glass cover
+    // over the storage room, and turned to face it: its beam goes in through
+    // the glass.
+    x: -9.04,
+    y: 9.3,
+    z: 23,
     color: HALOGEN,
-    intensity: 95,
-    distance: 18,
-    target: { x: -8, y: 8.1, z: 20.2 },
-    angle: 0.7,
+    intensity: 170,
+    distance: 20,
+    target: { x: -6.6, y: 6.6, z: 20.8 },
+    angle: 0.75,
   },
 ];
+
+/**
+ * Lamps bolted to a wall, and the direction (x, z) of that wall from the lamp.
+ * Each is held off the wall by a bracket (0.36 m) and has its own cable down
+ * the wall.
+ */
+export const WALL_LAMPS: Record<string, [number, number]> = {
+  "halogen-wall-storage": [-1, 0],
+  // Outside the east wall, over the shutter.
+  "halogen-wall-room-armory": [-1, 0],
+};
 
 /** Floodlights left off (nobody switched them on tonight). */
 const OFF = new Set([
@@ -57,7 +83,8 @@ const OFF = new Set([
 /** Fixtures that are on but weak, so their corner stays mostly dark. */
 const DIM: Record<string, number> = {
   "light-support-south-1": 0.5,
-  "light-site-scaffold": 0.5,
+  // The scaffold lamp lights the alley: bright enough to be seen from far up it.
+  "light-site-scaffold": 2.6,
 };
 
 /**
@@ -67,17 +94,20 @@ const DIM: Record<string, number> = {
  */
 const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
   {
-    "light-room-warehouse-a": { scale: 0.55, color: 0xffc78a, reach: 0.85 },
-    "light-room-warehouse-b": { scale: 0.5, color: 0xffc78a, reach: 0.85 },
-    "light-room-archive": { scale: 0.55, color: 0xffb870, reach: 0.85 },
-    "light-room-server": { scale: 0.45, color: 0xc3d0e4, reach: 0.8 },
-    "light-room-break": { scale: 0.6, reach: 0.85 },
-    "light-room-barracks": { scale: 0.6, reach: 0.85 },
-    "light-room-armory": { scale: 0.85 },
-    "light-room-yard": { scale: 0.65, reach: 0.85 },
-    "light-room-hall-a": { scale: 0.6, reach: 0.85 },
-    "light-room-hall-b": { scale: 0.45, reach: 0.85 },
-    "light-power-room-work": { scale: 1, reach: 0.8 },
+    "light-room-warehouse-a": { scale: 0.88, color: 0xffc78a, reach: 1 },
+    "light-room-warehouse-b": { scale: 0.8, color: 0xffc78a, reach: 1 },
+    "light-room-archive": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "light-room-archive-b": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "light-room-archive-c": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
+    "light-room-break": { scale: 0.96, reach: 1 },
+    "light-room-barracks": { scale: 0.96, reach: 1 },
+    "light-room-yard": { scale: 1.04, reach: 1 },
+    "light-room-hall-a": { scale: 0.96, reach: 1 },
+    "light-room-hall-b": { scale: 0.72, reach: 1 },
+    "workshop-light-bench": { scale: 2.2 },
+    "workshop-light-machines": { scale: 2.2 },
+    "light-power-room-work": { scale: 1, reach: 1 },
     // The room's centre lamp: a dim, yellowish bulb, a little stronger than before.
     "light-power-room-pendant": { scale: 2.4, color: 0xffc766, reach: 1.0 },
   };
@@ -86,6 +116,8 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
 export const FLICKERING = new Set([
   "light-power-room-work",
   "light-power-room-pendant",
+  // The Armory's loose tube: the one fluorescent that stutters now and then.
+  "tube-armory-3",
 ]);
 
 /**
@@ -105,7 +137,7 @@ function keepInRoom(
       light.z > r.minZ &&
       light.z < r.maxZ &&
       light.y > r.floorY &&
-      light.y < r.floorY + 4.2,
+      light.y < r.floorY + 6.6,
   );
 
   if (!room) {
