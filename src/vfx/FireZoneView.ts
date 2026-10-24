@@ -167,6 +167,10 @@ export class FireZoneView {
 
     glow.rotation.x = -Math.PI / 2;
     glow.position.y = 0.03;
+    // The hot core is always drawn over the body of the flame (the two are
+    // sorted by distance otherwise, and the body can hide the core).
+    flames.renderOrder = 1;
+    cores.renderOrder = 2;
     flames.frustumCulled = false;
     cores.frustumCulled = false;
     embers.frustumCulled = false;
@@ -175,6 +179,17 @@ export class FireZoneView {
     this.group.add(group);
 
     return { group, glow, flames, cores, embers };
+  }
+
+  /**
+   * For the warm-up draw: puts the fuel fire's geometry on the first fire
+   * (and back), so it is on the graphics card before the first fuel fire.
+   */
+  public previewFuel(on: boolean): void {
+    const entry = this.entries[0];
+
+    entry.flames.geometry = on ? this.fuelFlameGeometry : this.flameGeometry;
+    entry.cores.geometry = on ? this.fuelCoreGeometry : this.coreGeometry;
   }
 
   /** Draws the zones as they are now (`time` in seconds, for the flicker). */
@@ -199,12 +214,16 @@ export class FireZoneView {
       fireRadius(Math.min(fireAge(zone), FIRE_SPREAD_DONE)) *
       (fuel ? MOLOTOV_CONFIG.FUEL_FIRE_RADIUS_SCALE : 1);
     // A fuel fire roars: much taller flames, a little broader.
-    const tall = fuel ? MOLOTOV_CONFIG.FUEL_FIRE_HEIGHT_SCALE : 1;
+    // (An ordinary fire stands taller than the clump scatter alone makes it.)
+    const tall = fuel ? MOLOTOV_CONFIG.FUEL_FIRE_HEIGHT_SCALE : 1.7;
     const broad = fuel ? 1.5 : 1;
     const intensity = fireIntensity(fireAge(zone));
     const count = fuel ? FLAMES : ORDINARY_FLAMES;
-    // A fuel fire is violent: it flickers and sways much faster and harder.
-    const fury = fuel ? 1.7 : 1;
+    // A fuel fire sways harder (but not faster: see pace).
+    const fury = fuel ? 1.3 : 1;
+    // How fast the flames move: a slow, heavy burn (the sway and flicker rates
+    // are scaled by it, the size of the sway is not).
+    const pace = fuel ? 0.5 : 0.6;
     entry.flames.count = count;
     entry.cores.count = count;
     const seed = zone.seed;
@@ -249,15 +268,16 @@ export class FireZoneView {
         0.7 +
         0.3 *
           Math.sin(
-            time * fury * (6 + hash(seed, i, 2) * 6) + hash(seed, i, 3) * 6.28,
+            time * pace * (6 + hash(seed, i, 2) * 6) + hash(seed, i, 3) * 6.28,
           );
       // Flames come and go a little, leaving gaps.
-      const alive = 0.5 + 0.5 * Math.sin(time * 1.7 + hash(seed, i, 4) * 6.28);
+      const alive =
+        0.5 + 0.5 * Math.sin(time * 1.7 * pace + hash(seed, i, 4) * 6.28);
       // As the fire dies the tongues go out one at a time, each at its own
       // moment, sinking and guttering first; the last few are low and ragged.
       const dying = fireDyingFactor(fireAge(zone), hash(seed, i, 30));
       const gutter =
-        dying < 1 ? 0.75 + 0.25 * Math.sin(time * 23 + i * 3.1) : 1;
+        dying < 1 ? 0.75 + 0.25 * Math.sin(time * 23 * pace + i * 3.1) : 1;
       const height =
         (0.45 + 0.6 * hash(seed, i, 5)) *
         (0.6 + 0.5 * hash(seed, clump, 43)) *
@@ -270,13 +290,17 @@ export class FireZoneView {
         (0.55 + 0.45 * alive);
       // Tongues differ in width and in how flat they are (never a row of copies).
       const width = (0.1 + 0.11 * hash(seed, i, 6)) * broad;
-      const flat = 0.8 + 0.4 * hash(seed, i, 10);
+      const flat = 0.85 + 0.3 * hash(seed, i, 10);
       // A tongue is never lower than it is wide (until the fire is dying): no
       // flat discs lying on the ground.
-      const tongue =
+      const rawTongue =
         dying >= 1
-          ? Math.max(height, width * 1.7 * intensity * (0.8 + 0.2 * flicker))
+          ? Math.max(height, width * 2.6 * intensity * (0.8 + 0.2 * flicker))
           : height;
+      // (A fuel fire's tongues are tall but kept below chest height.)
+      const tongue = fuel
+        ? Math.min(rawTongue, MOLOTOV_CONFIG.FUEL_FIRE_MAX_FLAME_HEIGHT)
+        : rawTongue;
       // Tongues lean and sway a little, each in its own rhythm.
       const sway = hash(seed, i, 9) * 6.28;
 
@@ -321,9 +345,9 @@ export class FireZoneView {
 
       this.position.set(fx, ground, fz);
       this.euler.set(
-        0.26 * fury * Math.sin(time * 3 * fury + sway),
+        0.26 * fury * Math.sin(time * 3 * pace + sway),
         hash(seed, i, 7) * 6.28,
-        0.26 * fury * Math.cos(time * 2.6 * fury + sway),
+        0.26 * fury * Math.cos(time * 2.6 * pace + sway),
       );
       this.rotation.setFromEuler(this.euler);
       this.scale.set(width * flat, Math.max(tongue, 0.001), width / flat);

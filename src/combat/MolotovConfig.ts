@@ -62,7 +62,9 @@ export const MOLOTOV_CONFIG = {
   /** Its radius against an ordinary Molotov fire's. */
   FUEL_FIRE_RADIUS_SCALE: 1.3,
   /** How much taller its flames are drawn. */
-  FUEL_FIRE_HEIGHT_SCALE: 4.4,
+  FUEL_FIRE_HEIGHT_SCALE: 2.4,
+  /** No flame is drawn taller than this (below chest height), metres. */
+  FUEL_FIRE_MAX_FLAME_HEIGHT: 1.25,
   /** How far above the floor a body still burns in it (a jump does not clear it), metres. */
   FUEL_FIRE_VERTICAL_REACH: 3.2,
   /** Each tick of damage against an ordinary fire's (the cap is lifted by the same). */

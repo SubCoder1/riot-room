@@ -83,6 +83,9 @@ export class FuelSpillView {
 
       (mesh.material as THREE.MeshPhysicalMaterial).map = texture;
       mesh.name = spill.id;
+      // Drawn first among the see-through things: the flames over the pool
+      // are always in front of it, from any side and from above.
+      mesh.renderOrder = -1;
       this.textures.push(texture);
       this.meshes.set(spill.id, mesh);
       this.group.add(mesh);
@@ -351,16 +354,16 @@ export class FuelSpillView {
       // The oil burns off: it darkens under the fire (no shine, no glow) and is
       // left as a dull scorch. It burns once.
       if (state === "burning") {
-        material.color.setRGB(0.35, 0.3, 0.28);
-        material.emissive.setRGB(0.06, 0.02, 0.0);
+        material.color.setRGB(0.22, 0.19, 0.18);
+        material.emissive.setRGB(0.03, 0.01, 0.0);
         material.roughness = 0.7;
-        material.clearcoat = 0;
+        material.clearcoat = 0.02;
         material.opacity = 1;
       } else if (state === "spent") {
         material.color.setRGB(0.22, 0.2, 0.2);
         material.emissive.setRGB(0, 0, 0);
         material.roughness = 0.95;
-        material.clearcoat = 0;
+        material.clearcoat = 0.02;
         material.opacity = 0.8;
       } else {
         material.color.setRGB(1, 1, 1);
@@ -369,6 +372,8 @@ export class FuelSpillView {
         material.roughness = 0.14;
         material.clearcoat = 1;
         material.opacity = 1;
+        // (The clear coat never goes to 0: that would switch the shader and
+        // recompile it, a stutter right when the fire starts.)
       }
     }
   }
