@@ -18,17 +18,22 @@ import { furnishDebris } from "./Debris";
 import { furnishHangingTubes } from "./HangingTubes";
 import { furnishOccupation } from "./Occupation";
 import { furnishMessyWiring } from "./MessyWiring";
+import {
+  CEILING_SLAB_AREA,
+  CEILING_SLAB_COVER,
+  CEILING_SLAB_COVER_TOP,
+  CEILING_SLAB_ID,
+} from "./CeilingSlab";
 import { furnishPowerFeeds } from "./PowerFeeds";
 import { furnishRoofWiring } from "./RoofWiring";
 import { furnishDeckService, furnishPowerGrid } from "./PowerGrid";
 import { furnishJunkRoom } from "./JunkRoom";
 import { furnishArmory } from "./Armory";
 import {
-  ARMORY_VENT_HOLE,
+  ARMORY_VENT_HATCHES,
   ARMORY_VENT_ROW,
   ARMORY_VENT_THICKNESS,
   ARMORY_VENT_TOP,
-  VENT_HATCH_ID,
   fixedVentBlocks,
   ventRoofGaps,
 } from "./ArmoryVent";
@@ -553,7 +558,24 @@ function createUpperFloor(): ArenaLayout {
     floorY: F,
     walls: ["n", "s", "e"],
     doors: [{ side: "s", at: 3 }],
+    // The roof is built below, with the wooden slab's opening in it.
+    roof: false,
   });
+  // The Generator Room's roof (as `createRoom` would make it), with the
+  // opening for the breakable wooden slab beside the generator.
+  map.createRoofSection(
+    "room-switch-roof",
+    bounds(-1, 7, -Z, -17),
+    ROOF_LOW,
+    ROOF_THICKNESS,
+    CEILING_SLAB_AREA,
+  );
+  // The boards lie on the roof over it, reaching past it on every side.
+  map.createBreakableSlab(
+    CEILING_SLAB_ID,
+    CEILING_SLAB_COVER,
+    CEILING_SLAB_COVER_TOP,
+  );
   // The north-east spawn area, likewise at ground level, up the staircase
   // along its south edge to the loading dock.
   map.createRoom({
@@ -723,13 +745,10 @@ function createUpperFloor(): ArenaLayout {
   for (const { id, area } of fixedVentBlocks()) {
     map.createGrating(id, area, ARMORY_VENT_TOP, ARMORY_VENT_THICKNESS);
   }
-  map.createHatch(
-    VENT_HATCH_ID,
-    "none",
-    ARMORY_VENT_HOLE,
-    ARMORY_VENT_TOP,
-    ARMORY_VENT_THICKNESS,
-  );
+  // Every vent of the row is a hatch of its own.
+  for (const { id, area } of ARMORY_VENT_HATCHES) {
+    map.createHatch(id, "none", area, ARMORY_VENT_TOP, ARMORY_VENT_THICKNESS);
+  }
   // The Armory's side walls stop at z 11.7 and the Hall's wall starts at 12.0:
   // close the 0.3 m slit that left at each south corner, so it cannot be seen
   // through or squeezed into.
@@ -1273,7 +1292,8 @@ function createUpperFloor(): ArenaLayout {
     depth: 2.4,
     height: 2.4,
   });
-  prop("vent", "unit-switch", 3, -20.5, ROOF_LOW);
+  // (Off to the side: the wooden slab's opening is over the room's middle.)
+  prop("vent", "unit-switch", 5.6, -18.4, ROOF_LOW);
   prop("machine", "box-server", 24.4, -7.2, ROOF_HIGH, "x", {
     width: 1.2,
     depth: 0.75,

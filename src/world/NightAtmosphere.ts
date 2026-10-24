@@ -55,6 +55,8 @@ export class NightAtmosphere {
   private readonly baseHemi: number;
   private readonly flickers: Flicker[];
   private readonly halogens: HalogenState[];
+  /** Lamps that are out for good (a bulb broke). They stay in the scene at no intensity: taking a light out changes every material's program, a hitch. */
+  private readonly out = new Set<THREE.Light>();
 
   constructor(
     key: THREE.DirectionalLight,
@@ -141,6 +143,13 @@ export class NightAtmosphere {
    * times) or a slow sag and recovery, each at a random time, depth and length.
    */
   private updateHalogen(h: HalogenState, dt: number): void {
+    if (this.out.has(h.light)) {
+      h.light.intensity = 0;
+      h.glow.userData.setLevel?.(0);
+
+      return;
+    }
+
     let level = 1;
 
     if (h.kind === null) {
@@ -174,6 +183,18 @@ export class NightAtmosphere {
 
     h.light.intensity = h.base * level;
     h.glow.userData.setLevel?.(level);
+  }
+
+  /** Puts a floodlight or bulb out (or back): its intensity goes to zero, the light stays in the scene. */
+  public setOut(light: THREE.Light, out: boolean): void {
+    if (out) {
+      this.out.add(light);
+      light.intensity = 0;
+    } else {
+      this.out.delete(light);
+      light.intensity =
+        this.halogens.find((h) => h.light === light)?.base ?? light.intensity;
+    }
   }
 
   /** Puts every light back to its base value. */

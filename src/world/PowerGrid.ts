@@ -1,7 +1,7 @@
 import { ROOF_HIGH } from "./ArenaLayout";
 import { FUEL_CAPACITY } from "./GeneratorFuel";
 import { Pieces } from "./FittingPieces";
-import { POWER_BULB, POWER_BULB_B, bulbFitting } from "./JunkRoom";
+import { POWER_BULB } from "./JunkRoom";
 import type { MapBuilder } from "./MapParts";
 import { extinguisher, warningSign } from "./RoomKit";
 import { drum } from "./StorageRoom";
@@ -1425,10 +1425,10 @@ function furnishPowerRoom(
     p.box(5.2 - 0.07 + i * 0.07, 2.0, zBack + 0.26, 0.012, 0.24, 0.012, BLACK);
   }
 
-  // A bare hanging bulb in the middle of the room, as in the Junk Room (its
-  // glass is drawn with `createJunkBulbGlow`).
-  bulbFitting(p, POWER_BULB.x, POWER_BULB.z, POWER_BULB.y);
-  bulbFitting(p, POWER_BULB_B.x, POWER_BULB_B.z, POWER_BULB_B.y);
+  // The bare hanging bulb in the middle of the room: its rose, flex and
+  // socket hang from the wooden slab and are drawn with it (see
+  // `CeilingSlabMesh`), and its glass with `createJunkBulbGlow`: they go when
+  // the slab breaks.
 
   map.createFitting("fittings-main-panel", F, p.elements, [
     { minX: X0, maxX: X1, minZ: zBack, maxZ: zf, top: 2.16 },
@@ -1445,20 +1445,6 @@ function furnishPowerRoom(
     target: { x: 6.0, y: F + 0.5, z: -22.6 },
     angle: 0.95,
   });
-  // A second one over the generator end.
-  map.addLight({
-    id: "bulb-power-b",
-    castShadow: true,
-    x: POWER_BULB_B.x,
-    y: F + POWER_BULB_B.y - 0.16,
-    z: POWER_BULB_B.z,
-    color: 0xffbd70,
-    intensity: 90,
-    distance: 8,
-    target: { x: POWER_BULB_B.x, y: F, z: POWER_BULB_B.z },
-    angle: 1.15,
-  });
-
   // The bulb's light: a downward cone with visible rays, like the Junk Room's.
   map.addLight({
     id: "bulb-power-a",
@@ -1543,7 +1529,8 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
   // ------------------------------------------------ the ceiling bundle
   // A steel conduit and three cables along the ceiling, west to east, with
   // clamps; the supply for everything below.
-  const bundleZ = -21.7;
+  // (Clear of the wooden slab's opening, which ends at z -21.675.)
+  const bundleZ = -21.95;
 
   p.bar(3.0, ceilingY, bundleZ, 8.0, 0.05, MAST_WORN);
 
@@ -1868,16 +1855,12 @@ function furnishPowerRoomWiring(map: MapBuilder, F: number): void {
     p.box(x, 2.34, zWall + 0.04, 0.04, 0.1, 0.04, MAST_WORN);
   }
 
-  // The pendant's supply: up its chain, along the ceiling to the north wall
-  // and down to the conduit.
-  p.cableUp(3.24, 3.5, -20.5, 0.28, 0.03, SIGNAL);
-  p.cable(3.24, 3.77, -22.1, 3.2, 0.03, SIGNAL, Math.PI / 2);
+  // The supply along the ceiling to the north wall and down to the conduit.
+  // It starts at the edge of the wooden slab's opening (nothing hangs in it).
+  p.cable(3.24, 3.77, -22.65, 2.2, 0.03, SIGNAL, Math.PI / 2);
   p.cable(3.24, 3.77, -23.55, 0.3, 0.03, SIGNAL, Math.PI / 2);
   p.cableUp(3.24, 3.08, zWall + 0.1, 0.72, 0.03, SIGNAL);
-
-  for (const z of [-21.2, -22.4]) {
-    p.box(3.24, 3.72, z, 0.05, 0.06, 0.05, MAST_WORN);
-  }
+  p.box(3.24, 3.72, -22.4, 0.05, 0.06, 0.05, MAST_WORN);
 
   map.createFitting("fittings-power-room-wiring", F, p.elements, []);
 }

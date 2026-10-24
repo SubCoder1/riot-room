@@ -27,7 +27,11 @@ export class Arena {
   private rainLights: {
     uPos: { value: THREE.Vector4[] };
     uCol: { value: THREE.Vector4[] };
+    uOpen: { value: number };
   } | null = null;
+  /** Each map lamp's slot in the rain's light list, and the colour it had. */
+  private readonly lampSlots = new Map<string, number>();
+  private readonly lampColours = new Map<string, THREE.Vector4>();
   private time = 0;
 
   constructor(layout: ArenaLayout = ARENA_LAYOUT) {
@@ -106,6 +110,43 @@ export class Arena {
     }
   }
 
+  /** The wooden slab over the Generator Room is broken: the rain falls through its opening. */
+  public setRainOpening(open: boolean): void {
+    if (this.rainLights) {
+      this.rainLights.uOpen.value = open ? 1 : 0;
+    }
+  }
+
+  /**
+   * Puts a map lamp out for good (its bulb broke), or back (a new round): its
+   * light and its visible beam, and its light in the rain.
+   */
+  public setLampBroken(id: string, broken: boolean): void {
+    const light = this.group.getObjectByName(id);
+    const glow = this.group.getObjectByName(`glow-${id}`);
+
+    // (Kept in the scene at no intensity: dropping a light would change every
+    // material's shader, a hitch the moment the bulb breaks.)
+    if (light instanceof THREE.Light) {
+      this.atmosphere?.setOut(light, broken);
+    }
+
+    if (glow) {
+      glow.visible = !broken;
+    }
+
+    this.moths?.setLampOut(id, broken);
+
+    const slot = this.lampSlots.get(id);
+    const colour = this.lampColours.get(id);
+
+    if (this.rainLights && slot !== undefined && colour) {
+      this.rainLights.uCol.value[slot].copy(
+        broken ? new THREE.Vector4() : colour,
+      );
+    }
+  }
+
   /** Advances the night's flicker and lightning. */
   public update(dt: number): void {
     this.time += dt;
@@ -148,8 +189,11 @@ export class Arena {
 
     const flickering: THREE.Light[] = [];
     const halogens: Halogen[] = [];
-    const mothLamps: Array<{ position: THREE.Vector3; aim: THREE.Vector3 }> =
-      [];
+    const mothLamps: Array<{
+      position: THREE.Vector3;
+      aim: THREE.Vector3;
+      id: string;
+    }> = [];
 
     // The site plans on the spawn-area walls.
     for (const poster of this.layout.posters) {
@@ -205,6 +249,7 @@ export class Arena {
         }
 
         mothLamps.push({
+          id: light.id,
           position: spot.position.clone(),
           aim: spot.target.position.clone(),
         });
@@ -254,6 +299,13 @@ export class Arena {
     this.group.add(rain);
     this.rainLights = (rain.material as THREE.ShaderMaterial)
       .uniforms as unknown as typeof this.rainLights;
+    const rainColours = (this.rainLights as NonNullable<typeof this.rainLights>)
+      .uCol.value;
+
+    lights.slice(0, MAX_LIGHTS - RESERVED_LIGHTS).forEach((light, i) => {
+      this.lampSlots.set(light.id, i);
+      this.lampColours.set(light.id, rainColours[i].clone());
+    });
     this.group.add(
       createPuddles(
         this.layout,

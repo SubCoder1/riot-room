@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 import type { PileElement } from "./ArenaLayout";
 import { Pieces, rng } from "./FittingPieces";
-import type { MapBuilder } from "./MapParts";
+import { halfExtents, type MapBuilder } from "./MapParts";
 import {
   BLACK,
   CHARCOAL,
@@ -643,6 +643,65 @@ function slab(
   }
 }
 
+/**
+ * Lets the pile settle: each lump, lowest first, drops until it rests on the
+ * highest lump under it (or the floor), so nothing hangs in the air and the
+ * heavy pieces end up at the base. Long thin pieces (rebar, pipes, cables)
+ * are left as they lean.
+ */
+function settleHeap(elements: PileElement[]): void {
+  const lumps = elements
+    .filter((e) => e.shape !== "pipe" && e.shape !== "cable")
+    .sort((a, b) => a.y - b.y);
+  const placed: Array<{
+    x: number;
+    z: number;
+    r: number;
+    top: number;
+  }> = [];
+
+  for (const e of lumps) {
+    const [hx, hy, hz] = halfExtents(e);
+    const r = Math.min(Math.max(hx, hz) * 0.8, 0.45);
+    let support = 0;
+
+    for (const q of placed) {
+      if (Math.hypot(q.x - e.x, q.z - e.z) < q.r + r) {
+        support = Math.max(support, q.top);
+      }
+    }
+
+    // Rests a little into what is under it (pieces are not flat-faced).
+    const rest = support + hy - Math.min(0.06, hy * 0.5);
+
+    if (e.y > rest + 0.03) {
+      e.y = rest;
+    }
+
+    placed.push({ x: e.x, z: e.z, r, top: e.y + hy });
+  }
+
+  // The long pieces lean on the settled lumps: any that now hangs well above
+  // what is under its middle is let down onto it.
+  for (const e of elements) {
+    if (e.shape !== "pipe" && e.shape !== "cable") {
+      continue;
+    }
+
+    let support = 0;
+
+    for (const q of placed) {
+      if (Math.hypot(q.x - e.x, q.z - e.z) < q.r + 0.3) {
+        support = Math.max(support, q.top);
+      }
+    }
+
+    if (e.y > support + 0.35) {
+      e.y = support + 0.2;
+    }
+  }
+}
+
 /** The big pile: mixed construction debris, concentrated in one corner. */
 function heapPieces(
   p: Pieces,
@@ -674,7 +733,7 @@ function heapPieces(
   };
 
   // Broken concrete: chunks of every size, the biggest low down, some slabs.
-  for (let k = 0; k < 85; k++) {
+  for (let k = 0; k < 110; k++) {
     const { x, z, h } = spot();
     const size = between(random, 0.28, 0.85);
     const buried = random() * 0.35;
@@ -701,7 +760,7 @@ function heapPieces(
   }
 
   // Bricks, loose and in broken clusters; plaster fragments among them.
-  for (let k = 0; k < 160; k++) {
+  for (let k = 0; k < 210; k++) {
     const { x, z, h } = spot();
 
     p.elements.push({
@@ -1113,9 +1172,6 @@ export const JUNK_BULBS: ReadonlyArray<{ x: number; z: number; y: number }> = [
 /** The Generator Room's bulb, over the middle of the room (see PowerGrid). */
 export const POWER_BULB = { x: 3.2, z: -20.5, y: 2.95 } as const;
 
-/** A second one over the generator end of the Generator Room. */
-export const POWER_BULB_B = { x: 5.4, z: -20.3, y: 2.95 } as const;
-
 /** The Break room's bulb (see Occupation). */
 export const BREAK_BULB = { x: 27.2, z: 7.3, y: 2.95 } as const;
 
@@ -1123,7 +1179,6 @@ export const BREAK_BULB = { x: 27.2, z: 7.3, y: 2.95 } as const;
 const GLOWING_BULBS: ReadonlyArray<{ x: number; z: number; y: number }> = [
   ...JUNK_BULBS,
   POWER_BULB,
-  POWER_BULB_B,
   BREAK_BULB,
 ];
 
@@ -1149,6 +1204,8 @@ export function bulbFitting(
 
 export interface JunkBulbGlow {
   group: THREE.Group;
+  /** Shows or hides one bulb's glass and halo (it breaks, or is whole again). */
+  setLit(bulb: { x: number; z: number }, lit: boolean): void;
   dispose(): void;
 }
 
@@ -1235,8 +1292,13 @@ export function createJunkBulbGlow(floorY: number): JunkBulbGlow {
     fog: false,
   });
 
+  const parts = new Map<{ x: number; z: number }, THREE.Object3D[]>();
+
   for (const bulb of GLOWING_BULBS) {
     const y = floorY + bulb.y;
+    const mine: THREE.Object3D[] = [];
+
+    parts.set(bulb, mine);
     const glass = new THREE.Mesh(geometry, glassMaterial);
     const core = new THREE.Mesh(geometry, coreMaterial);
 
@@ -1244,6 +1306,7 @@ export function createJunkBulbGlow(floorY: number): JunkBulbGlow {
     core.position.set(bulb.x, y - 0.005, bulb.z);
     core.scale.setScalar(0.5);
     group.add(glass, core);
+    mine.push(glass, core);
 
     for (const [material, scale] of [
       [tightMaterial, 0.32],
@@ -1255,11 +1318,19 @@ export function createJunkBulbGlow(floorY: number): JunkBulbGlow {
       halo.scale.setScalar(scale);
       halo.renderOrder = 6;
       group.add(halo);
+      mine.push(halo);
     }
   }
 
   return {
     group,
+    setLit(bulb, lit): void {
+      for (const [known, objects] of parts) {
+        if (known.x === bulb.x && known.z === bulb.z) {
+          objects.forEach((object) => (object.visible = lit));
+        }
+      }
+    },
     dispose(): void {
       geometry.dispose();
       glassMaterial.dispose();
@@ -1287,8 +1358,8 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       maxX: -11.5,
       minZ: Z0,
       maxZ: -21.5,
-      top: 2.4,
-      visual: 2.0,
+      top: 2.0,
+      visual: 1.7,
       exact: true,
     },
     {
@@ -1297,7 +1368,7 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       minZ: Z0,
       maxZ: -22.2,
       top: 1.5,
-      visual: 1.35,
+      visual: 1.15,
       exact: true,
     },
     {
@@ -1306,7 +1377,7 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       minZ: -21.5,
       maxZ: -21.0,
       top: 1.5,
-      visual: 1.3,
+      visual: 1.1,
       exact: true,
     },
   ];
@@ -1314,6 +1385,7 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
     const p = new Pieces();
 
     heapPieces(p, random, heaps);
+    settleHeap(p.elements);
     map.createFitting("junk-pile", F, p.elements, heaps);
   }
 

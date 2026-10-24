@@ -2,15 +2,24 @@ import * as THREE from "three";
 
 import { ArenaCollision } from "./ArenaCollision";
 import type { ArenaLayout, LightDefinition } from "./ArenaLayout";
+import { isVentHatchId } from "./ArmoryVent";
+import {
+  CEILING_SLAB_AREA,
+  CEILING_SLAB_ID,
+  CEILING_SLAB_TOP,
+} from "./CeilingSlab";
 
 /**
  * A light drizzle: fine streaks that fall only until they meet a surface
  * (a roof or a floor, read from the collision field), so nothing rains through
- * a roof. Each streak is lit by the map's lights alone: it shows in a beam and
- * all but vanishes in the dark.
+ * a roof. Far away a streak is lit by the map's lamps alone (it shows in a
+ * beam and all but vanishes in the dark); near the player it also has a
+ * little pale sky light, so the rain round you shows anywhere in the open.
  */
 
-const DROPS = 2400;
+const DROPS = 5200;
+/** Extra streaks over the wooden slab: they fall only once it is broken. */
+const SLAB_DROPS = 40;
 const TOP = 16;
 const SPEED = 12;
 const LENGTH = 0.55;
@@ -47,13 +56,18 @@ const VERTEX = /* glsl */ `
   attribute float aSeed;
   attribute float aFloor;
   attribute float aTail;
+  attribute float aOpenFloor;
+  attribute float aOnlyOpen;
+  uniform float uOpen;
   varying float vAlpha;
   varying vec3 vTint;
+  varying float vNear;
 
   ${LIGHT_SUM}
 
   void main() {
-    float span = ${TOP.toFixed(1)} - aFloor;
+    float floorY = uOpen > 0.5 ? aOpenFloor : aFloor;
+    float span = ${TOP.toFixed(1)} - floorY;
     float head = ${TOP.toFixed(1)} - mod(uTime * ${SPEED.toFixed(1)} + aSeed * span, span);
     float lean = 0.05 + 0.03 * sin(uTime * 0.4 + aSeed * 9.0);
     vec3 p = position;
@@ -61,14 +75,18 @@ const VERTEX = /* glsl */ `
     p.x += (p.y - ${TOP.toFixed(1)}) * lean;
 
     // A streak that has reached its surface is gone until it restarts above.
-    if (head < aFloor + 0.02) {
+    if (head < floorY + 0.02 || (aOnlyOpen > 0.5 && uOpen < 0.5)) {
       p.y = -50.0;
     }
 
     // A flash shows the drizzle faintly, never as a bright curtain.
     vTint = lampLight(p) + vec3(0.1, 0.11, 0.13) * uFlash;
-    // Faintly visible against the dark sky anywhere it falls open to the sky.
-    vAlpha = 0.06;
+    // Far from the player the drizzle is lit by the lamps alone (a faint
+    // streak in a beam); close to the player it also catches the sky's pale
+    // light, fading out between 3 and 10 m, so the rain round you shows
+    // anywhere in the open.
+    vNear = 1.0 - smoothstep(3.0, 10.0, distance(p, cameraPosition));
+    vAlpha = 0.06 + 0.18 * vNear;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
@@ -76,11 +94,12 @@ const VERTEX = /* glsl */ `
 const FRAGMENT = /* glsl */ `
   varying float vAlpha;
   varying vec3 vTint;
+  varying float vNear;
 
   void main() {
     vec3 lit = min(vTint, vec3(0.9));
     float strength = clamp(max(lit.r, max(lit.g, lit.b)), 0.0, 0.9);
-    gl_FragColor = vec4(lit + vec3(0.1, 0.12, 0.16), vAlpha + strength * 0.5);
+    gl_FragColor = vec4(lit + vec3(0.1, 0.12, 0.16) + vec3(0.32, 0.4, 0.52) * vNear, vAlpha + strength * 0.5);
   }
 `;
 
@@ -90,13 +109,55 @@ export function createRain(
   halfX: number,
   halfZ: number,
 ): THREE.LineSegments {
-  const collision = new ArenaCollision(layout);
+  // A grating and a vent hatch are open bars: the rain falls through them
+  // (to the floor of the room below), so they are not surfaces for it.
+  const open = (id: string): boolean =>
+    id.startsWith("vent-grating-") || isVentHatchId(id);
+  const collision = new ArenaCollision({
+    ...layout,
+    platforms: layout.platforms.filter((p) => !open(p.id)),
+    hatches: layout.hatches.filter((h) => !open(h.id)),
+  });
+  // The same field with the wooden slab gone: what its opening lets through.
+  const broken = new ArenaCollision({
+    ...layout,
+    platforms: layout.platforms.filter(
+      (p) => !open(p.id) && p.id !== CEILING_SLAB_ID,
+    ),
+    hatches: layout.hatches.filter((h) => !open(h.id)),
+  });
   const random = mulberry32(90125);
-  const base = new Float32Array(DROPS * 6);
-  const seed = new Float32Array(DROPS * 2);
-  const floor = new Float32Array(DROPS * 2);
-  const tail = new Float32Array(DROPS * 2);
+  const total = DROPS + SLAB_DROPS;
+  const base = new Float32Array(total * 6);
+  const seed = new Float32Array(total * 2);
+  const floor = new Float32Array(total * 2);
+  const openFloor = new Float32Array(total * 2);
+  const onlyOpen = new Float32Array(total * 2);
+  const tail = new Float32Array(total * 2);
   let used = 0;
+
+  const add = (
+    x: number,
+    z: number,
+    surface: number,
+    below: number,
+    extra: boolean,
+  ): void => {
+    const s = random();
+
+    for (let end = 0; end < 2; end++) {
+      const v = used * 2 + end;
+
+      base.set([x, 0, z], v * 3);
+      seed[v] = s;
+      floor[v] = surface;
+      openFloor[v] = below;
+      onlyOpen[v] = extra ? 1 : 0;
+      tail[v] = end;
+    }
+
+    used++;
+  };
 
   while (used < DROPS) {
     const x = (random() * 2 - 1) * (halfX - 0.3);
@@ -108,18 +169,23 @@ export function createRain(
       continue;
     }
 
-    const s = random();
+    add(x, z, surface, broken.groundHeight(x, z, TOP), false);
+  }
 
-    for (let end = 0; end < 2; end++) {
-      const v = used * 2 + end;
+  // A steady fall through the opening once the slab has broken.
+  const slab = CEILING_SLAB_AREA;
 
-      base.set([x, 0, z], v * 3);
-      seed[v] = s;
-      floor[v] = surface;
-      tail[v] = end;
-    }
+  for (let i = 0; i < SLAB_DROPS; i++) {
+    const x = slab.minX + 0.05 + random() * (slab.maxX - slab.minX - 0.1);
+    const z = slab.minZ + 0.05 + random() * (slab.maxZ - slab.minZ - 0.1);
 
-    used++;
+    add(
+      x,
+      z,
+      CEILING_SLAB_TOP,
+      broken.groundHeight(x, z, CEILING_SLAB_TOP),
+      true,
+    );
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -127,6 +193,8 @@ export function createRain(
   geometry.setAttribute("position", new THREE.BufferAttribute(base, 3));
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
   geometry.setAttribute("aFloor", new THREE.BufferAttribute(floor, 1));
+  geometry.setAttribute("aOpenFloor", new THREE.BufferAttribute(openFloor, 1));
+  geometry.setAttribute("aOnlyOpen", new THREE.BufferAttribute(onlyOpen, 1));
   geometry.setAttribute("aTail", new THREE.BufferAttribute(tail, 1));
   // The shader moves every vertex; the box must cover the whole map.
   geometry.boundingSphere = new THREE.Sphere(
@@ -167,6 +235,7 @@ export function createRain(
     uniforms: {
       uTime: { value: 0 },
       uFlash: { value: 0 },
+      uOpen: { value: 0 },
       uPos: { value: pos },
       uCol: { value: col },
       uDir: { value: dir },

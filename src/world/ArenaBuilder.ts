@@ -16,11 +16,13 @@ import {
   type RampSolid,
   type StairsDefinition,
 } from "./ArenaLayout";
+import { CEILING_SLAB_ID } from "./CeilingSlab";
+import { createCeilingSlabMesh } from "./CeilingSlabMesh";
 import { createCurvedTops } from "./CurvedTops";
 import { createDecals, createPiles } from "./PileMeshes";
 import { createSteelStructure } from "./SteelStructure";
 import { createTankMesh } from "./TankMesh";
-import { VENT_GRATING_PREFIX, VENT_HATCH_ID, grilleBars } from "./ArmoryVent";
+import { VENT_GRATING_PREFIX, grilleBars, isVentHatchId } from "./ArmoryVent";
 import { VENT_CELL, ventBlocks, ventCeilingY, ventFloorY } from "./Vents";
 import {
   brickGroup,
@@ -641,7 +643,7 @@ function createVentGrating(solid: BoxSolid): THREE.Group {
 function createHatchPanel(solid: BoxSolid, mesh: THREE.Mesh): THREE.Group {
   const pivot = new THREE.Group();
 
-  if (solid.id === VENT_HATCH_ID) {
+  if (isVentHatchId(solid.id)) {
     // The Armory vent: a netted grille with real gaps, on a hinge on its west edge.
     pivot.name = `hatch:${solid.id}`;
     pivot.position.set(
@@ -965,7 +967,12 @@ export function buildArena(layout: ArenaLayout): THREE.Group {
             }))
         : [];
 
-    arena.add(createPlatform(platform, holes, voids));
+    // The wooden slab in the Generator Room's roof is drawn as boards.
+    arena.add(
+      platform.id === CEILING_SLAB_ID
+        ? createCeilingSlabMesh()
+        : createPlatform(platform, holes, voids),
+    );
   }
 
   for (const ramp of layout.ramps) {

@@ -1,9 +1,13 @@
-import { fixedVentBlocks } from "../../src/world/ArmoryVent";
+import {
+  ARMORY_VENT_HATCHES,
+  fixedVentBlocks,
+} from "../../src/world/ArmoryVent";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { buildArena, createLadder } from "../../src/world/ArenaBuilder";
 import { PERIMETER_WALL_HEIGHT, ROOF_HIGH } from "../../src/world/ArenaLayout";
+import { CEILING_SLAB_MESHES } from "../../src/world/CeilingSlabMesh";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 import { rawSurfaceFor } from "../../src/world/materials/WallSurfaces";
 import { ventBlocks } from "../../src/world/Vents";
@@ -36,6 +40,7 @@ describe("Arena meshes", () => {
       1 + // the arena floor (one merged mesh with a hole under each grate)
       4 +
       ARENA_LAYOUT.platforms.length +
+      (CEILING_SLAB_MESHES - 1) + // the wooden slab is drawn in several meshes
       ARENA_LAYOUT.walls.filter((w) => !w.hidden).length +
       pileMeshes +
       ARENA_LAYOUT.curves.length + // a wavy-topped barrier is one mesh
@@ -66,16 +71,17 @@ describe("Arena meshes", () => {
         ventBlocks(ARENA_LAYOUT.upperVents).length +
         1 + // the upper network's floor (its walls are the cut floor)
         2 + // the north and south wings, cut round the upper grating
-        1 + // the Armory vent hatch's grille (one merged mesh)
+        ARMORY_VENT_HATCHES.length + // each Armory vent hatch's grille (one merged mesh)
         fixedVentBlocks().length + // and each fixed grating of the vent row
         pileMeshes + // bags, bricks, planks, chunks: one merged mesh each
         ARENA_LAYOUT.curves.length + // a geometry per wavy-topped barrier
         (ARENA_LAYOUT.decals.length > 0 ? 1 : 0) + // the floor marks
         (ARENA_LAYOUT.panes.length > 0 ? 1 : 0) + // the slanted glass
-        ARENA_LAYOUT.ramps.length,
+        ARENA_LAYOUT.ramps.length +
+        CEILING_SLAB_MESHES, // the wooden slab's merged parts
     );
     // ...plus the two piece materials and the one for the floor marks.
-    expect(materials.size).toBeLessThanOrEqual(34);
+    expect(materials.size).toBeLessThanOrEqual(42);
   });
 
   it("floors (and only floors) are concrete, from a few shared materials and textures", () => {

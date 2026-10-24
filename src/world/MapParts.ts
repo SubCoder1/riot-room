@@ -143,7 +143,7 @@ export interface RailingOptions {
  * ArenaLayout, so the map stays easy to rearrange.
  */
 /** Half the size of a piece's turned box along each world axis. */
-function halfExtents(e: PileElement): [number, number, number] {
+export function halfExtents(e: PileElement): [number, number, number] {
   const ca = Math.cos(e.rx);
   const sa = Math.sin(e.rx);
   const cb = Math.cos(e.ry);
@@ -354,6 +354,65 @@ const EXACT_FITTINGS = [
   "site-work-area",
   "fittings-yard-drums",
 ];
+
+/**
+ * Closes the hair-thin gaps that fitting leaves between neighbouring boxes of
+ * one object (a body standing over a 4 cm slot between two low boxes flickers
+ * between standing on one and being pushed off it): boxes less than 15 cm
+ * apart, side by side, are stretched until they meet.
+ */
+function closeSlivers(boxes: FitBox[]): void {
+  const GAP = 0.15;
+
+  for (const a of boxes) {
+    for (const b of boxes) {
+      if (a === b) {
+        continue;
+      }
+
+      const alongZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ) > 0.05;
+      const alongX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 0.05;
+
+      if (alongZ && b.minX > a.maxX && b.minX - a.maxX < GAP) {
+        a.maxX = b.minX;
+      }
+
+      if (alongZ && a.minX > b.maxX && a.minX - b.maxX < GAP) {
+        a.minX = b.maxX;
+      }
+
+      if (alongX && b.minZ > a.maxZ && b.minZ - a.maxZ < GAP) {
+        a.maxZ = b.minZ;
+      }
+
+      if (alongX && a.minZ > b.maxZ && a.minZ - b.maxZ < GAP) {
+        a.minZ = b.maxZ;
+      }
+
+      // Two boxes that touch face to face line up their ends when those are
+      // less than 15 cm apart (no notch for a body to stand in).
+      if (Math.abs(a.maxZ - b.minZ) < 0.02) {
+        if (Math.abs(a.minX - b.minX) < GAP) {
+          a.minX = b.minX = Math.min(a.minX, b.minX);
+        }
+
+        if (Math.abs(a.maxX - b.maxX) < GAP) {
+          a.maxX = b.maxX = Math.max(a.maxX, b.maxX);
+        }
+      }
+
+      if (Math.abs(a.maxX - b.minX) < 0.02) {
+        if (Math.abs(a.minZ - b.minZ) < GAP) {
+          a.minZ = b.minZ = Math.min(a.minZ, b.minZ);
+        }
+
+        if (Math.abs(a.maxZ - b.maxZ) < GAP) {
+          a.maxZ = b.maxZ = Math.max(a.maxZ, b.maxZ);
+        }
+      }
+    }
+  }
+}
 
 export class MapBuilder {
   private readonly layout: ArenaLayout;
@@ -853,6 +912,27 @@ export class MapBuilder {
   }
 
   /**
+   * A fixed slab set in a roof's opening, to be broken through later: solid
+   * like the roof until the game opens it by id (`ArenaCollision.setOpen`).
+   * Drawn by `ArenaBuilder`, which recognises its id (see `CeilingSlab`).
+   */
+  public createBreakableSlab(
+    id: string,
+    area: Bounds,
+    top: number,
+    thickness = ROOF_THICKNESS,
+  ): void {
+    this.layout.platforms.push({
+      kind: "box",
+      id,
+      role: "roof",
+      ...area,
+      bottom: top - thickness,
+      height: top,
+    });
+  }
+
+  /**
    * A fixed grating set in a roof's opening: solid to stand on, drawn as open
    * bars (see `ArenaBuilder`, which recognises its `vent-grating-` id).
    */
@@ -1284,6 +1364,17 @@ export class MapBuilder {
   ): PileDefinition {
     const solids: string[] = [];
 
+    // Nothing sinks into the floor: a piece whose underside is a little below
+    // the surface it stands on is lifted until it rests on it.
+    for (const e of elements) {
+      const [, hy] = halfExtents(e);
+      const sink = hy - e.y;
+
+      if (sink > 0.04 && sink < 0.4 && e.sy > 0.05) {
+        e.y += sink;
+      }
+    }
+
     // The border is strict: a box is never bigger than what is drawn in it,
     // so a shot or a throw passes through what looks like an opening.
     const fitted: Array<{ box: (typeof boxes)[number]; id: string }> = [];
@@ -1302,6 +1393,8 @@ export class MapBuilder {
         fitted.push({ box: part, id: k === 0 ? base : `${base}+${k + 1}` }),
       );
     });
+
+    closeSlivers(fitted.map((f) => f.box));
 
     fitted.forEach(({ box: b, id: solidId }) => {
       this.layout.walls.push({

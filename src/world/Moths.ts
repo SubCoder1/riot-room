@@ -30,6 +30,8 @@ interface Moth {
   flight: Flight;
   /** Phase and rate offsets so no two moths move alike. */
   seed: number;
+  /** The lamp it flies round (if it has an id): when that lamp goes out, so does it. */
+  lampId?: string;
 }
 
 function seeded(seed: number): () => number {
@@ -58,7 +60,11 @@ export class Moths {
    * two moths go to each, chosen the same way every run.
    */
   constructor(
-    lamps: ReadonlyArray<{ position: THREE.Vector3; aim: THREE.Vector3 }>,
+    lamps: ReadonlyArray<{
+      position: THREE.Vector3;
+      aim: THREE.Vector3;
+      id?: string;
+    }>,
     seed = 4417,
   ) {
     const random = seeded(seed);
@@ -81,7 +87,19 @@ export class Moths {
       const centre = lamp.position.clone().addScaledVector(forward, 0.55);
 
       for (let i = 0; i < count; i++) {
-        this.moths.push(this.make(centre, random));
+        const moth = this.make(centre, random);
+
+        moth.lampId = lamp.id;
+        this.moths.push(moth);
+      }
+    }
+  }
+
+  /** The bugs round a lamp go when it goes out (a bulb breaks), and come back with it. */
+  public setLampOut(id: string, out: boolean): void {
+    for (const moth of this.moths) {
+      if (moth.lampId === id) {
+        moth.group.visible = !out;
       }
     }
   }
