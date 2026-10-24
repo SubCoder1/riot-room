@@ -29,7 +29,61 @@ interface CloudView {
   cloud: SmokeCloud;
   puffs: Puff[];
   flash: THREE.Sprite;
+  /** The lumps the cloud is made of: where each is, and its size, in units of the cloud radius. */
+  lobes: Lobe[];
+  /** A soft grey body in each lump that hides whatever is inside it. */
+  cores: THREE.Mesh[];
+  coreMaterial: THREE.ShaderMaterial;
 }
+
+interface Lobe {
+  centre: THREE.Vector3;
+  size: number;
+}
+
+/** How many lumps a cloud has: an uneven heap, not one ball. */
+const LOBES = 6;
+
+/**
+ * Smoke is drawn after everything else that is see-through (puddles, light
+ * beams, rain), so none of it shows through or over a cloud; the core goes
+ * first, then the puffs over it, then the flash.
+ */
+const CORE_ORDER = 8;
+const PUFF_ORDER = 9;
+const FLASH_ORDER = 10;
+/** How much of a lump's size its hiding body fills (the puffs billow beyond it). */
+const CORE_SHARE = 0.78;
+
+/**
+ * The hiding body's look: a smooth ball that is solid in the middle and fades
+ * to nothing at its silhouette (the more the surface turns away from the eye,
+ * the clearer), so it has no outline of its own.
+ */
+const CORE_VERTEX = /* glsl */ `
+  varying vec3 vNormal;
+  varying vec3 vView;
+
+  void main() {
+    vec4 view = modelViewMatrix * vec4(position, 1.0);
+
+    vNormal = normalize(normalMatrix * normal);
+    vView = -view.xyz;
+    gl_Position = projectionMatrix * view;
+  }
+`;
+const CORE_FRAGMENT = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  varying vec3 vNormal;
+  varying vec3 vView;
+
+  void main() {
+    float facing = abs(dot(normalize(vNormal), normalize(vView)));
+
+    gl_FragColor = vec4(uColor, uOpacity * smoothstep(0.0, 0.7, facing));
+  }
+`;
 
 /** A cheap, repeatable 0..1 number from two numbers. */
 function hash(a: number, b: number): number {
@@ -56,9 +110,43 @@ export class SmokeCloudView {
   private readonly flashTexture = createPuffTexture(32, 3);
   private readonly smoke: SmokeSystem;
   private readonly world = new THREE.Vector3();
+  private readonly coreGeometry = new THREE.IcosahedronGeometry(1, 3);
 
   constructor(smoke: SmokeSystem) {
     this.smoke = smoke;
+
+    // One sprite of each kind a cloud uses, kept hidden in the scene, so the
+    // first cloud finds its programs compiled and its textures uploaded (see
+    // Game.warmUp) instead of stalling the frame it appears in.
+    const puff = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.texture,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0,
+        fog: false,
+      }),
+    );
+    const flash = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.flashTexture,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        opacity: 0,
+        fog: false,
+      }),
+    );
+
+    puff.renderOrder = PUFF_ORDER;
+    flash.renderOrder = FLASH_ORDER;
+
+    for (const sprite of [puff, flash]) {
+      sprite.name = "smoke-warm";
+      sprite.visible = false;
+      sprite.frustumCulled = false;
+      this.group.add(sprite);
+    }
   }
 
   /** How many clouds are being drawn (for tests and debugging). */
@@ -97,17 +185,31 @@ export class SmokeCloudView {
 
   private create(cloud: SmokeCloud): CloudView {
     const puffs: Puff[] = [];
+    // The lumps: a handful, spread unevenly (the outline is never an oval).
+    const lobes: Lobe[] = Array.from({ length: LOBES }, (_, k) => {
+      const a = hash(k + 600, cloud.seed) * Math.PI * 2;
+      const reach = 0.2 + 0.75 * hash(k + 700, cloud.seed);
+
+      return {
+        centre: new THREE.Vector3(
+          Math.cos(a) * reach,
+          (hash(k + 800, cloud.seed) - 0.3) * 0.4,
+          Math.sin(a) * reach,
+        ),
+        size: 0.18 + 0.34 * hash(k + 900, cloud.seed),
+      };
+    });
 
     for (let i = 0; i < C.SMOKE_PARTICLE_COUNT; i++) {
       const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: this.texture,
-          // Grey with a little blue, each puff its own shade, so the cloud
-          // has lumps and shadows rather than one flat white.
+          // Smoke grey with a touch of blue, each puff its own shade, so the
+          // cloud has lumps and shadows, dark enough for the night.
           color: new THREE.Color().setHSL(
             0.6,
-            0.06,
-            0.62 + 0.3 * hash(i, cloud.seed),
+            0.04,
+            0.2 + 0.16 * hash(i, cloud.seed),
           ),
           transparent: true,
           depthWrite: false,
@@ -123,14 +225,17 @@ export class SmokeCloudView {
       const cosPhi = v * 2 - 1;
       const sinPhi = Math.sqrt(1 - cosPhi * cosPhi);
       const radius = Math.cbrt(w);
+      // Each puff belongs to one lump, and sits inside it.
+      const lobe = lobes[i % LOBES];
       const offset = new THREE.Vector3(
-        Math.cos(theta) * sinPhi * radius,
-        Math.max(-0.2, cosPhi * radius * 0.8),
-        Math.sin(theta) * sinPhi * radius,
-      );
+        Math.cos(theta) * sinPhi * radius * lobe.size,
+        Math.max(-0.2, cosPhi * radius * 0.8 * lobe.size),
+        Math.sin(theta) * sinPhi * radius * lobe.size,
+      ).add(lobe.centre);
 
       sprite.frustumCulled = false;
       sprite.visible = false;
+      sprite.renderOrder = PUFF_ORDER;
       this.group.add(sprite);
       puffs.push({
         sprite,
@@ -155,9 +260,34 @@ export class SmokeCloudView {
 
     flash.frustumCulled = false;
     flash.visible = false;
+    flash.renderOrder = FLASH_ORDER;
     this.group.add(flash);
 
-    return { cloud, puffs, flash };
+    // The body of the cloud: a grey ball (seen from inside too) that props and
+    // floor inside the smoke cannot be seen through.
+    const coreMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color().setHSL(0.6, 0.04, 0.26) },
+        uOpacity: { value: 0 },
+      },
+      vertexShader: CORE_VERTEX,
+      fragmentShader: CORE_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const cores = lobes.map(() => {
+      const core = new THREE.Mesh(this.coreGeometry, coreMaterial);
+
+      core.frustumCulled = false;
+      core.visible = false;
+      core.renderOrder = CORE_ORDER;
+      this.group.add(core);
+
+      return core;
+    });
+
+    return { cloud, puffs, flash, lobes, cores, coreMaterial };
   }
 
   private pose(view: CloudView, camera: THREE.Camera, time: number): void {
@@ -195,6 +325,21 @@ export class SmokeCloudView {
       sprite.visible = sprite.material.opacity > 0.004;
     }
 
+    // The bodies: one in each lump, as dense as the cloud, over the floor.
+    view.coreMaterial.uniforms.uOpacity.value = Math.min(0.94 * thick, 0.94);
+
+    view.lobes.forEach((lobe, k) => {
+      const core = view.cores[k];
+      const size = Math.max(lobe.size * radius * 0.85 * CORE_SHARE, 0.2);
+
+      core.position
+        .copy(cloud.position)
+        .addScaledVector(lobe.centre, radius * 0.85);
+      core.scale.set(size, size * 0.85, size);
+      core.position.y = Math.max(core.position.y, floor + size * 0.85 * 0.9);
+      core.visible = thick > 0.02;
+    });
+
     // The flash when it starts to emit.
     const flare = Math.max(0, 1 - cloud.age / FLASH_SECONDS);
 
@@ -215,6 +360,11 @@ export class SmokeCloudView {
 
     view.flash.removeFromParent();
     view.flash.material.dispose();
+    for (const core of view.cores) {
+      core.removeFromParent();
+    }
+
+    view.coreMaterial.dispose();
   }
 
   public dispose(): void {
@@ -223,8 +373,16 @@ export class SmokeCloudView {
     }
 
     this.views.clear();
+
+    for (const child of [...this.group.children]) {
+      if (child instanceof THREE.Sprite && child.name === "smoke-warm") {
+        child.material.dispose();
+      }
+    }
+
     this.texture.dispose();
     this.flashTexture.dispose();
+    this.coreGeometry.dispose();
     this.group.removeFromParent();
   }
 }

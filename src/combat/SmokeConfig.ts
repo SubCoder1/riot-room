@@ -34,7 +34,7 @@ export const SMOKE_CONFIG = {
   /** Puffs per cloud. */
   SMOKE_PARTICLE_COUNT: 90,
   /** Opacity of a single puff at full density (0 to 1). */
-  SMOKE_OPACITY: 0.68,
+  SMOKE_OPACITY: 0.8,
 
   // ---- Visibility (gameplay) ----
   /**

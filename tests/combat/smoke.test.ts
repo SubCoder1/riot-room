@@ -364,17 +364,25 @@ describe("Drawing the smoke and explosions leaks nothing", () => {
 
     camera.position.set(0, 1.6, -12);
 
+    // The view's two hidden warm-up sprites are always there.
+    const warm = view.group.children.length;
+
+    expect(warm).toBe(2);
+
     smoke.emit("thrower", at(0, 0, 0));
     view.update(camera, 0);
 
-    // The puffs plus one flash.
-    expect(view.group.children).toHaveLength(C.SMOKE_PARTICLE_COUNT + 1);
+    // A cloud adds its puffs, one flash and a hiding body for each of its lumps.
+    expect(view.group.children).toHaveLength(
+      warm + C.SMOKE_PARTICLE_COUNT + 1 + 6,
+    );
     expect(view.count).toBe(1);
 
     smoke.clear();
     view.update(camera, 1);
 
-    expect(view.group.children).toHaveLength(0);
+    // And takes them all away again.
+    expect(view.group.children).toHaveLength(warm);
     expect(view.count).toBe(0);
 
     view.dispose();
@@ -393,7 +401,9 @@ describe("Drawing the smoke and explosions leaks nothing", () => {
       view.group.children.filter((c) => c.visible).length;
     const opacity = (): number =>
       Math.max(
-        ...view.group.children.map((c) => (c as THREE.Sprite).material.opacity),
+        ...view.group.children
+          .filter((c) => c instanceof THREE.Sprite)
+          .map((c) => (c as THREE.Sprite).material.opacity),
       );
     const full = opacity();
 
@@ -445,6 +455,73 @@ describe("Drawing the smoke and explosions leaks nothing", () => {
 
     expect(view.playing).toBe(0);
     expect(view.group.children.filter((c) => c.visible)).toHaveLength(0);
+    view.dispose();
+  });
+});
+
+describe("Smoke hides what is inside it", () => {
+  const camera = new THREE.PerspectiveCamera();
+
+  it("is drawn after the rain, the puddles and the light beams (render orders 5, 3, 4), so none show through it", () => {
+    const smoke = new SmokeSystem(null, OPEN);
+    const view = new SmokeCloudView(smoke);
+
+    camera.position.set(0, 1.6, -12);
+    smoke.emit("thrower", at(0, 0, 0));
+    view.update(camera, 0);
+
+    for (const child of view.group.children) {
+      if (child.name !== "smoke-warm") {
+        expect(child.renderOrder).toBeGreaterThan(5);
+      }
+    }
+
+    view.dispose();
+  });
+
+  it("has a grey body that covers props inside it, and puffs of smoke grey, not white", () => {
+    const smoke = new SmokeSystem(null, OPEN);
+    const view = new SmokeCloudView(smoke);
+
+    camera.position.set(0, 1.6, -12);
+    smoke.emit("thrower", at(0, 0, 0));
+    view.update(camera, 0);
+    // Past the swell: full size and density.
+    view.update(camera, 3);
+    smoke.update(3);
+    view.update(camera, 3);
+
+    const cores = view.group.children.filter(
+      (child) => child instanceof THREE.Mesh,
+    ) as THREE.Mesh[];
+    const material = cores[0].material as THREE.ShaderMaterial;
+
+    // Several lumps, not one ball; one soft-edged grey material between them.
+    expect(cores.length).toBeGreaterThanOrEqual(4);
+    expect(material.side).toBe(THREE.DoubleSide);
+    expect(material.uniforms.uOpacity.value).toBeGreaterThan(0.5);
+
+    const grey = material.uniforms.uColor.value as THREE.Color;
+
+    expect(grey.r).toBeLessThan(0.6);
+    expect(grey.r).toBeGreaterThan(0.1);
+
+    // The lumps sit at different places: the cloud is uneven.
+    const xs = new Set(cores.map((core) => core.position.x.toFixed(2)));
+
+    expect(xs.size).toBeGreaterThanOrEqual(4);
+
+    for (const child of view.group.children) {
+      if (child instanceof THREE.Sprite && child.name !== "smoke-warm") {
+        const c = child.material.color;
+
+        // Never near-white: the puffs are mid to dark grey.
+        if (child.material.blending !== THREE.AdditiveBlending) {
+          expect(Math.max(c.r, c.g, c.b)).toBeLessThan(0.7);
+        }
+      }
+    }
+
     view.dispose();
   });
 });
