@@ -25,7 +25,12 @@ import {
 import { ArmoryMechanismView } from "../world/ArmoryMechanismView";
 import { createTubeGlow } from "../world/ArmoryLighting";
 import { createHangingTubeGlow } from "../world/HangingTubes";
-import { POWER_BULB, createJunkBulbGlow } from "../world/JunkRoom";
+import {
+  BREAK_BULB,
+  JUNK_BULBS,
+  POWER_BULB,
+  createJunkBulbGlow,
+} from "../world/JunkRoom";
 import {
   ARMORY_VENT_HATCHES,
   isVentHatchId,
@@ -40,9 +45,13 @@ import {
   type PlayerRole,
 } from "../world/CeilingSlab";
 import { slabBulb } from "../world/CeilingSlabMesh";
+import { canShutDown } from "../world/PowerCircuits";
 import { SlabDebris } from "../vfx/SlabDebris";
+import { GeneratorView } from "../vfx/GeneratorView";
+import { GeneratorSmoke } from "../vfx/GeneratorSmoke";
+import { PowerState, type Circuit } from "../world/PowerCircuits";
 import { VentDrips } from "../vfx/VentDrips";
-import type { BoxSolid } from "../world/ArenaLayout";
+import type { BoxSolid, GeneratorDefinition } from "../world/ArenaLayout";
 import { ShutterCrush } from "../combat/ShutterCrush";
 import { ArenaDebug } from "../world/ArenaDebug";
 import { CLIMB, angleBetween, ladderYaw } from "../player/Climb";
@@ -222,6 +231,10 @@ export class Game {
   /** The Generator Room's wooden slab: one state for the round (see CeilingSlab). */
   private readonly ceilingSlab = new CeilingSlabState();
   private readonly slabDebris = new SlabDebris();
+  /** Whether each generator runs (and so each lighting circuit): see PowerCircuits. */
+  private readonly power = new PowerState();
+  private readonly generatorView = new GeneratorView();
+  private readonly generatorSmoke = new GeneratorSmoke(ARENA_LAYOUT.generators);
   /** Who this client plays (testing: either role may break the slab). */
   private readonly localRole: PlayerRole = "batman";
   private readonly fuelSpillView = new FuelSpillView(
@@ -621,6 +634,8 @@ export class Game {
     this.arena.group.add(this.junkBulbs.group);
     this.arena.group.add(this.ventDrips.group);
     this.arena.group.add(this.slabDebris.group);
+    this.generatorView.attach(this.arena.group, ARENA_LAYOUT.generators);
+    this.arena.group.add(this.generatorSmoke.group);
     this.renderer.scene.add(
       this.flameLight,
       this.blastLight,
@@ -1076,6 +1091,8 @@ export class Game {
         // Lifted the Armory vent's grille from the roof.
       } else if (this.takePickupIfNear()) {
         // Took a grenade off a workbench.
+      } else if (this.usePanelIfNear()) {
+        // Used a generator's control panel.
       } else if (this.addFuelIfNear()) {
         // Poured a bottle into a generator's filler cap.
       } else {
@@ -1130,11 +1147,13 @@ export class Game {
                 ? "PRESS {E} TO LIFT GRILLE"
                 : this.pickupPrompt()
                   ? this.pickupPrompt()
-                  : this.fuelPrompt()
-                    ? this.fuelPrompt()
-                    : this.player.ladderInReach()
-                      ? "PRESS {E} TO CLIMB"
-                      : "";
+                  : this.powerPrompt()
+                    ? this.powerPrompt()
+                    : this.fuelPrompt()
+                      ? this.fuelPrompt()
+                      : this.player.ladderInReach()
+                        ? "PRESS {E} TO CLIMB"
+                        : "";
 
     // A key in braces, {E}, is drawn in the key colour.
     if (this.climbPrompt.dataset.text !== text) {
@@ -1315,6 +1334,7 @@ export class Game {
     this.armoryMessageTime = Math.max(0, this.armoryMessageTime - dt);
     this.ventDrips.update(dt);
     this.slabDebris.update(dt);
+    this.generatorSmoke.update(dt);
     this.syncArmory();
     this.shutterCrush.update();
     this.armoryView.update(
@@ -1323,6 +1343,7 @@ export class Game {
       performance.now() / 1000,
     );
     this.updateTubes();
+    this.updatePowerVisuals();
   }
 
   /** The loose tube dips when its lamp does (the weather system stutters the lamp). */
@@ -1338,7 +1359,8 @@ export class Game {
     this.tubeBase = Math.max(this.tubeBase, this.tubeLamp.intensity);
     this.tubeGlow.setLevel(
       "tube-armory-3",
-      this.tubeBase > 0 ? this.tubeLamp.intensity / this.tubeBase : 1,
+      (this.tubeBase > 0 ? this.tubeLamp.intensity / this.tubeBase : 1) *
+        this.arena.lampLevelOf("tube-armory-3"),
     );
   }
 
@@ -1720,6 +1742,166 @@ export class Game {
     return true;
   }
 
+  /**
+   * The generator whose control panel the player stands at: within 1.1 m of
+   * the spot in front of it, on its floor, and nearer the panel than its filler
+   * cap (nearer the cap, E adds fuel).
+   */
+  private generatorAtPanel(): GeneratorDefinition | null {
+    if (this.player.isClimbing || this.player.isInVent) {
+      return null;
+    }
+
+    const feetY = this.player.position.y - this.player.eyeHeight;
+
+    for (const g of ARENA_LAYOUT.generators) {
+      const toPanel = Math.hypot(
+        this.player.position.x - g.panel.x,
+        this.player.position.z - g.panel.z,
+      );
+      const toCap = Math.hypot(
+        this.player.position.x - g.x,
+        this.player.position.z - g.z,
+      );
+
+      if (
+        Math.abs(feetY - (g.y - 1.1)) < 0.6 &&
+        toPanel <= 1.1 &&
+        toPanel <= toCap
+      ) {
+        return g;
+      }
+    }
+
+    return null;
+  }
+
+  /** The prompt at a generator's control panel ("" elsewhere). */
+  private powerPrompt(): string {
+    const g = this.generatorAtPanel();
+
+    if (!g || performance.now() < this.fuelNoticeUntil) {
+      return "";
+    }
+
+    if (this.power.isOn(g.circuit)) {
+      // Only Batman switches one off: a thug is left to the fuel prompt.
+      return canShutDown(this.localRole) ? "PRESS {E} TO SWITCH OFF" : "";
+    }
+
+    const wait = this.power.secondsUntilRestart(
+      g.circuit,
+      performance.now() / 1000,
+    );
+
+    return wait > 0
+      ? `COOLING DOWN  ·  ${Math.ceil(wait)}`
+      : "PRESS {E} TO SWITCH ON";
+  }
+
+  /**
+   * E at a generator's panel: a running one stops (Batman) and its circuit
+   * goes dark; one that has stood off for ten seconds starts again, with a
+   * plume of smoke, as often as you like. True if E was used here.
+   */
+  private usePanelIfNear(): boolean {
+    const g = this.generatorAtPanel();
+
+    if (!g) {
+      return false;
+    }
+
+    const now = performance.now() / 1000;
+    let notice = "";
+
+    // (A networked game sends these requests and applies the answers.)
+    if (this.power.isOn(g.circuit)) {
+      if (!canShutDown(this.localRole)) {
+        return false;
+      }
+
+      if (this.power.shutDown(g.id, this.localRole, now) === "off") {
+        this.arena.setCircuitPower(g.circuit, false);
+        this.generatorSmoke.setRunning(g.id, false);
+        notice = `${g.name}  ·  switched OFF`;
+      }
+    } else {
+      const result = this.power.switchOn(g.id, now);
+
+      if (result === "on") {
+        this.arena.setCircuitPower(g.circuit, true);
+        this.generatorSmoke.startUp(g.id);
+        this.generatorView.kick(g.id, now);
+        notice = `${g.name}  ·  switched ON`;
+      } else if (result === "cooling") {
+        notice = `${g.name}  ·  cooling down  ·  ${Math.ceil(
+          this.power.secondsUntilRestart(g.circuit, now),
+        )} s`;
+      }
+    }
+
+    if (notice) {
+      this.fuelNotice = notice;
+      this.fuelNoticeUntil = performance.now() + 2200;
+    }
+
+    return true;
+  }
+
+  /** A new round: both generators run again. */
+  private restorePower(): void {
+    this.power.reset();
+    this.arena.setCircuitPower("interior", true);
+    this.arena.setCircuitPower("exterior", true);
+
+    for (const g of ARENA_LAYOUT.generators) {
+      this.generatorSmoke.setRunning(g.id, true);
+    }
+  }
+
+  /**
+   * Everything drawn for a lamp that the light itself does not carry follows
+   * its circuit's level: the hanging bulbs' glass, the tube fixtures, the wood
+   * the slab's bulb lights; and the generators shake and glow while they run.
+   */
+  private updatePowerVisuals(): void {
+    const bulbs: Array<[{ x: number; z: number }, string]> = [
+      [JUNK_BULBS[0], "bulb-junk-a"],
+      [JUNK_BULBS[1], "bulb-junk-b"],
+      [BREAK_BULB, "bulb-break-a"],
+    ];
+
+    // Each bulb's glass goes with its own lamp, one by one.
+    for (const [bulb, id] of bulbs) {
+      this.junkBulbs.setLit(bulb, this.arena.lampLevelOf(id) > 0.3);
+    }
+
+    // The slab's bulb is gone for good once the slab breaks.
+    const slabLamp = this.arena.lampLevelOf("bulb-power-a");
+
+    this.junkBulbs.setLit(
+      POWER_BULB,
+      slabLamp > 0.3 && !this.ceilingSlab.broken,
+    );
+    slabBulb.power.value = this.ceilingSlab.broken ? 0 : slabLamp;
+
+    for (const id of ["tube-warehouse-1", "tube-warehouse-2"]) {
+      this.hangingTubes.setLevel(id, this.arena.lampLevelOf(id));
+    }
+
+    for (const id of ["tube-armory-1", "tube-armory-2", "tube-armory-4"]) {
+      this.tubeGlow.setLevel(id, this.arena.lampLevelOf(id));
+    }
+
+    this.generatorView.update(performance.now() / 1000, (id) =>
+      this.power.isOn(this.circuitOfGenerator(id)),
+    );
+  }
+
+  private circuitOfGenerator(id: string): Circuit {
+    return PowerState.circuitOfGenerator(id) ?? "interior";
+  }
+
   /** The generator whose filler cap the player is standing at, if any. */
   private generatorInReach(): { id: string; name: string } | null {
     const feetY = this.player.position.y - this.player.eyeHeight;
@@ -2035,6 +2217,15 @@ export class Game {
     for (const light of this.shadowLights) {
       const shadow = light.shadow;
 
+      // A map that has never been drawn is drawn now, whatever the range: a
+      // material that samples a shadow map nobody has made is an error on
+      // every draw (a sampler type mismatch), not just a missing shadow.
+      if (!shadow.map) {
+        shadow.autoUpdate = true;
+
+        continue;
+      }
+
       if (light instanceof THREE.DirectionalLight) {
         shadow.autoUpdate = false;
         shadow.needsUpdate = this.shadowFrame % 3 === 0;
@@ -2044,19 +2235,14 @@ export class Game {
 
       const reach = light.distance * 1.5 + 3;
 
-      // A map not yet drawn must be drawn once, whatever the range.
       const near = light.position.distanceToSquared(eye) <= reach * reach;
 
-      if (!this.shadowDrawn.has(light)) {
-        shadow.needsUpdate = true;
-        this.shadowDrawn.add(light);
-      }
+      // A lamp whose circuit is dead casts nothing: no map to redraw.
+      const powered = light.color.r + light.color.g + light.color.b > 0.02;
 
-      shadow.autoUpdate = near;
+      shadow.autoUpdate = near && powered;
     }
   }
-
-  private readonly shadowDrawn = new Set<ShadowLight>();
 
   /** A lit Molotov in hand lights what is round it, flickering with the flame. */
   private updateFlameLight(): void {
@@ -2781,7 +2967,10 @@ export class Game {
 
         const entry = segmentCapsuleEntry(from, to, this.armBodyShape);
 
-        if (entry !== null && Number.isFinite(entry)) {
+        // (A shoulder already inside the other body's shape, standing against
+        // it, gives 0: the arm does not fold to a stub for that. The fist stops
+        // at a body it is coming up to, not at one it is already touching.)
+        if (entry !== null && Number.isFinite(entry) && entry > 0) {
           fraction = Math.min(fraction, entry);
         }
       }
@@ -2814,6 +3003,7 @@ export class Game {
     this.syncArmory();
 
     this.restoreSlab();
+    this.restorePower();
 
     // Every roof hatch is shut again for a new round.
     // (The Armory's vent hatch is not: once lifted it stays up.)
@@ -3286,6 +3476,8 @@ export class Game {
     this.fuelHazard.dispose();
     this.ventDrips.dispose();
     this.slabDebris.dispose();
+    this.generatorView.dispose();
+    this.generatorSmoke.dispose();
     this.input.dispose();
 
     this.thrownView.dispose();

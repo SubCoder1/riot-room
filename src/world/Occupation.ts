@@ -525,15 +525,8 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     p.box(-29.6, 0, 14.4, 0.4, 0.006, 0.3, DUST, 0.3);
     p.chunk(-20.0, 0, 22.8, 0.2, 0x6a6e73, 7);
     map.createFitting("occupation-hall", F, p.elements, []);
-    map.addLight({
-      id: "light-room-hall-a",
-      x: -25.5,
-      y: F + 3.5,
-      z: 14.0,
-      color: 0xdfe6f2,
-      intensity: 16,
-      distance: 9.5,
-    });
+    // (The bare lamp that hung by the Armory door, with its cord and its
+    // blown-out streak of light, has been taken down.)
     map.addLight({
       id: "light-room-hall-b",
       x: -21.5,

@@ -103,7 +103,6 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     "bulb-break-a": { scale: 0.96, reach: 1 },
     "light-room-barracks": { scale: 0.96, reach: 1 },
     "light-room-yard": { scale: 1.04, reach: 1 },
-    "light-room-hall-a": { scale: 0.96, reach: 1 },
     "light-room-hall-b": { scale: 0.72, reach: 1 },
     "workshop-light-bench": { scale: 2.2 },
     "workshop-light-machines": { scale: 2.2 },
@@ -163,6 +162,21 @@ function dimmed(hex: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+/** The floodlights and work lamps (the halogens). */
+function isHalogen(id: string): boolean {
+  return id.startsWith("halogen-") || id.startsWith("light-support-");
+}
+
+/** A halogen's colour, a little further toward orange (its lens and beam follow). */
+function warmed(hex: number): number {
+  const amber = [0xff, 0x9a, 0x4a];
+  const mix = 0.28;
+  const channel = (shift: number, i: number): number =>
+    Math.round(((hex >> shift) & 255) * (1 - mix) + amber[i] * mix);
+
+  return (channel(16, 0) << 16) | (channel(8, 1) << 8) | channel(0, 2);
+}
+
 /** Every light that is actually on tonight. */
 export function nightLights(layout: ArenaLayout): LightDefinition[] {
   const lights: LightDefinition[] = [];
@@ -194,7 +208,7 @@ export function nightLights(layout: ArenaLayout): LightDefinition[] {
   // little stronger so they still carry the night.
   return all.map((l) => ({
     ...l,
-    color: dimmed(l.color),
+    color: dimmed(isHalogen(l.id) ? warmed(l.color) : l.color),
     intensity: l.target ? l.intensity * 1.2 : l.intensity,
   }));
 }

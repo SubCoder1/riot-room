@@ -87,8 +87,8 @@ export const ARMORY = {
   LATCH_PAUSE: 0.3,
   SWING_SECONDS: 2.3,
   /** How near the release lever (m) and how close to the view line (rad). */
-  DOOR_REACH: 1.7,
-  HANDLE_AIM: 0.6,
+  DOOR_REACH: 2.3,
+  HANDLE_AIM: 0.85,
 };
 
 export type ShutterState =

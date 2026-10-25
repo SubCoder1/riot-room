@@ -62,6 +62,7 @@ const VERTEX = /* glsl */ `
   varying float vAlpha;
   varying vec3 vTint;
   varying float vNear;
+  varying float vFar;
 
   ${LIGHT_SUM}
 
@@ -86,7 +87,9 @@ const VERTEX = /* glsl */ `
     // light, fading out between 3 and 10 m, so the rain round you shows
     // anywhere in the open.
     vNear = 1.0 - smoothstep(3.0, 10.0, distance(p, cameraPosition));
-    vAlpha = 0.06 + 0.18 * vNear;
+    // Far streaks (past about 8 m) fade a little more with distance, lit or not.
+    vFar = 1.0 - 0.5 * smoothstep(8.0, 30.0, distance(p, cameraPosition));
+    vAlpha = 0.05 + 0.18 * vNear;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
@@ -95,11 +98,12 @@ const FRAGMENT = /* glsl */ `
   varying float vAlpha;
   varying vec3 vTint;
   varying float vNear;
+  varying float vFar;
 
   void main() {
     vec3 lit = min(vTint, vec3(0.9));
     float strength = clamp(max(lit.r, max(lit.g, lit.b)), 0.0, 0.9);
-    gl_FragColor = vec4(lit + vec3(0.1, 0.12, 0.16) + vec3(0.32, 0.4, 0.52) * vNear, vAlpha + strength * 0.5);
+    gl_FragColor = vec4(lit + vec3(0.1, 0.12, 0.16) + vec3(0.32, 0.4, 0.52) * vNear, (vAlpha + strength * 0.5) * vFar);
   }
 `;
 
