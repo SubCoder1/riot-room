@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ArenaCollision } from "../../src/world/ArenaCollision";
-import {
-  ARENA_HALF_X,
-  ARENA_HALF_Z,
-  ROOF_LOW,
-} from "../../src/world/ArenaLayout";
+import { ARENA_HALF_X, ARENA_HALF_Z } from "../../src/world/ArenaLayout";
 import { MapBuilder } from "../../src/world/MapParts";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 import { EAST, NORTH, SOUTH, WEST, spawnPlayer, yawFor } from "./playerHarness";
@@ -281,13 +277,13 @@ describe("Player on the map", () => {
     expect(p.player.position.z).toBeLessThan(-11); // right up to the wall, under the balcony
   });
 
-  it("climbs to a roof and crosses the catwalk to the next roof", () => {
-    const ladder = layout.ladders.find((l) => l.id === "ladder-roof-east")!;
+  it("climbs a ladder to a roof", () => {
+    const ladder = layout.ladders.find((l) => l.id === "ladder-roof-south")!;
     const up = spawnPlayer(
       ladder.approach.x,
       ladder.bottomY,
       ladder.approach.z,
-      EAST,
+      SOUTH,
     );
 
     up.step(0.05);
@@ -302,29 +298,8 @@ describe("Player on the map", () => {
     up.input.keys.clear();
     up.step(0.3);
 
-    // On the Server room's roof (10.8 m).
+    // On the roof (10.8 m).
     expect(up.feet()).toBeCloseTo(ladder.topY, 2);
-
-    // East to the catwalk's line, then south along it onto the Break room's roof.
-    up.input.yaw = EAST;
-    up.input.keys.add("KeyW");
-    up.step(0.7);
-    up.input.keys.clear();
-    up.step(0.4);
-    up.input.yaw = SOUTH;
-    up.input.keys.add("KeyW");
-    up.step(0.9);
-    // The drop from the roof to the catwalk costs a moment on landing.
-    up.input.keys.clear();
-    up.step(1.2);
-    up.input.keys.add("KeyW");
-    up.step(2.4);
-
-    // Off the Server room's roof onto the catwalk, and along it to the Break
-    // room's roof (8.1 m).
-    expect(up.player.isGrounded).toBe(true);
-    expect(up.feet()).toBeCloseTo(ROOF_LOW, 1);
-    expect(up.player.position.z).toBeGreaterThan(3);
   });
 
   it("can never leave the map, even sprinting into a wall for a long time", () => {

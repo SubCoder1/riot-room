@@ -263,14 +263,6 @@ function createUpperFloor(): ArenaLayout {
     topY: F,
   });
   // To the roofs, from the walkways:
-  map.createLadder({
-    id: "ladder-roof-east",
-    normal: "-x",
-    face: 22,
-    along: -6,
-    bottomY: F,
-    topY: ROOF_HIGH,
-  });
   // From the catwalk (the Break room roof's level) up to the Server room's
   // roof, now 2.7 m higher.
   map.createLadder({

@@ -644,7 +644,14 @@ describe("Getting around", () => {
 
     // The Barracks roof and the service corridor's roof have no ladder or ledge
     // any more: they are for the grapple, like the perches.
-    const grappleOnly = new Set(["room-barracks-roof", "roof-corridor-nw"]);
+    // The Server and Break room roofs and the catwalk between them lost
+    // their ladder (the east wall's) and are for the grapple too.
+    const grappleOnly = new Set([
+      "room-barracks-roof",
+      "roof-corridor-nw",
+      "room-server-roof",
+      "room-break-roof",
+    ]);
 
     for (const roof of layout.platforms.filter((p) => p.role === "roof")) {
       // A thin strip beside a hatch hole has no room for a body.
@@ -675,14 +682,14 @@ describe("Getting around", () => {
     expect(missing).toEqual([]);
   });
 
-  it("the catwalk joins two roofs", () => {
+  it("the catwalk joins two roofs, which only the grapple reaches now (no east ladder)", () => {
     const catwalk = layout.platforms.find((p) => p.id === "catwalk-east")!;
 
     expect(
       freeCells(catwalk, ROOF_LOW).some(
         (c) => distanceAtHeight(all, c.x, c.z, ROOF_LOW) < Infinity,
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("from either spawn area its own staircase is the only way out, and it leads to every room and to the other spawn area", () => {
@@ -820,6 +827,9 @@ describe("Ladders", () => {
     const bad: string[] = [];
 
     for (const ladder of layout.ladders) {
+      // (The catwalk's ladder is on the grapple-only roofs: see above.)
+      if (ladder.id === "ladder-catwalk-east") continue;
+
       if (
         distanceAtHeight(
           all,
