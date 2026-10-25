@@ -15,7 +15,7 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     id: "indicator-server-racks",
     x: 27,
     y: 5.3,
-    z: -8.4,
+    z: -20.1,
     color: 0x4f86e8,
     intensity: 3,
     distance: 4.5,
@@ -33,6 +33,33 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     distance: 15,
     target: { x: -18.6, y: 4.0, z: 8 },
     angle: 0.9,
+  },
+  {
+    id: "halogen-wall-spawn",
+    // The spawn room's principal light: a caged halogen on a bracket bolted to
+    // the yard's east wall, warm amber, aimed down at the worktable and the
+    // site plan on the north wall.
+    x: -21.38,
+    y: 4.0,
+    z: -20.8,
+    color: 0xffc27a,
+    intensity: 85,
+    distance: 12,
+    target: { x: -26.0, y: 0.8, z: -17.2 },
+    angle: 0.72,
+  },
+  {
+    id: "halogen-wall-bridge",
+    // Bolted high on the Server room's south wall, over the bridge's
+    // north end, a yellowish-orange work halogen aimed down the bridge and toward the deck.
+    x: 31.0,
+    y: 9.6,
+    z: -9.64,
+    color: 0xffb450,
+    intensity: 120,
+    distance: 14,
+    target: { x: 27.2, y: 5.8, z: -4.5 },
+    angle: 0.85,
   },
   {
     id: "halogen-roof-east",
@@ -70,12 +97,15 @@ export const WALL_LAMPS: Record<string, [number, number]> = {
   "halogen-wall-storage": [-1, 0],
   // Outside the east wall, over the shutter.
   "halogen-wall-room-armory": [-1, 0],
+  // On the spawn yard's east wall (the wall is toward +x).
+  "halogen-wall-spawn": [1, 0],
+  // On the south wall of the unified spawn room (the wall is toward -z).
+  "halogen-wall-bridge": [0, -1],
 };
 
 /** Floodlights left off (nobody switched them on tonight). */
 const OFF = new Set([
   "light-support-north-1",
-  "light-support-deck-1",
   // The work lamp over the power room's generator has been taken down.
   "light-power-room-work",
 ]);

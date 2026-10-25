@@ -32,118 +32,10 @@ const RUST = 0x5a4a3c;
 const RUST_DARK = 0x46372c;
 const TIMBER = 0x5a4632;
 const TIMBER_DARK = 0x3e3024;
-const BARK = 0x4a3b2c;
-const BARK_DARK = 0x382c20;
-const GRAIN = 0xb09a76;
 const NOSING = 0x7a828e;
 const HAZARD = 0x9a8836;
-const BRICKS = [0x6a3a30, 0x5a3329, 0x71402f, 0x4f3029, 0x5e3a33];
-const CONCRETE = 0x6a6e73;
-const CONCRETE_DARK = 0x575b61;
+const PIPE_RED = 0x7a2c24;
 const CABINET = 0x383e46;
-
-/** A deterministic little generator, so the clutter is the same every run. */
-function lcg(seed: number): () => number {
-  let a = seed >>> 0;
-
-  return () => {
-    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
-
-    return a / 4294967296;
-  };
-}
-
-/** A stack of bricks laid course by course, staggered, each a bit off. */
-function brickStack(
-  p: Pieces,
-  x0: number,
-  z0: number,
-  across: number,
-  deep: number,
-  courses: number,
-  seed: number,
-): void {
-  const r = lcg(seed);
-  const bl = 0.24;
-  const bh = 0.075;
-  const bw = 0.115;
-
-  for (let c = 0; c < courses; c++) {
-    // Alternate courses run along x and along z, so the stack ties together.
-    const alongX = c % 2 === 0;
-    const nx = alongX ? Math.floor(across / bl) : Math.floor(across / bw);
-    const nz = alongX ? Math.floor(deep / bw) : Math.floor(deep / bl);
-    // A thinner top course, with a few missing: a stack in use.
-    const keep = c >= courses - 1 ? 0.55 : 1;
-
-    for (let i = 0; i < nx; i++) {
-      for (let j = 0; j < nz; j++) {
-        if (r() > keep) {
-          continue;
-        }
-
-        const x = x0 + (alongX ? bl : bw) * (i + 0.5) + (r() - 0.5) * 0.012;
-        const z = z0 + (alongX ? bw : bl) * (j + 0.5) + (r() - 0.5) * 0.012;
-
-        p.box(
-          x,
-          c * bh,
-          z,
-          alongX ? bl - 0.004 : bw - 0.004,
-          bh - 0.004,
-          alongX ? bw - 0.004 : bl - 0.004,
-          BRICKS[Math.floor(r() * BRICKS.length)],
-          (r() - 0.5) * 0.05,
-        );
-      }
-    }
-  }
-}
-
-/** A pile of logs running along z, a pyramid of rows, each a bit different. */
-function logs(
-  p: Pieces,
-  x0: number,
-  z0: number,
-  length: number,
-  across: number,
-  seed: number,
-): void {
-  const r = lcg(seed);
-  const d = 0.35;
-  const n = Math.floor(across / d);
-
-  for (let row = 0; row < n; row++) {
-    const count = n - row;
-
-    for (let i = 0; i < count; i++) {
-      const lateral = (i + 0.5 + row * 0.5) * d;
-      const len = length * (0.84 + r() * 0.16);
-      const slip = (r() - 0.5) * 0.2;
-      const y = row * d * 0.87 + d / 2;
-      const zc = z0 + length / 2 + slip;
-      const dd = d * (0.9 + r() * 0.1);
-      const x = x0 + lateral;
-      const color = r() < 0.5 ? BARK : BARK_DARK;
-
-      // The log: a closed cylinder lying along z, with a pale end-grain disc
-      // at each end.
-      p.cable(x, y, zc, len, dd, color, Math.PI / 2);
-
-      for (const s of [-1, 1]) {
-        p.cable(
-          x,
-          y,
-          zc + s * (len / 2 + 0.004),
-          0.012,
-          dd * 0.88,
-          GRAIN,
-          Math.PI / 2,
-        );
-      }
-    }
-  }
-}
 
 /**
  * A slatted wooden shipping crate: a dark body, three slats a side, corner
@@ -273,7 +165,7 @@ function fieldConsole(p: Pieces, cx: number, zBack: number): void {
   p.box(cx + 0.9, 1.06, z - 0.05, 0.18, 0.06, 0.12, GUNMETAL);
 }
 
-/** A utility cabinet or electrical enclosure, door shut, against a north wall. */
+/** A utility locker or electrical enclosure, door shut, against a north wall. */
 function cabinet(p: Pieces, x: number, z: number): void {
   p.box(x, 0, z, 1.0, 1.8, 0.5, CABINET);
   p.box(x, 1.8, z, 1.06, 0.05, 0.56, GUNMETAL);
@@ -285,61 +177,7 @@ function cabinet(p: Pieces, x: number, z: number): void {
 
   p.box(x + 0.2, 0.85, z + 0.27, 0.05, 0.26, 0.04, STEEL_BARE);
   p.box(x + 0.25, 0.7, z + 0.28, 0.1, 0.1, 0.05, BLACK);
-  p.box(x - 0.2, 1.25, z + 0.26, 0.26, 0.22, 0.01, HAZARD);
-  p.box(x - 0.2, 1.3, z + 0.268, 0.1, 0.1, 0.008, BLACK, 0, 0, Math.PI / 4);
   p.box(x, 0, z + 0.02, 1.04, 0.1, 0.54, GUNMETAL);
-}
-
-/** A pallet carrying a stack of concrete cinder blocks. */
-function pallet(p: Pieces, x: number, z: number, seed: number): void {
-  const r = lcg(seed);
-
-  for (const dx of [-0.5, 0, 0.5]) {
-    p.box(x + dx, 0, z, 0.1, 0.1, 1.0, TIMBER_DARK);
-  }
-
-  for (let i = 0; i < 5; i++) {
-    p.box(x, 0.1, z - 0.4 + i * 0.2, 1.2, 0.025, 0.17, TIMBER);
-  }
-
-  for (let c = 0; c < 3; c++) {
-    for (let i = 0; i < 3; i++) {
-      p.box(
-        x - 0.38 + i * 0.4 + (r() - 0.5) * 0.02,
-        0.125 + c * 0.2,
-        z + (c % 2 ? 0.14 : -0.14) + (r() - 0.5) * 0.03,
-        0.39,
-        0.19,
-        0.19,
-        r() < 0.5 ? CONCRETE : CONCRETE_DARK,
-        (r() - 0.5) * 0.04,
-      );
-    }
-  }
-}
-
-/** Debris along a wall: broken bricks, an offcut, a rag. Not solid. */
-function debris(
-  p: Pieces,
-  x0: number,
-  z: number,
-  n: number,
-  seed: number,
-): void {
-  const r = lcg(seed);
-
-  for (let i = 0; i < n; i++) {
-    const x = x0 + r() * 2.2;
-    const kind = r();
-
-    if (kind < 0.5) {
-      p.chunk(x, 0, z + (r() - 0.5) * 0.3, 0.1 + r() * 0.08, BRICKS[i % 5]);
-    } else if (kind < 0.8) {
-      p.box(x, 0, z + r() * 0.2, 0.4 + r() * 0.3, 0.035, 0.09, TIMBER, r() * 3);
-    } else {
-      p.box(x, 0, z + r() * 0.25, 0.3, 0.01, 0.22, 0x4a3e3a, r() * 3);
-    }
-  }
 }
 
 /** Faded yellow and black hazard squares laid in a strip on the floor. */
@@ -429,6 +267,7 @@ function floorPlates(
   map: MapBuilder,
   name: string,
   plates: Array<[number, number, number]>,
+  baseY = 0,
 ): void {
   const p = new Pieces();
 
@@ -468,7 +307,7 @@ function floorPlates(
     }
   }
 
-  map.createFitting(`fittings-${name}-plates`, 0, p.elements, []);
+  map.createFitting(`fittings-${name}-plates`, baseY, p.elements, []);
 }
 
 /**
@@ -663,70 +502,52 @@ export function furnishSpawnAreas(map: MapBuilder): void {
       { minX: -31.7, maxX: -30.6, minZ: -14.9, maxZ: -13.8, top: 1.0 },
     ]);
 
-    const s = new Pieces();
-
-    crate(s, 30.2, 0, -23.2, 1.0, 1.0, 0.9, 0.02, TIMBER);
-    crate(s, 31.2, 0, -23.2, 1.0, 1.0, 0.9, -0.03, TIMBER_DARK);
-    crate(s, 30.75, 0.9, -23.15, 1.0, 1.0, 0.8, 0.14, TIMBER);
-    crate(s, 30.7, 0, -22.2, 1.2, 1.0, 0.9, -0.05, TIMBER);
-    map.createFitting("stack-spawn-ne", 0, s.elements, [
-      { minX: 29.7, maxX: 31.7, minZ: -23.7, maxZ: -21.7, top: 1.7 },
-    ]);
-
-    // An ammunition-style steel case on the east wall.
-    const m = new Pieces();
-    const cx = 31.15;
-    const cz = -19.6;
-
-    m.box(cx, 0, cz, 1.06, 0.92, 1.06, 0x3c4a3c);
-    m.box(cx, 0.92, cz, 1.1, 0.08, 1.1, 0x2f3a2f);
-
-    for (const dz of [-0.3, 0.3]) {
-      m.box(cx - 0.55, 0.3, cz + dz, 0.03, 0.14, 0.2, STEEL_BARE);
-    }
-
-    m.box(cx - 0.55, 0.5, cz, 0.012, 0.22, 0.5, 0x9a8836);
-    m.box(cx - 0.56, 0.58, cz, 0.008, 0.06, 0.3, BLACK);
-    m.box(cx, 0.05, cz, 1.1, 0.06, 1.1, GUNMETAL);
-    map.createFitting("crate-spawn-ne-d", 0, m.elements, [
-      { minX: 30.6, maxX: 31.7, minZ: -20.15, maxZ: -19.05, top: 1.0 },
-    ]);
+    // (The north-east spawn room has no stored materials or crates now: it is
+    // the Server room's too, and its racks stand where they stood.)
   }
 
   // ===================================================== north-west area
+  // A minimal staging room: a worktable and the site plan on the north wall,
+  // two crates and a locker beside them, one crate in the south-west corner,
+  // and the middle of the floor left open between the spawn spots and the stairs.
   {
-    // Logs along the west wall's north end, against the console.
-    const p = new Pieces();
+    // Two crates side by side on the north wall, east of the site plan.
+    const k2 = new Pieces();
 
-    logs(p, -31.7, -23.7, 1.9, 1.4, 71);
-    map.createFitting("fittings-spawn-nw-logs", 0, p.elements, [
-      { minX: -31.7, maxX: -30.3, minZ: -23.7, maxZ: -21.8, top: 1.1 },
+    crate(k2, -24.1, 0, -23.15, 1.0, 1.0, 0.9, 0.02, TIMBER);
+    crate(k2, -23.05, 0, -23.15, 1.0, 1.0, 0.9, -0.03, TIMBER_DARK);
+    map.createFitting("crates-spawn-nw", 0, k2.elements, [
+      { minX: -24.6, maxX: -22.55, minZ: -23.7, maxZ: -22.65, top: 0.9 },
     ]);
 
-    // Brick stacks in the north-east corner: a tall one and a low one.
-    const a = new Pieces();
+    // One steel locker in the corner, door shut.
+    const l = new Pieces();
 
-    brickStack(a, -23.04, -23.7, 2.0, 1.2, 11, 5);
-    map.createFitting("fittings-spawn-nw-bricks-a", 0, a.elements, [
-      { minX: -23.04, maxX: -21.0, minZ: -23.7, maxZ: -22.5, top: 0.84 },
+    cabinet(l, -21.9, -23.45);
+    map.createFitting("locker-spawn-nw", 0, l.elements, [
+      { minX: -22.4, maxX: -21.4, minZ: -23.7, maxZ: -23.2, top: 1.85 },
     ]);
 
-    const b = new Pieces();
+    // Two red service pipes along the north wall above the site plan, on
+    // brackets, one dark conduit under them, and a drop in the corner.
+    const q = new Pieces();
 
-    brickStack(b, -24.68, -23.7, 1.6, 0.9, 6, 9);
-    map.createFitting("fittings-spawn-nw-bricks-b", 0, b.elements, [
-      { minX: -24.68, maxX: -23.04, minZ: -23.7, maxZ: -22.8, top: 0.46 },
-    ]);
+    q.bar(-26.4, 3.8, -23.58, 10.0, 0.11, PIPE_RED);
+    q.bar(-26.4, 3.58, -23.6, 10.0, 0.06, MAST_WORN);
 
-    // Debris along the walls (not solid).
-    const d = new Pieces();
+    for (let x = -31.2; x < -21.5; x += 2.4) {
+      q.box(x, 3.46, -23.66, 0.1, 0.46, 0.06, MAST);
+    }
 
-    debris(d, -30.0, -23.2, 3, 3);
-    debris(d, -27.0, -23.3, 4, 4);
-    debris(d, -21.8, -20.5, 2, 5);
-    map.createFitting("fittings-spawn-nw-debris", 0, d.elements, []);
+    q.post(-31.45, 0.05, -23.5, 3.75, 0.07, PIPE_RED);
 
-    // The site plan on the north wall between the console and the bricks.
+    for (const y of [0.9, 1.9, 2.9]) {
+      q.box(-31.45, y, -23.55, 0.1, 0.07, 0.1, MAST_WORN);
+    }
+
+    map.createFitting("fittings-spawn-nw-conduit", 0, q.elements, []);
+
+    // The site plan on the north wall, between the worktable and the crates.
     const f = new Pieces();
 
     posterFrame(f, -26.4, 2.1, -23.67, 3.0, 2.25);
@@ -745,81 +566,11 @@ export function furnishSpawnAreas(map: MapBuilder): void {
     });
   }
 
-  floorPlates(map, "spawn-nw", [
-    [-29.4, -19.6, 0.1],
-    [-25.4, -20.4, -0.05],
-    [-24.2, -16.9, 0.0],
-  ]);
-
-  // ===================================================== north-east area
-  {
-    // Logs on the west wall's north end and a brick stack beside them.
-    const p = new Pieces();
-
-    logs(p, 22.0, -23.7, 1.9, 1.4, 83);
-    map.createFitting("fittings-spawn-ne-logs", 0, p.elements, [
-      { minX: 22.0, maxX: 23.4, minZ: -23.7, maxZ: -21.8, top: 1.1 },
-    ]);
-
-    const q = new Pieces();
-
-    brickStack(q, 23.4, -23.7, 1.7, 1.0, 9, 12);
-    map.createFitting("fittings-spawn-ne-bricks", 0, q.elements, [
-      { minX: 23.4, maxX: 25.1, minZ: -23.7, maxZ: -22.7, top: 0.7 },
-    ]);
-
-    // A utility cabinet on the north wall, clear of the poster.
-    const c = new Pieces();
-
-    cabinet(c, 28.7, -23.45);
-    map.createFitting("fittings-spawn-ne-cabinet", 0, c.elements, [
-      { minX: 28.2, maxX: 29.2, minZ: -23.7, maxZ: -23.2, top: 1.85 },
-    ]);
-
-    // A pallet of cinder blocks on the east wall, touching the crate.
-    const pl = new Pieces();
-
-    pallet(pl, 31.1, -18.55, 21);
-    map.createFitting("fittings-spawn-ne-pallet", 0, pl.elements, [
-      { minX: 30.5, maxX: 31.7, minZ: -19.05, maxZ: -18.05, top: 0.7 },
-    ]);
-
-    const d = new Pieces();
-
-    debris(d, 26.0, -23.3, 4, 8);
-    debris(d, 29.6, -23.0, 2, 9);
-    map.createFitting("fittings-spawn-ne-debris", 0, d.elements, []);
-
-    // The information board: a frame on the north wall.
-    const f = new Pieces();
-
-    posterFrame(f, 26.6, 2.1, -23.67, 3.0, 2.25);
-    hazardStrip(f, 26.0, -15.5, 2.0, 0.28, true);
-    map.createFitting("fittings-spawn-ne-poster", 0, f.elements, []);
-    map.addPoster({
-      id: "poster-spawn-ne",
-      x: 26.6,
-      y: 2.1,
-      z: -23.64,
-      width: 3.0,
-      height: 2.25,
-      nx: 0,
-      nz: 1,
-      here: "ne",
-    });
-  }
-
-  floorPlates(map, "spawn-ne", [
-    [26.4, -19.8, 0.05],
-    [29.3, -17.0, -0.08],
-    [24.4, -14.6, 0.0],
-  ]);
+  floorPlates(map, "spawn-nw", [[-25.4, -20.4, -0.05]]);
 
   for (const [name, x, z, w, d] of [
     ["nw-a", -27.3, -20.2, 1.6, 1.1],
     ["nw-b", -30.2, -16.8, 1.2, 0.9],
-    ["ne-a", 27.6, -21.0, 1.5, 1.0],
-    ["ne-b", 24.4, -17.4, 1.1, 1.3],
   ] as const) {
     map.addDecal({
       id: `decal-spawn-${name}`,
@@ -835,7 +586,19 @@ export function furnishSpawnAreas(map: MapBuilder): void {
     });
   }
 
-  // The lamp posts, and the sealed door.
+  // The worktable's lamp: a small warm light on the table and the site plan
+  // (the console's task lamp is lit).
+  map.addLight({
+    id: "light-spawn-worktable",
+    x: -28.3,
+    y: 1.45,
+    z: -23.2,
+    color: 0xffb468,
+    intensity: 9,
+    distance: 5,
+  });
+
+  // The lamp post, and the sealed door.
   furnishSpawnLamps(map);
   door(map);
 }

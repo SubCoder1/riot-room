@@ -38,6 +38,38 @@ const BEAM_FRAGMENT = /* glsl */ `
   }
 `;
 
+let halo: THREE.DataTexture | null = null;
+
+/** A soft round glow, drawn once and shared by every lamp's halo. */
+function haloTexture(): THREE.DataTexture {
+  if (halo) {
+    return halo;
+  }
+
+  const size = 32;
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot((x + 0.5) / size - 0.5, (y + 0.5) / size - 0.5) * 2;
+      const a = Math.max(0, Math.exp(-d * d * 5) - Math.exp(-5));
+      const o = (y * size + x) * 4;
+
+      data[o] = 255;
+      data[o + 1] = 255;
+      data[o + 2] = 255;
+      data[o + 3] = Math.round(255 * a);
+    }
+  }
+
+  halo = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  halo.magFilter = THREE.LinearFilter;
+  halo.minFilter = THREE.LinearFilter;
+  halo.needsUpdate = true;
+
+  return halo;
+}
+
 const housing = new THREE.MeshStandardMaterial({
   color: 0x14171b,
   roughness: 0.6,
@@ -128,13 +160,40 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
     fog: false,
     toneMapped: false,
   });
-  const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.34), lensMaterial);
+  // A halogen has its own head drawn here, with the lens at its front. Every
+  // other floodlight has its head drawn with its mast (in `PowerGrid`): the
+  // lens glow sits in that head's recess, the size of its lens, and not out in
+  // front of it, where it floated clear of the fixture, off the wall.
+  const ownHead = light.id.startsWith("halogen-");
+  const lens = new THREE.Mesh(
+    ownHead
+      ? new THREE.PlaneGeometry(0.5, 0.34)
+      : new THREE.CircleGeometry(0.14, 16),
+    lensMaterial,
+  );
 
-  lens.position.z = light.id.startsWith("halogen-") ? 0.25 : 0.4;
+  lens.position.z = ownHead ? 0.25 : 0.03;
 
   // A hanging bulb has its own glass (drawn with its room): only the beam here.
+  // Any other lamp has a soft halo round its lens, so it reads as a lit fixture
+  // on its wall and not as a bare lens hanging in the dark.
+  const haloMaterial = new THREE.SpriteMaterial({
+    map: haloTexture(),
+    color: colour.clone(),
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.45,
+    fog: false,
+  });
+  const halo = new THREE.Sprite(haloMaterial);
+
+  halo.scale.setScalar(ownHead ? 1.1 : 0.8);
+  halo.position.z = ownHead ? 0.3 : 0.08;
+  halo.renderOrder = 6;
+
   if (!light.id.startsWith("bulb-")) {
-    group.add(lens);
+    group.add(lens, halo);
   }
 
   // The cone: apex at the lamp, widening toward the target.
@@ -178,6 +237,7 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
       .copy(lensBase)
       .multiplyScalar((0.25 + 0.75 * level) * power);
     beamMaterial.uniforms.uStrength.value = beamStrength * level * power;
+    haloMaterial.opacity = 0.45 * level * power;
   };
 
   root.userData.setLevel = (value: number): void => {

@@ -5,6 +5,7 @@ import { MOLOTOV_CONFIG } from "../../src/combat/MolotovConfig";
 import { SMOKE_CONFIG } from "../../src/combat/SmokeConfig";
 import { PlayerUtilities } from "../../src/inventory/PlayerUtilities";
 import { ArenaCollision } from "../../src/world/ArenaCollision";
+import { nightLights } from "../../src/world/NightLights";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 
 const world = new ArenaCollision();
@@ -47,10 +48,14 @@ describe("Spawn areas: entry and staging, not a shop", () => {
     );
   });
 
-  it("has a lamp post in each, with its own cable and a spotlight at the wall plan", () => {
-    for (const area of ["nw", "ne"]) {
-      const lamp = ARENA_LAYOUT.lights.find(
-        (l) => l.id === `light-lamp-spawn-${area}`,
+  it("has a lamp post in the north-west yard, with its own cable and a spotlight at the wall plan (the north-east room has none)", () => {
+    expect(
+      ARENA_LAYOUT.lights.some((l) => l.id === "light-lamp-spawn-ne"),
+    ).toBe(false);
+
+    for (const area of ["nw"]) {
+      const lamp = nightLights(ARENA_LAYOUT).find(
+        (l) => l.id === "halogen-wall-spawn",
       );
       const poster = ARENA_LAYOUT.posters.find((p) => p.here === area)!;
 
@@ -65,8 +70,9 @@ describe("Spawn areas: entry and staging, not a shop", () => {
     }
   });
 
-  it("has a large site plan poster in each area at eye level, clear of props", () => {
-    expect(ARENA_LAYOUT.posters).toHaveLength(2);
+  it("has a large site plan poster in the north-west yard at eye level, clear of props (none in the north-east room)", () => {
+    expect(ARENA_LAYOUT.posters).toHaveLength(1);
+    expect(ARENA_LAYOUT.posters[0].here).toBe("nw");
 
     for (const poster of ARENA_LAYOUT.posters) {
       expect(poster.width).toBeGreaterThanOrEqual(2);
@@ -92,30 +98,64 @@ describe("Spawn areas: entry and staging, not a shop", () => {
     }
   });
 
-  it("has logs, brick stacks and other stored materials as solid cover", () => {
+  it("is minimal: a worktable, a few crates and a locker as solid cover, no heaps of stored materials", () => {
     for (const id of [
-      "fittings-spawn-nw-logs",
-      "fittings-spawn-nw-bricks-a",
-      "fittings-spawn-ne-logs",
-      "fittings-spawn-ne-bricks",
-      "fittings-spawn-ne-pallet",
-      "fittings-spawn-ne-cabinet",
+      "console-spawn-nw",
+      "crate-spawn-nw",
+      "crates-spawn-nw",
+      "locker-spawn-nw",
     ]) {
       expect(
         ARENA_LAYOUT.walls.some((w) => w.id === id),
         id,
       ).toBe(true);
     }
+
+    for (const id of [
+      "fittings-spawn-nw-logs",
+      "fittings-spawn-nw-bricks-a",
+      "fittings-spawn-nw-bricks-b",
+      "fittings-spawn-nw-debris",
+    ]) {
+      expect(
+        ARENA_LAYOUT.walls.some((w) => w.id === id) ||
+          ARENA_LAYOUT.piles.some((p) => p.id === id),
+        id,
+      ).toBe(false);
+    }
+
+    // A warm practical light at the worktable.
+    const lamp = ARENA_LAYOUT.lights.find(
+      (l) => l.id === "light-spawn-worktable",
+    )!;
+
+    expect(lamp).toBeDefined();
+    expect(lamp.y).toBeLessThan(2);
+    expect(lamp.intensity).toBeLessThan(15);
+    // Red pipes along the north wall.
+    expect(
+      ARENA_LAYOUT.piles.some((p) => p.id === "fittings-spawn-nw-conduit"),
+    ).toBe(true);
+  });
+
+  it("leaves the middle of the floor open: nothing solid between the spawn spots and the stairs", () => {
+    for (const spawn of ARENA_LAYOUT.spawnPoints) {
+      for (let x = spawn.x; x <= -23; x += 0.5) {
+        expect(world.isBlocked(x, spawn.z, 0, 0.45), `${x},${spawn.z}`).toBe(
+          false,
+        );
+      }
+    }
   });
 
   it("keeps each stair foot and the middle of each area clear", () => {
-    for (const [x, z] of [
-      [-26, -19],
-      [-29.6, -15.8],
-      [26.5, -19],
-      [29.9, -14.3],
+    for (const [x, z, floor] of [
+      [-26, -19, 0],
+      [-29.6, -15.8, 0],
+      [26.5, -13.5, 4],
+      [29.9, -14.3, 4],
     ]) {
-      expect(world.isBlocked(x, z, 0, 0.45), `${x},${z}`).toBe(false);
+      expect(world.isBlocked(x, z, floor, 0.45), `${x},${z}`).toBe(false);
     }
   });
 });

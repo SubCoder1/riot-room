@@ -37,6 +37,8 @@ const EXTERIOR_LAMPS: ReadonlySet<string> = new Set([
   "light-site-scaffold",
   "light-room-yard",
   "halogen-wall-room-armory",
+  "halogen-wall-bridge",
+  "halogen-wall-spawn",
   "halogen-roof-east",
   "halogen-wall-storage",
 ]);
@@ -49,8 +51,7 @@ const INTERIOR_LAMPS: ReadonlySet<string> = new Set([
   "bulb-junk-a",
   "bulb-junk-b",
   "bulb-break-a",
-  "light-lamp-spawn-nw",
-  "light-lamp-spawn-ne",
+  "light-spawn-worktable",
   "light-room-server",
   "light-room-barracks",
   "light-room-hall-b",

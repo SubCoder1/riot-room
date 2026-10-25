@@ -38,6 +38,9 @@ const GAUGE = 0x9fb0a8;
 /** Weathered dark steel for the masts, brackets and lamp housings. */
 const MAST = 0x383e46;
 const MAST_WORN = 0x464d56;
+/** A fixture head's steel, lighter than the masts so it shows in the dark. */
+const HEAD_BODY = 0x59626e;
+const HEAD_RIM = 0x7a8592;
 const GRIME = 0x2b3036;
 const RUST = 0x5a4a3c;
 /** Generator: dark weathered body, faded tank, a little faded orange. */
@@ -397,6 +400,8 @@ interface Support {
   style?: "mast" | "wall";
   /** The colour of its light (a restrained amber or neutral white). */
   color?: number;
+  /** Its light's strength, if not the usual for its kind. */
+  power?: number;
 }
 
 const SUPPORTS: Support[] = [
@@ -481,22 +486,6 @@ const SUPPORTS: Support[] = [
     cage: true,
     platform: 1,
     color: 0xffe3b8,
-  },
-  {
-    // A work lamp on the Server room's south wall, lighting the east deck's
-    // service area (its lead is in furnishDeckService).
-    id: "support-deck-1",
-    x: 29.4,
-    z: -5.0,
-    nx: 0,
-    nz: 1,
-    height: 3.3,
-    kind: "single",
-    tilt: 0.55,
-    cage: true,
-    platform: 0,
-    style: "wall",
-    color: 0xffd9a0,
   },
 ];
 
@@ -636,12 +625,14 @@ function buildSupport(map: MapBuilder, F: number, s: Support): void {
       box(p, s, cu, v, cy - sh / 2, su, sv, sh, color, t);
     };
 
-    part(0, 0, 0.3, 0.48, 0.22, MAST); // the housing
+    // (Weathered steel a shade lighter than the masts, so a head reads as a
+    // fixture against the dark wall and not as a lens hanging in the air.)
+    part(0, 0, 0.3, 0.48, 0.22, HEAD_BODY); // the housing
     part(0, 0, 0.34, 0.52, 0.06, GRIME); // its dirty mid band
-    part(0, -0.13, 0.36, 0.52, 0.04, MAST_WORN); // the front rim
+    part(0, -0.13, 0.36, 0.52, 0.04, HEAD_RIM); // the front rim
     part(0, -0.115, 0.26, 0.4, 0.015, LENS); // the recessed lens
-    part(-0.02, 0.14, 0.4, 0.54, 0.035, GUNMETAL); // the visor
-    part(0, 0, 0.1, 0.56, 0.3, MAST_WORN); // the yoke's side plates
+    part(-0.02, 0.14, 0.4, 0.54, 0.035, HEAD_BODY); // the visor
+    part(0, 0, 0.1, 0.56, 0.3, HEAD_RIM); // the yoke's side plates
 
     if (s.cage) {
       for (let i = 0; i < 5; i++) {
@@ -650,7 +641,17 @@ function buildSupport(map: MapBuilder, F: number, s: Support): void {
     }
 
     // Arm from the mast to the head, and a pivot bolt on the yoke.
-    box(p, s, 0.21 + (u - 0.21) / 2, v, y + 0.16, u - 0.21, 0.07, 0.08, MAST);
+    box(
+      p,
+      s,
+      0.21 + (u - 0.21) / 2,
+      v,
+      y + 0.16,
+      u - 0.21,
+      0.07,
+      0.08,
+      HEAD_BODY,
+    );
 
     const [bx, bz] = at(s, u, v + 0.3);
 
@@ -743,7 +744,7 @@ function buildSupport(map: MapBuilder, F: number, s: Support): void {
       y: F + h.y,
       z: lz,
       color: s.color ?? 0xeaf0f7,
-      intensity: wall ? 45 : heads.length > 1 ? 60 : 75,
+      intensity: s.power ?? (wall ? 45 : heads.length > 1 ? 60 : 75),
       distance: wall ? 12 : 15,
       target: { x: tx, y: s.aim ? s.aim[1] : F + 0.2, z: tz },
       angle: 0.72,
@@ -788,6 +789,13 @@ function buildPlatform(map: MapBuilder, F: number, s: Support): void {
     },
   ]);
 }
+
+/**
+ * How far the east deck's service area (and the work lamp over it) moved north
+ * with the wall it stands against: the Server room's south wall (z -5) is now
+ * the unified spawn room's (z -10).
+ */
+export const DECK_SHIFT = -5;
 
 /** The two generators that run a lighting circuit. */
 const CIRCUIT_BODIES: ReadonlySet<string> = new Set([
@@ -2155,32 +2163,24 @@ export function furnishSpawnLamps(map: MapBuilder): void {
     z: -20.8,
     nx: -1,
     nz: 0,
-    height: 6.2,
+    // A caged work lamp on a bracket at the end of a conduit, bolted to the
+    // wall (not a mast standing out from it), with its flex from the conduit.
+    height: 4.3,
     kind: "single",
     tilt: 0.5,
     cage: true,
     platform: 0,
+    style: "wall",
+    power: 85,
     aim: [-26.0, 0.8, -17.2],
+    // The room's principal light: warm amber, not the cold white of the masts.
+    color: 0xffc27a,
   };
-  const ne: Support = {
-    id: "lamp-spawn-ne",
-    x: 22.0,
-    z: -19.0,
-    nx: 1,
-    nz: 0,
-    height: 6.0,
-    kind: "single",
-    tilt: 0.45,
-    cage: false,
-    platform: 0,
-    aim: [26.2, 0.8, -15.7],
-  };
-
   for (const [lamp, wallX, boxZ, target] of [
     [nw, -21.0, -21.8, foot(SUPPORTS[0])],
-    [ne, 22.0, -21.0, foot(SUPPORTS[3])],
   ] as const) {
-    buildSupport(map, 0, lamp);
+    // (The lamp itself is the wall halogen `halogen-wall-spawn` (see
+    // NightLights), a proper bracketed head on the wall; this is its feed.)
 
     // The ground part: from the foot box along the floor to below the sleeve
     // box, then up the wall's face in a clamped conduit.
@@ -2188,6 +2188,8 @@ export function furnishSpawnLamps(map: MapBuilder): void {
     const out = lamp.nx; // the room is on this side of the wall
     const [fx, fz] = foot(lamp);
     const bx = wallX + out * 0.1;
+
+    junction(p, fx, fz);
 
     run(
       p,
@@ -2212,6 +2214,20 @@ export function furnishSpawnLamps(map: MapBuilder): void {
     p.box(bx, 3.8, boxZ, 0.18, 0.025, 0.28, GUNMETAL);
     p.chunk(bx + out * 0.08, 3.62, boxZ - 0.08, 0.035, STEEL_BARE);
     p.chunk(bx + out * 0.08, 3.62, boxZ + 0.08, 0.035, STEEL_BARE);
+    // From the sleeve box along the wall's face to the lamp's bracket (1 m on
+    // along the wall), and up its last 30 cm into the plate.
+    run(
+      p,
+      [
+        [bx, boxZ],
+        [bx, -20.85],
+      ],
+      0.04,
+      3.62,
+      1,
+    );
+    p.box(bx, 3.5, -20.8, 0.1, 0.5, 0.1, CHARCOAL);
+    p.cableUp(bx, 3.64, -20.8, 0.3, 0.04, SITE_CABLES[0]);
     map.createFitting(`${lamp.id}-feed`, 0, p.elements, []);
 
     // The first-floor part: a matching box on the floor above the same spot,
@@ -2267,7 +2283,6 @@ export function furnishDeckService(map: MapBuilder, floorY: number): void {
   const p = new Pieces();
   const boardX = 26.4;
   const sock = gen.sockets[0];
-  const lamp = SUPPORTS.find((x) => x.id === "support-deck-1") as Support;
 
   // The board, back to the wall, and the mains lead to it (red, the heavy supply).
   distributionBoard(p, boardX, -4.84);
@@ -2283,17 +2298,31 @@ export function furnishDeckService(map: MapBuilder, floorY: number): void {
   run(p, mains, 0.065, 0, 0);
   plug(p, sock, [0, 1], 0.065, 0);
 
-  // The lamp's lead: along the wall's foot from the board to the lamp's box.
+  // The wall halogen over the bridge (see NightLights): its lead runs along the
+  // wall's foot from the board to a junction box under it, and a steel conduit
+  // climbs the wall's face to the lamp's bracket 5.6 m up.
+  const lampX = 31.0;
+  const lampFoot: XZ = [lampX, -4.9];
   const lead: XZ[] = [
     [boardX + 0.22, -4.62],
     [27.2, -4.78],
-    [28.0, -4.82],
-    [28.6, -4.82],
-    foot(lamp),
+    [28.0, -4.84],
+    [29.6, -4.88],
+    lampFoot,
   ];
 
   run(p, lead, 0.036, 0, 10);
   clips(p, lead.slice(1), 0.6, 0.036);
+  junction(p, lampFoot[0], lampFoot[1] - 0.03, true);
+  // (Bare galvanised steel, so it shows against the dark wall.)
+  p.post(lampX, 0.3, -4.95, 5.0, 0.08, STEEL_BARE);
+
+  for (const y of [0.9, 1.9, 2.9, 3.9, 4.8]) {
+    p.box(lampX, y, -4.95, 0.14, 0.07, 0.1, GUNMETAL);
+  }
+
+  // The short flex from the conduit's top to the lamp.
+  p.cableUp(lampX, 5.25, -4.93, 0.3, 0.03, 0x24272c);
 
   // A reel with its lead taken to the board, beside it.
   reel(p, 27.5, -4.15, 0.3, 13);
