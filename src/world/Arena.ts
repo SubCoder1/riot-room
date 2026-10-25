@@ -248,11 +248,25 @@ export class Arena {
           continue;
         }
 
-        mothLamps.push({
-          id: light.id,
-          position: spot.position.clone(),
-          aim: spot.target.position.clone(),
-        });
+        // Bugs only gather round the lamps inside a room, not the floodlights
+        // out on the walkways and roofs.
+        const inRoom = this.layout.rooms.some(
+          (r) =>
+            light.x > r.minX &&
+            light.x < r.maxX &&
+            light.z > r.minZ &&
+            light.z < r.maxZ &&
+            light.y > r.floorY &&
+            light.y < r.floorY + 6.6,
+        );
+
+        if (inRoom) {
+          mothLamps.push({
+            id: light.id,
+            position: spot.position.clone(),
+            aim: spot.target.position.clone(),
+          });
+        }
 
         const glow = createFixtureGlow(light);
 

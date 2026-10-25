@@ -116,6 +116,8 @@ const HATCH_OPEN_ANGLE = 1.75;
 /** How far a block of vent grating swings up on its hinge when it opens (radians). */
 const VENT_PANEL_OPEN = 1.85;
 
+type ShadowLight = THREE.DirectionalLight | THREE.SpotLight | THREE.PointLight;
+
 export class Game {
   // ============================================================
   // CORE SYSTEMS
@@ -923,6 +925,7 @@ export class Game {
     this.updateFlameLight();
     this.updateFireLights();
     this.updateBlastLight(dt);
+    this.updateShadowBudget();
     this.renderer.render();
 
     // ----------------------------------------------------------
@@ -2001,6 +2004,60 @@ export class Game {
     return true;
   }
 
+  private shadowLights: ShadowLight[] | null = null;
+  private shadowFrame = 0;
+
+  /**
+   * The map's shadow-casting lamps (a dozen shadow passes of the whole room,
+   * six of them for a point light) and the sky light's 4096 map were all
+   * redrawn every frame. A lamp's shadow is only needed while its light can
+   * reach what you see, so each lamp's map is redrawn only while the camera is
+   * within its range (and a little past it); out of range it keeps its last
+   * map. The faint sky light's map is redrawn every third frame. The lights
+   * stay in the scene (taking one out changes every shader: a hitch).
+   */
+  private updateShadowBudget(): void {
+    if (!this.shadowLights) {
+      const found: ShadowLight[] = [];
+
+      this.arena.group.traverse((object) => {
+        if ((object as THREE.Light).isLight && object.castShadow) {
+          found.push(object as ShadowLight);
+        }
+      });
+      this.shadowLights = found;
+    }
+
+    const eye = this.renderer.camera.position;
+
+    this.shadowFrame++;
+
+    for (const light of this.shadowLights) {
+      const shadow = light.shadow;
+
+      if (light instanceof THREE.DirectionalLight) {
+        shadow.autoUpdate = false;
+        shadow.needsUpdate = this.shadowFrame % 3 === 0;
+
+        continue;
+      }
+
+      const reach = light.distance * 1.5 + 3;
+
+      // A map not yet drawn must be drawn once, whatever the range.
+      const near = light.position.distanceToSquared(eye) <= reach * reach;
+
+      if (!this.shadowDrawn.has(light)) {
+        shadow.needsUpdate = true;
+        this.shadowDrawn.add(light);
+      }
+
+      shadow.autoUpdate = near;
+    }
+  }
+
+  private readonly shadowDrawn = new Set<ShadowLight>();
+
   /** A lit Molotov in hand lights what is round it, flickering with the flame. */
   private updateFlameLight(): void {
     if (!this.character.getHeldFlame(this.flamePosition)) {
@@ -2062,7 +2119,12 @@ export class Game {
       const fire = burning[i];
 
       if (!fire) {
-        light.intensity = 0;
+        // Out: it eases to nothing, never a step.
+        light.intensity *= 0.82;
+
+        if (light.intensity < 0.05) {
+          light.intensity = 0;
+        }
 
         return;
       }
@@ -2079,8 +2141,11 @@ export class Game {
       light.position.copy(fire.zone.position);
       light.position.y += 0.4 + 0.5 * fire.strength;
       light.distance = 3 + radius * 3.2;
-      light.intensity =
-        26 * fire.strength * flicker * (0.4 + 0.6 * (radius / 3));
+      // (Eased toward its value: a light handed from one fire to another, or
+      // a fire put out, never steps.)
+      const wanted = 26 * fire.strength * flicker * (0.4 + 0.6 * (radius / 3));
+
+      light.intensity += (wanted - light.intensity) * 0.35;
       this.fireGlow.push({
         position: light.position,
         strength: 0.9 * fire.strength * flicker,
