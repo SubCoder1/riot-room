@@ -374,19 +374,23 @@ export class FireZoneView {
       // flattening into a disc.
       const thin = 0.35 + 0.65 * dying;
 
+      // (A hidden tongue shrinks in every direction: squashed only in height
+      // it lay as a flat disc, wide and paper-thin, over whatever it hid behind.)
+      const out = hidden ? 0.001 : 1;
+
       this.scale.set(
-        width * flat * thin,
-        hidden ? 0.001 : Math.max(tongue, 0.001),
-        (width / flat) * thin,
+        width * flat * thin * out,
+        Math.max(tongue * out, 0.001),
+        (width / flat) * thin * out,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.flames.setMatrixAt(i, this.matrix);
 
       // The hot core: narrower and shorter, in the same place.
       this.scale.set(
-        width * flat * 0.55 * thin,
-        hidden ? 0.001 : Math.max(tongue * 0.68, 0.001),
-        (width / flat) * 0.55 * thin,
+        width * flat * 0.55 * thin * out,
+        Math.max(tongue * 0.68 * out, 0.001),
+        (width / flat) * 0.55 * thin * out,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.cores.setMatrixAt(i, this.matrix);

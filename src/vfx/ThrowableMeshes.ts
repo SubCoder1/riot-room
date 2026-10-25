@@ -218,7 +218,7 @@ export function createFlameGeometry(
     profile.push(new THREE.Vector2(Math.max(radius, 0), y));
   }
 
-  const geometry = new THREE.LatheGeometry(profile, 8);
+  const geometry = new THREE.LatheGeometry(profile, 12);
   const position = geometry.getAttribute("position");
   const colors = new Float32Array(position.count * 3);
   const color = new THREE.Color();
@@ -239,13 +239,52 @@ export function createFlameGeometry(
 
 /** The two layers of a flame: a red-orange outer and a hot yellow core. */
 export function createFlameMaterial(opacity = 0.95): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
+  const material = new THREE.MeshBasicMaterial({
     vertexColors: true,
     transparent: true,
     opacity,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
+
+  // A flame is densest through its middle and thins to nothing at its edge, as
+  // a lit gas does: with a flat, even colour a tongue read as a paper cut-out.
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+varying vec3 vFlameN;
+varying vec3 vFlameV;`,
+      )
+      .replace(
+        "#include <project_vertex>",
+        `#include <project_vertex>
+        vec3 flameN = normal;
+        #ifdef USE_INSTANCING
+          flameN = mat3( instanceMatrix ) * flameN;
+        #endif
+        vFlameN = normalMatrix * flameN;
+        vFlameV = -mvPosition.xyz;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+varying vec3 vFlameN;
+varying vec3 vFlameV;`,
+      )
+      .replace(
+        "#include <opaque_fragment>",
+        `float flameFace = abs( dot( normalize( vFlameN ), normalize( vFlameV ) ) );
+        diffuseColor.a *= mix( 0.2, 1.0, smoothstep( 0.0, 0.65, flameFace ) );
+        outgoingLight *= 0.8 + 0.4 * flameFace;
+        #include <opaque_fragment>`,
+      );
+  };
+  material.customProgramCacheKey = () => "flame-soft-edge";
+
+  return material;
 }
 
 export const FLAME_OUTER_BOTTOM = new THREE.Color(0xffa21a);
