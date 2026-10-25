@@ -1,8 +1,20 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import type { ArenaLayout, PileDefinition, PileElement } from "./ArenaLayout";
+import type {
+  ArenaLayout,
+  PileDefinition,
+  PileElement,
+  PileKind,
+} from "./ArenaLayout";
 import { createStainTexture } from "../vfx/SoftTexture";
+import {
+  WEAR_MASONRY,
+  WEAR_METAL,
+  WEAR_PLASTIC,
+  WEAR_WOOD,
+  weather,
+} from "./materials/SurfaceWear";
 
 /**
  * Draws the piles of building material and the dirt on the floors: four merged
@@ -18,35 +30,51 @@ const BAG_PRINT = new THREE.Color(0x3d4c68);
 const BAG_LABEL = new THREE.Color(0xd9d3c1);
 const BAG_DUST = new THREE.Color(0xb9b2a1);
 
-const rubbleMaterial = new THREE.MeshStandardMaterial({
-  name: "PileRubble",
-  vertexColors: true,
-  roughness: 0.96,
-  metalness: 0,
-  flatShading: true,
-});
+const rubbleMaterial = weather(
+  new THREE.MeshStandardMaterial({
+    name: "PileRubble",
+    vertexColors: true,
+    roughness: 0.96,
+    metalness: 0,
+    flatShading: true,
+  }),
+  "concrete",
+  { exposure: 0.8 },
+);
 
-const pipeMaterial = new THREE.MeshStandardMaterial({
-  name: "PilePipes",
-  vertexColors: true,
-  roughness: 0.55,
-  metalness: 0.55,
-});
+const pipeMaterial = weather(
+  new THREE.MeshStandardMaterial({
+    name: "PilePipes",
+    vertexColors: true,
+    roughness: 0.55,
+    metalness: 0.55,
+  }),
+  "mixed",
+  { exposure: 0.9 },
+);
 
 /** Insulated cable: dull rubber, not shiny metal. */
-const cableMaterial = new THREE.MeshStandardMaterial({
-  name: "PileCables",
-  vertexColors: true,
-  roughness: 0.88,
-  metalness: 0,
-});
+const cableMaterial = weather(
+  new THREE.MeshStandardMaterial({
+    name: "PileCables",
+    vertexColors: true,
+    roughness: 0.88,
+    metalness: 0,
+  }),
+  "mixed",
+  { exposure: 0.8 },
+);
 
-const pieceMaterial = new THREE.MeshStandardMaterial({
-  name: "PilePieces",
-  vertexColors: true,
-  roughness: 0.94,
-  metalness: 0,
-});
+const pieceMaterial = weather(
+  new THREE.MeshStandardMaterial({
+    name: "PilePieces",
+    vertexColors: true,
+    roughness: 0.94,
+    metalness: 0,
+  }),
+  "mixed",
+  { exposure: 0.8 },
+);
 
 let stainTexture: THREE.DataTexture | null = null;
 
@@ -160,7 +188,48 @@ function chunkGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
+/** Brown, muted and not too dark: board and plywood, not painted steel. */
+function looksLikeWood(color: THREE.Color): boolean {
+  const hsl = { h: 0, s: 0, l: 0 };
+
+  color.getHSL(hsl);
+
+  return (
+    hsl.h > 0.04 && hsl.h < 0.13 && hsl.s > 0.15 && hsl.s < 0.7 && hsl.l > 0.12
+  );
+}
+
+/**
+ * What a piece is made of, so each gets the wear of its own stuff: boards
+ * stain, drums and crates rust, bricks and bags go damp and grimy, and black
+ * cable is only dusty.
+ */
+function wearOf(kind: PileKind, element: PileElement): number {
+  const color = new THREE.Color(element.color);
+
+  switch (element.shape) {
+    case "brick":
+    case "bag":
+    case "chunk":
+      return WEAR_MASONRY;
+    case "pipe":
+      return WEAR_METAL;
+    case "cable": {
+      const hsl = { h: 0, s: 0, l: 0 };
+
+      color.getHSL(hsl);
+
+      return hsl.l < 0.1 && hsl.s < 0.35 ? WEAR_PLASTIC : WEAR_METAL;
+    }
+    default:
+      return kind === "fittings" && !looksLikeWood(color)
+        ? WEAR_METAL
+        : WEAR_WOOD;
+  }
+}
+
 function placed(
+  kind: PileKind,
   source: THREE.BufferGeometry,
   element: PileElement,
   baseY: number,
@@ -240,6 +309,28 @@ function placed(
 
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
+  // What it is and its box, for the weathering: the position within the piece
+  // (scaled, before it is turned) and its half size. A cylinder says so with a
+  // half height of -1, a shape with no true edges with -2.
+  const wear = wearOf(kind, element);
+  const boxed = element.shape === "plank" || element.shape === "brick";
+  const cylinder = element.shape === "pipe" || element.shape === "cable";
+  const wearA = new Float32Array(position.count * 4);
+  const wearB = new Float32Array(position.count * 3);
+
+  for (let i = 0; i < position.count; i++) {
+    wearA[i * 4] = position.getX(i) * element.sx;
+    wearA[i * 4 + 1] = position.getY(i) * element.sy;
+    wearA[i * 4 + 2] = position.getZ(i) * element.sz;
+    wearA[i * 4 + 3] = wear;
+    wearB[i * 3] = element.sx / 2;
+    wearB[i * 3 + 1] = boxed ? element.sy / 2 : cylinder ? -1 : -2;
+    wearB[i * 3 + 2] = element.sz / 2;
+  }
+
+  geometry.setAttribute("aWearA", new THREE.BufferAttribute(wearA, 4));
+  geometry.setAttribute("aWearB", new THREE.BufferAttribute(wearB, 3));
+
   geometry.applyMatrix4(
     new THREE.Matrix4().compose(
       new THREE.Vector3(cx + element.x, baseY + element.y, cz + element.z),
@@ -286,6 +377,7 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
       for (const element of pile.elements) {
         parts[element.shape].push(
           placed(
+            pile.kind,
             sources[element.shape],
             element,
             pile.baseY,

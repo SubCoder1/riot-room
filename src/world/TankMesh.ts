@@ -4,6 +4,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { CylinderSolid } from "./ArenaLayout";
 import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
 import { METAL_TILE_METRES } from "./materials/MetalTexture";
+import { weather } from "./materials/SurfaceWear";
 import { useWorldSpaceUv } from "./materials/WorldSpaceUv";
 
 /** How tall the steel stand under a tank is, and how tall its domed lid is. */
@@ -27,6 +28,7 @@ useWorldSpaceUv(material, {
   tileMetres: METAL_TILE_METRES / 2,
   macro: { frequency: 0.3, strength: 0.14, baseDirt: 0.12 },
 });
+weather(material, "metal", { exposure: 1 });
 
 function paint(
   geometry: THREE.BufferGeometry,

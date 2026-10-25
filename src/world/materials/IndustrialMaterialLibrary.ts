@@ -21,6 +21,7 @@ import { createBarrierMaterial } from "./BarrierMaterial";
 import { createMetalTexture } from "./MetalTexture";
 import { createCeilingMaterial } from "./CeilingMaterial";
 import { createCeilingTextures } from "./CeilingTexture";
+import { weather } from "./SurfaceWear";
 import {
   createBlockworkTextures,
   createFormworkTextures,
@@ -108,9 +109,13 @@ export class IndustrialMaterialLibrary {
     let material = this.floors.get(variant);
 
     if (!material) {
-      material = createFloorMaterial(
-        variant,
-        this.concrete(variant === "dark" ? 0 : variant === "medium" ? 1 : 2),
+      material = weather(
+        createFloorMaterial(
+          variant,
+          this.concrete(variant === "dark" ? 0 : variant === "medium" ? 1 : 2),
+        ),
+        "concrete",
+        { exposure: 0.85 },
       );
       this.floors.set(variant, material);
     }
@@ -146,7 +151,11 @@ export class IndustrialMaterialLibrary {
     let material = this.bricks.get(variant);
 
     if (!material) {
-      material = createBrickMaterial(variant, this.brickMaps());
+      material = weather(
+        createBrickMaterial(variant, this.brickMaps()),
+        "concrete",
+        { exposure: 0.8 },
+      );
       this.bricks.set(variant, material);
     }
 
@@ -172,11 +181,15 @@ export class IndustrialMaterialLibrary {
     let material = this.raws.get(kind);
 
     if (!material) {
-      material = createRawMaterial(
-        kind,
-        kind === "blockwork"
-          ? createBlockworkTextures()
-          : createFormworkTextures(),
+      material = weather(
+        createRawMaterial(
+          kind,
+          kind === "blockwork"
+            ? createBlockworkTextures()
+            : createFormworkTextures(),
+        ),
+        "concrete",
+        { exposure: 0.8 },
       );
       this.raws.set(kind, material);
     }
@@ -214,7 +227,11 @@ export class IndustrialMaterialLibrary {
     let material = this.barriers.get(at);
 
     if (!material) {
-      material = createBarrierMaterial(at, this.paintedMaps((at + 1) % 3));
+      material = weather(
+        createBarrierMaterial(at, this.paintedMaps((at + 1) % 3)),
+        "concrete",
+        { exposure: 1 },
+      );
       this.barriers.set(at, material);
     }
 
@@ -237,11 +254,15 @@ export class IndustrialMaterialLibrary {
     let material = this.painted.get(variant);
 
     if (!material) {
-      material = createPaintedConcreteMaterial(
-        variant,
-        this.paintedMaps(
-          variant === "dark" ? 0 : variant === "standard" ? 1 : 2,
+      material = weather(
+        createPaintedConcreteMaterial(
+          variant,
+          this.paintedMaps(
+            variant === "dark" ? 0 : variant === "standard" ? 1 : 2,
+          ),
         ),
+        "concrete",
+        { exposure: 0.8 },
       );
       this.painted.set(variant, material);
     }
@@ -274,14 +295,22 @@ export class IndustrialMaterialLibrary {
 
   /** Dark engraved-stripe concrete, shared by every ceiling and roof. */
   public ceiling(): THREE.MeshStandardMaterial {
-    this.ceilingMaterial ??= createCeilingMaterial(createCeilingTextures());
+    this.ceilingMaterial ??= weather(
+      createCeilingMaterial(createCeilingTextures()),
+      "concrete",
+      { exposure: 1 },
+    );
 
     return this.ceilingMaterial;
   }
 
   /** The structural-steel material, shared by every beam, column, brace and truss. */
   public steel(): THREE.MeshStandardMaterial {
-    this.steelMaterial ??= createIndustrialSteelMaterial(this.metalWearMap());
+    this.steelMaterial ??= weather(
+      createIndustrialSteelMaterial(this.metalWearMap()),
+      "metal",
+      { exposure: 0.9 },
+    );
 
     return this.steelMaterial;
   }

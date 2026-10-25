@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import { ladderMaterial } from "./ArenaBuilder";
+import { weather } from "./materials/SurfaceWear";
 import {
   ARMORY,
   type ChainShutter,
@@ -34,8 +35,16 @@ const BAR_TRAVEL = 0.34;
 /** How far the lever is thrown (radians) as the latch draws. */
 const LEVER_SWING = 1.25;
 
+// (The shutter, its chain and wheels move: the rust is laid on each part.)
 const steel = (color: number, roughness = 0.65, metalness = 0.55) =>
-  new THREE.MeshStandardMaterial({ color, roughness, metalness });
+  weather(
+    new THREE.MeshStandardMaterial({ color, roughness, metalness }),
+    "metal",
+    {
+      exposure: 0.8,
+      local: true,
+    },
+  );
 
 export class ArmoryMechanismView {
   public readonly group = new THREE.Group();

@@ -15,6 +15,14 @@ import { circuitOfLamp, type Circuit } from "./PowerCircuits";
 import { ARENA_LAYOUT } from "./UpperFloorMap";
 
 /**
+ * A lamp's own colour, a fifth of the way to white: the amber stays, but a room
+ * of several lamps no longer washes every cool grey surface it reaches orange.
+ */
+function practical(color: number): THREE.Color {
+  return new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.2);
+}
+
+/**
  * The combat arena: graybox geometry built from the shared layout, plus its
  * lights. Collision lives in ArenaCollision and spawn points in SpawnSystem;
  * all three read the same ArenaLayout.
@@ -346,7 +354,7 @@ export class Arena {
       if (light.target) {
         // A floodlight: a cone aimed at its target, with a soft edge.
         const spot = new THREE.SpotLight(
-          light.color,
+          practical(light.color),
           light.intensity,
           light.distance,
           light.angle ?? 0.8,
@@ -368,6 +376,8 @@ export class Arena {
           spot.shadow.camera.near = 0.5;
           spot.shadow.camera.far = light.distance;
           spot.shadow.bias = -0.0005;
+          // Without it the grazing light down a vent's walls shimmers (acne).
+          spot.shadow.normalBias = 0.04;
         }
 
         this.group.add(spot);
@@ -414,7 +424,7 @@ export class Arena {
       }
 
       const lamp = new THREE.PointLight(
-        light.color,
+        practical(light.color),
         light.intensity,
         light.distance,
         2,

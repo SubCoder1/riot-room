@@ -94,10 +94,19 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   root.name = `glow-${light.id}`;
   root.position.copy(from);
   root.add(group);
-  group.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 0, 1),
-    to.clone().sub(from).normalize(),
-  );
+  const aim = to.clone().sub(from).normalize();
+
+  group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), aim);
+
+  // A mast head's lens is wider than it is tall: its width runs level, along
+  // the wall, whichever way the head is aimed.
+  if (!light.id.startsWith("halogen-") && Math.abs(aim.y) < 0.98) {
+    const across = new THREE.Vector3(0, 1, 0).cross(aim).normalize();
+
+    group.quaternion.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(across, aim.clone().cross(across), aim),
+    );
+  }
 
   // A rooftop lamp stands on a short steel mast.
   if (light.id.startsWith("halogen-roof")) {
@@ -166,13 +175,13 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   // front of it, where it floated clear of the fixture, off the wall.
   const ownHead = light.id.startsWith("halogen-");
   const lens = new THREE.Mesh(
-    ownHead
-      ? new THREE.PlaneGeometry(0.5, 0.34)
-      : new THREE.CircleGeometry(0.14, 16),
+    // (A mast head's lens fills the front of its housing, a rectangle wider
+    // than it is tall, never a round disc.)
+    new THREE.PlaneGeometry(0.5, 0.34),
     lensMaterial,
   );
 
-  lens.position.z = ownHead ? 0.25 : 0.03;
+  lens.position.z = ownHead ? 0.25 : 0.012;
 
   // A hanging bulb has its own glass (drawn with its room): only the beam here.
   // Any other lamp has a soft halo round its lens, so it reads as a lit fixture
@@ -193,7 +202,13 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   halo.renderOrder = 6;
 
   if (!light.id.startsWith("bulb-")) {
-    group.add(lens, halo);
+    group.add(lens);
+
+    // A soft round glow suits a halogen's own head and would show as a ball
+    // round a mast head's rectangular lens: those have the lens and the beam.
+    if (ownHead) {
+      group.add(halo);
+    }
   }
 
   // The cone: apex at the lamp, widening toward the target.

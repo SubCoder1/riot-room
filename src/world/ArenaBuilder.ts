@@ -33,6 +33,7 @@ import {
 import { industrialMaterials } from "./materials/IndustrialMaterialLibrary";
 import { METAL_TILE_METRES } from "./materials/MetalTexture";
 import { useWorldSpaceUv } from "./materials/WorldSpaceUv";
+import { weather } from "./materials/SurfaceWear";
 
 /**
  * Graybox mesh builders. Each one turns a piece of the layout into meshes using
@@ -46,6 +47,8 @@ const unitCylinder = new THREE.CylinderGeometry(1, 1, 1, 20);
 /** Metal parts wear the same restrained scratches and rust as the steel. */
 function worn(
   material: THREE.MeshStandardMaterial,
+  exposure = 0.8,
+  deck = false,
 ): THREE.MeshStandardMaterial {
   material.map = industrialMaterials.metalWearMap();
   useWorldSpaceUv(material, {
@@ -53,15 +56,19 @@ function worn(
     macro: { frequency: 0.2, strength: 0.1 },
   });
 
-  return material;
+  return weather(material, "metal", { exposure, deck });
 }
 
 const materials = {
-  ramp: new THREE.MeshStandardMaterial({
-    color: 0x7d8699,
-    roughness: 0.9,
-    side: THREE.DoubleSide,
-  }),
+  ramp: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x7d8699,
+      roughness: 0.9,
+      side: THREE.DoubleSide,
+    }),
+    "concrete",
+    { exposure: 1 },
+  ),
   // Worn dark steel treads: scuffed and a little paler where they are used.
   stairs: worn(
     new THREE.MeshStandardMaterial({
@@ -69,24 +76,37 @@ const materials = {
       roughness: 0.78,
       metalness: 0.3,
     }),
+    1,
   ),
   railing: worn(
     new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.8 }),
+    1,
   ),
   // Climbable ledges stand out so they are easy to find.
   ledge: new THREE.MeshStandardMaterial({ color: 0xb0865a, roughness: 0.9 }),
-  roofTop: new THREE.MeshStandardMaterial({
-    color: 0x3c4658,
-    roughness: 0.95,
-  }),
+  roofTop: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x3c4658,
+      roughness: 0.95,
+    }),
+    "concrete",
+    { exposure: 1 },
+  ),
   steel: worn(
     new THREE.MeshStandardMaterial({
       color: 0x5a6272,
       roughness: 0.55,
       metalness: 0.5,
     }),
+    0.8,
+    // Catwalks and bridges: tread plate underfoot.
+    true,
   ),
-  prop: new THREE.MeshStandardMaterial({ color: 0x8c7c66, roughness: 0.9 }),
+  prop: weather(
+    new THREE.MeshStandardMaterial({ color: 0x8c7c66, roughness: 0.9 }),
+    "wood",
+    { exposure: 0.8 },
+  ),
   machinery: worn(
     new THREE.MeshStandardMaterial({
       color: 0x62707f,
@@ -94,25 +114,41 @@ const materials = {
       metalness: 0.2,
     }),
   ),
-  pipe: new THREE.MeshStandardMaterial({
-    color: 0x7c6a55,
-    roughness: 0.5,
-    metalness: 0.45,
-  }),
-  // A roof hatch: amber, so it can be found in the dark.
-  hatch: new THREE.MeshStandardMaterial({
-    color: 0xb88a2a,
-    roughness: 0.6,
-    metalness: 0.4,
-    emissive: 0x2a1c04,
-  }),
-  // The amber landing pad at a ladder's opening.
-  hazard: new THREE.MeshStandardMaterial({
-    color: 0xd9a21b,
-    roughness: 0.7,
-    emissive: 0x3a2a04,
-  }),
-  duct: new THREE.MeshStandardMaterial({ color: 0x4f5c6b, roughness: 0.7 }),
+  pipe: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x7c6a55,
+      roughness: 0.5,
+      metalness: 0.45,
+    }),
+    "metal",
+    { exposure: 0.9 },
+  ),
+  // A roof hatch: the ladders' dull yellow, so what can be used reads as such.
+  hatch: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x93874a,
+      roughness: 0.6,
+      metalness: 0.4,
+      emissive: 0x0e0c04,
+    }),
+    "metal",
+    { exposure: 0.6 },
+  ),
+  // The landing pad at a ladder's opening: the ladder's own dull yellow.
+  hazard: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x93874a,
+      roughness: 0.7,
+      emissive: 0x0e0c04,
+    }),
+    "metal",
+    { exposure: 0.7 },
+  ),
+  duct: weather(
+    new THREE.MeshStandardMaterial({ color: 0x4f5c6b, roughness: 0.7 }),
+    "metal",
+    { exposure: 0.8 },
+  ),
   glass: new THREE.MeshStandardMaterial({
     color: 0x6fa8c7,
     roughness: 0.2,
@@ -120,19 +156,31 @@ const materials = {
     opacity: 0.35,
     emissive: 0x16303f,
   }),
-  roof: new THREE.MeshStandardMaterial({
-    color: 0x3e4756,
-    roughness: 0.97,
-    emissive: 0x07090d,
-  }),
-  ladder: new THREE.MeshStandardMaterial({
-    color: 0xb08a2e,
-    roughness: 0.7,
-    metalness: 0.1,
-    // A trace of glow so a ladder is still found in the dark.
-    emissive: 0x1a1304,
-  }),
-  pillar: new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
+  roof: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x3e4756,
+      roughness: 0.97,
+      emissive: 0x07090d,
+    }),
+    "concrete",
+    { exposure: 1 },
+  ),
+  ladder: weather(
+    new THREE.MeshStandardMaterial({
+      color: 0x93874a,
+      roughness: 0.7,
+      metalness: 0.1,
+      // A trace of glow so a ladder is still found in the dark.
+      emissive: 0x0e0c04,
+    }),
+    "metal",
+    { exposure: 0.7 },
+  ),
+  pillar: weather(
+    new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
+    "metal",
+    { exposure: 0.9 },
+  ),
 };
 
 /** The ladders' worn yellow metal, shared by anything else made to match it (the armory's chain). */
@@ -204,13 +252,17 @@ function mergedBoxes(
 }
 
 /** The Armory vent's grille: the floor grating's steel, a little lighter so it reads overhead. */
-const ventGrille = new THREE.MeshStandardMaterial({
-  name: "VentGrille",
-  color: 0x050506,
-  roughness: 0.7,
-  metalness: 0.3,
-  emissive: 0x000000,
-});
+const ventGrille = weather(
+  new THREE.MeshStandardMaterial({
+    name: "VentGrille",
+    color: 0x050506,
+    roughness: 0.7,
+    metalness: 0.3,
+    emissive: 0x000000,
+  }),
+  "metal",
+  { exposure: 0.6 },
+);
 
 const ventInterior = new THREE.MeshStandardMaterial({
   name: "VentInterior",
@@ -220,13 +272,17 @@ const ventInterior = new THREE.MeshStandardMaterial({
   emissive: 0x000000,
 });
 
-const ventBars = new THREE.MeshStandardMaterial({
-  name: "VentGrate",
-  color: 0x34363a,
-  roughness: 0.6,
-  metalness: 0.5,
-  emissive: 0x000000,
-});
+const ventBars = weather(
+  new THREE.MeshStandardMaterial({
+    name: "VentGrate",
+    color: 0x34363a,
+    roughness: 0.6,
+    metalness: 0.5,
+    emissive: 0x000000,
+  }),
+  "metal",
+  { exposure: 0.6 },
+);
 
 /**
  * The arena floor, in pieces round the grates: a real hole under each grate
