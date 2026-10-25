@@ -2187,7 +2187,6 @@ export class Game {
   }
 
   private shadowLights: ShadowLight[] | null = null;
-  private shadowFrame = 0;
 
   /**
    * The map's shadow-casting lamps (a dozen shadow passes of the whole room,
@@ -2195,7 +2194,7 @@ export class Game {
    * redrawn every frame. A lamp's shadow is only needed while its light can
    * reach what you see, so each lamp's map is redrawn only while the camera is
    * within its range (and a little past it); out of range it keeps its last
-   * map. The faint sky light's map is redrawn every third frame. The lights
+   * map. The sky light's map is redrawn every frame (it carries the moving bodies' shadows). The lights
    * stay in the scene (taking one out changes every shader: a hitch).
    */
   private updateShadowBudget(): void {
@@ -2212,8 +2211,6 @@ export class Game {
 
     const eye = this.renderer.camera.position;
 
-    this.shadowFrame++;
-
     for (const light of this.shadowLights) {
       const shadow = light.shadow;
 
@@ -2226,9 +2223,11 @@ export class Game {
         continue;
       }
 
+      // The sky light's map follows the moving bodies (a player's own shadow
+      // and body shading), so it is redrawn every frame: a map redrawn only
+      // every third frame made them judder.
       if (light instanceof THREE.DirectionalLight) {
-        shadow.autoUpdate = false;
-        shadow.needsUpdate = this.shadowFrame % 3 === 0;
+        shadow.autoUpdate = true;
 
         continue;
       }
