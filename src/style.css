@@ -291,3 +291,48 @@ canvas {
   font-weight: 400;
   text-anchor: middle;
 }
+
+/*
+ * The M-key tactical map: a dark top-down plan over the game. It is only drawn:
+ * it never takes the pointer, the keys or the focus, so the game underneath
+ * keeps running and answering to its controls.
+ */
+.tactical-map {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(86vw, calc(86vh * 1.3333));
+  aspect-ratio: 1200 / 900;
+  transform: translate(-50%, -50%) scale(0.97);
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--map-ms, 180ms) ease-out,
+    transform var(--map-ms, 180ms) ease-out;
+}
+
+.tactical-map.shown {
+  visibility: visible;
+}
+
+.tactical-map.open {
+  opacity: 0.97;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.tactical-map > canvas,
+.tactical-map > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tactical-map {
+    transition: opacity 0.1s linear;
+  }
+}

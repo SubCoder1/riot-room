@@ -110,6 +110,8 @@ import { ThrowAimPreview } from "../vfx/ThrowAimPreview";
 import { ThrownItemView } from "../vfx/ThrownItemView";
 import { ExplosionView } from "../vfx/ExplosionView";
 import { SmokeCloudView } from "../vfx/SmokeCloudView";
+import { TacticalMap, type TeamMarker } from "../ui/TacticalMap";
+import { doorPassage } from "../world/DoorPassage";
 import { WeaponWheelView } from "../ui/WeaponWheelView";
 
 /** The inventory slot behind each throwable. */
@@ -194,6 +196,8 @@ export class Game {
   /** The hold-TAB weapon wheel and its drawing. */
   private readonly weaponWheel = new WeaponWheel(this.utilities);
   private readonly weaponWheelView: WeaponWheelView;
+  /** The M-key paper plan: drawn only, the game keeps running under it. */
+  private readonly tacticalMap: TacticalMap;
 
   // ============================================================
   // THROWABLES (grenade, Molotov, smoke grenade: equip, aim with right
@@ -611,6 +615,18 @@ export class Game {
       this.weaponWheel,
     );
 
+    this.tacticalMap = new TacticalMap(
+      document.body,
+      ARENA_LAYOUT,
+      (room, door) => doorPassage(this.collision, room, door),
+    );
+
+    // Friendly players on the plan. There are no remote players in the game
+    // yet (the training dummy is a target, never a teammate, and no enemy is
+    // ever reported here): the networking that brings teammates in supplies
+    // their id, position, facing and whether they are up, through this feed.
+    this.tacticalMap.setTeammateSource(() => this.teammateMarkers());
+
     // Arms and fists stop at cover and walls instead of sinking into them.
     this.character.armProbe = (from, to) => this.armClearFraction(from, to);
 
@@ -767,6 +783,7 @@ export class Game {
     // The weapon wheel and the throw stance come first: whether the player is
     // aiming a throwable decides if they can guard or punch this frame.
     this.updateWeaponWheel(dt);
+    this.updateTacticalMap();
     this.updateClimb();
     this.updateArmory(dt);
     this.updateHatches(dt);
@@ -873,6 +890,9 @@ export class Game {
     this.character.setVault(this.player.vaultPose);
     this.character.setVentMove(this.player.ventPose);
     this.character.setLegsHidden(this.player.isInVent && !this.isThirdPerson);
+    this.character.setCastsShadow(
+      !(this.player.isInVent && !this.isThirdPerson),
+    );
     this.updateVentArms();
 
     this.character.setThrowable(
@@ -1020,6 +1040,35 @@ export class Game {
   // scroll. It never blocks anything: punching, blocking and moving carry on.
   //
   // ============================================================
+
+  /**
+   * M unrolls the paper plan and M rolls it up again. A held key is one press
+   * (the toggle works on the key going down, not on its repeats), and the plan
+   * is only drawn: movement, the camera and every other control carry on. The
+   * marker follows the local player and the camera's horizontal heading.
+   */
+  /**
+   * The friendly players, as the map should show them: this client's side only
+   * (a thug sees thugs; Batman has no side to share). Empty until the game has
+   * synchronised players; each entry is one connected player on the local
+   * player's team, and a player who leaves or is down is simply left out.
+   */
+  private teammateMarkers(): readonly TeamMarker[] {
+    return [];
+  }
+
+  private updateTacticalMap(): void {
+    if (this.input.consumeMapToggle()) {
+      this.tacticalMap.toggle();
+    }
+
+    this.tacticalMap.update(
+      this.player.position.x,
+      this.player.position.z,
+      this.input.yaw,
+      performance.now() / 1000,
+    );
+  }
 
   private updateWeaponWheel(dt: number): void {
     this.weaponWheel.scroll(this.input.consumeWheelSteps());
@@ -2393,7 +2442,10 @@ export class Game {
     this.crosshair ??= document.querySelector<HTMLElement>(".crosshair");
 
     if (this.crosshair) {
-      this.crosshair.style.visibility = aimingThrow ? "hidden" : "";
+      // (It is hidden under the tactical map too: the map is a glance, not a
+      // sight.)
+      this.crosshair.style.visibility =
+        aimingThrow || this.tacticalMap.isOpen ? "hidden" : "";
     }
 
     this.thrownView.update(this.renderer.camera.position);
@@ -3468,6 +3520,7 @@ export class Game {
 
   public dispose(): void {
     this.armoryView.dispose();
+    this.tacticalMap.dispose();
     this.tubeGlow.dispose();
     this.hangingTubes.dispose();
     this.junkBulbs.dispose();

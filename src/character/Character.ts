@@ -2301,6 +2301,26 @@ export class Character {
     }
   }
 
+  private bodyCastsShadow = true;
+
+  /**
+   * Whether the body throws a shadow. Crawling a vent in first person, the
+   * lamp above the grate threw your own shadow down the floor ahead of you,
+   * and it jittered with the crawl: it is left off there.
+   */
+  public setCastsShadow(casts: boolean): void {
+    if (casts === this.bodyCastsShadow) {
+      return;
+    }
+
+    this.bodyCastsShadow = casts;
+    this.group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = casts;
+      }
+    });
+  }
+
   private applyVentArms(): void {
     if (!this.upperBodyFollowsLook || this.ventArmFade >= 0.999) {
       if (this.ventArmsScaled) {

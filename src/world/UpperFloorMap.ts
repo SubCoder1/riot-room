@@ -667,7 +667,9 @@ function createUpperFloor(): ArenaLayout {
     floorY: F,
     doors: [
       { side: "n", at: -26 },
-      { side: "n", at: -19 },
+      // (1.6 m, set back from the corner so it has a jamb: the walkway it
+      // opens on is 2 m wide, x -20 to -18.)
+      { side: "n", at: -19.1, width: 1.6 },
       { side: "e", at: 13.5 },
       { side: "e", at: 19.5, width: 5 },
     ],

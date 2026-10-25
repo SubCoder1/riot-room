@@ -4,6 +4,7 @@ export class InputManager {
   private readonly keys: Set<string>;
   private jumpQueued: boolean;
   private attackQueued: boolean;
+  private mapQueued = false;
   private readonly mouseButtons = new Set<number>();
   /** Scroll distance (pixels) not yet turned into whole wheel steps. */
   private wheelAccumulated = 0;
@@ -52,6 +53,18 @@ export class InputManager {
     const shouldJump = this.jumpQueued;
     this.jumpQueued = false;
     return shouldJump;
+  }
+
+  /**
+   * Whether M went down since the last call: one press is one toggle however
+   * short the tap or long the held key (its repeats are not new presses).
+   */
+  public consumeMapToggle(): boolean {
+    const pressed = this.mapQueued;
+
+    this.mapQueued = false;
+
+    return pressed;
   }
 
   public consumeAttack(): boolean {
@@ -106,6 +119,10 @@ export class InputManager {
 
     if (event.code === "Space" && !wasHeld) {
       this.jumpQueued = true;
+    }
+
+    if (event.code === "KeyM" && !wasHeld && !event.repeat) {
+      this.mapQueued = true;
     }
   };
 
