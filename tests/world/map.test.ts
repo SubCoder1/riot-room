@@ -81,7 +81,7 @@ function freeCells(
 }
 
 /** The rooms deliberately left open to the sky (under the main roof) for entry from above. */
-const OPEN_TOP = ["room-spawn-nw", "room-hall", "room-spawn-ne"];
+const OPEN_TOP = ["room-spawn-nw", "room-hall"];
 
 function roofOf(room: { id: string }): BoxSolid {
   // (A roof with a hole in it is in pieces: `-roof-1`, `-roof-2`...)
@@ -91,8 +91,8 @@ function roofOf(room: { id: string }): BoxSolid {
 }
 
 describe("What was built", () => {
-  it("has twelve rooms of different sizes and shapes", () => {
-    expect(layout.rooms).toHaveLength(12);
+  it("has eleven rooms of different sizes and shapes (the Server room is part of the north-east spawn room)", () => {
+    expect(layout.rooms).toHaveLength(11);
 
     const areas = new Set(
       layout.rooms.map((r) =>
@@ -220,11 +220,8 @@ describe("What was built", () => {
     ).toBeGreaterThanOrEqual(4);
   });
 
-  it("has exactly two staircases, one out of each spawn area, and none in the central arena", () => {
-    expect(layout.stairs.map((s) => s.id).sort()).toEqual([
-      "stairs-spawn-ne",
-      "stairs-spawn-nw",
-    ]);
+  it("has exactly one staircase, out of the north-west spawn yard (the north-east spawn room is on the upper floor), and none in the central arena", () => {
+    expect(layout.stairs.map((s) => s.id)).toEqual(["stairs-spawn-nw"]);
 
     for (const stairs of layout.stairs) {
       for (const step of stairsToSteps(stairs)) {
@@ -240,15 +237,11 @@ describe("What was built", () => {
     }
 
     const nw = layout.stairs.find((s) => s.id === "stairs-spawn-nw")!;
-    const ne = layout.stairs.find((s) => s.id === "stairs-spawn-ne")!;
     const room = (id: string) => layout.rooms.find((r) => r.id === id)!;
 
-    // Each starts on the ground floor inside its own spawn area and tops out
-    // at the first floor beyond its edge.
-    for (const [stairs, spawnArea] of [
-      [nw, room("room-spawn-nw")],
-      [ne, room("room-spawn-ne")],
-    ] as const) {
+    // It starts on the ground floor inside the spawn yard and tops out at the
+    // first floor beyond its edge.
+    for (const [stairs, spawnArea] of [[nw, room("room-spawn-nw")]] as const) {
       const steps = stairsToSteps(stairs);
 
       expect(spawnArea.floorY).toBe(0);
@@ -260,9 +253,8 @@ describe("What was built", () => {
       expect(steps[0].maxZ).toBeLessThanOrEqual(spawnArea.maxZ + 1e-9);
     }
 
-    // On opposite sides, climbing toward each other's side of the map.
+    // It climbs east, toward the middle of the map.
     expect(nw.direction).toBe("+x");
-    expect(ne.direction).toBe("-x");
   });
 
   it("has a few deliberate ladders: one from the arena, roof ladders and a few secret ones", () => {
@@ -589,10 +581,20 @@ describe("The central arena", () => {
     expect(sees(11.8, 10.8, 0, 6)).toBe(true); // east corner balcony
   });
 
-  it("every spawn point is on the bare ground", () => {
+  it("every spawn point is on the bare floor of its spawn area (the yard's ground, or the unified room's upper floor)", () => {
     for (const spawn of layout.spawnPoints) {
-      expect(spawn.y).toBe(0);
-      expect(world.groundHeight(spawn.x, spawn.z, 0)).toBe(0);
+      const area = layout.rooms.find(
+        (r) =>
+          r.id.startsWith("room-spawn-") &&
+          spawn.x > r.minX &&
+          spawn.x < r.maxX &&
+          spawn.z > r.minZ &&
+          spawn.z < r.maxZ,
+      )!;
+
+      expect(area, spawn.id).toBeDefined();
+      expect(spawn.y).toBe(area.floorY);
+      expect(world.groundHeight(spawn.x, spawn.z, spawn.y)).toBe(area.floorY);
     }
   });
 });
@@ -692,7 +694,7 @@ describe("Getting around", () => {
     ).toBe(false);
   });
 
-  it("from either spawn area its own staircase is the only way out, and it leads to every room and to the other spawn area", () => {
+  it("from the north-west yard its staircase is the only way out; from the north-east room its doorway to the dock is, and each leads to every room", () => {
     const rooms = (field: ReturnType<typeof walkField>): string[] =>
       layout.rooms
         .filter(
@@ -703,27 +705,31 @@ describe("Getting around", () => {
         )
         .map((room) => room.id);
 
-    for (const [from, own, other] of [
-      [{ x: -26.5, z: -20.5 }, "stairs-spawn-nw", "stairs-spawn-ne"],
-      [{ x: 27, z: -20 }, "stairs-spawn-ne", "stairs-spawn-nw"],
-    ] as const) {
-      // With its own staircase shut, the spawn area is sealed.
-      const shut = walkField(from.x, from.z, 0, {
-        ladders: false,
-        forbid: (x, z) => onStairs(own, x, z),
-      });
-      const open = walkField(from.x, from.z, 0, { ladders: false });
+    // With its staircase shut, the north-west yard is sealed.
+    const shutNw = walkField(-26.5, -20.5, 0, {
+      ladders: false,
+      forbid: (x, z) => onStairs("stairs-spawn-nw", x, z),
+    });
+    const openNw = walkField(-26.5, -20.5, 0, { ladders: false });
 
-      expect(distanceAtHeight(shut, 0, 0, 0), own).toBe(Infinity);
-      expect(rooms(open), own).toEqual([]);
-      // ... and the other spawn area is reached, down its own staircase.
-      expect(onStairs(other, 0, 0)).toBe(false);
-    }
+    expect(distanceAtHeight(shutNw, 0, 0, 0)).toBe(Infinity);
+    expect(rooms(openNw)).toEqual([]);
+
+    // The north-east room opens on its west wall only, onto the loading dock
+    // (z -16.3 to -12.3). With that doorway shut it is sealed.
+    const shutNe = walkField(27, -20, F, {
+      ladders: false,
+      forbid: (x, z) => x < 23 && z > -16.4 && z < -12.2,
+    });
+    const openNe = walkField(27, -20, F, { ladders: false });
+
+    expect(distanceAtHeight(shutNe, 18, -14, F)).toBe(Infinity);
+    expect(rooms(openNe)).toEqual([]);
   });
 
-  it("the north-west staircase serves the west and north-west; the north-east staircase serves the east", () => {
+  it("the north-west staircase serves the west and north-west; the north-east room's doorway serves the east", () => {
     const fromNw = walkField(-26.5, -20.5, 0, { ladders: false });
-    const fromNe = walkField(27, -20, 0, { ladders: false });
+    const fromNe = walkField(27, -20, F, { ladders: false });
     const to = (field: ReturnType<typeof walkField>, id: string): number => {
       const room = layout.rooms.find((r) => r.id === id)!;
       const cells = freeCells(room, room.floorY);
@@ -737,7 +743,7 @@ describe("Getting around", () => {
       expect(to(fromNw, id), id).toBeLessThan(to(fromNe, id));
     }
 
-    for (const id of ["room-server", "room-break", "room-warehouse"]) {
+    for (const id of ["room-break", "room-warehouse"]) {
       expect(to(fromNe, id), id).toBeLessThan(to(fromNw, id));
     }
   });

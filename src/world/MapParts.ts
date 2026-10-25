@@ -1023,8 +1023,14 @@ export class MapBuilder {
     width = 0.3,
     depth = 0.4,
     collide = false,
+    shot = false,
   ): void {
     const member: SteelMember = { id, kind, from, to, profile, width, depth };
+
+    // A member that stops shots and throws (never a body): its own blocks.
+    if (shot) {
+      this.addShotAlong(id, from, to, width, depth);
+    }
 
     if (collide) {
       const alongX = Math.abs(to[0] - from[0]) >= Math.abs(to[2] - from[2]);
@@ -1581,6 +1587,112 @@ export class MapBuilder {
     });
   }
 
+  /**
+   * Makes a drawn straight member (a beam, a brace) stop shots, throws and
+   * sight: one block for an axis-aligned one, a run of small blocks for a
+   * diagonal (a single box round a diagonal would block the open air beside
+   * it). `thick` is its size across, `high` its height.
+   */
+  public addShotAlong(
+    id: string,
+    from: Vec3,
+    to: Vec3,
+    thick: number,
+    high: number,
+  ): void {
+    const dx = Math.abs(to[0] - from[0]);
+    const dy = Math.abs(to[1] - from[1]);
+    const dz = Math.abs(to[2] - from[2]);
+    const axisAligned = [dx, dy, dz].filter((d) => d > 0.05).length <= 1;
+    const solids = (this.layout.shotSolids ??= []);
+    const box = (
+      cx: number,
+      cy: number,
+      cz: number,
+      hx: number,
+      hy: number,
+      hz: number,
+      name: string,
+    ): void => {
+      solids.push({
+        kind: "box",
+        id: name,
+        role: "prop",
+        hidden: true,
+        minX: cx - hx,
+        maxX: cx + hx,
+        minZ: cz - hz,
+        maxZ: cz + hz,
+        bottom: cy - hy,
+        height: cy + hy,
+      });
+    };
+
+    if (axisAligned) {
+      box(
+        (from[0] + to[0]) / 2,
+        (from[1] + to[1]) / 2,
+        (from[2] + to[2]) / 2,
+        dx / 2 + (dx > 0.05 ? 0 : thick / 2),
+        dy / 2 + (dy > 0.05 ? 0 : high / 2),
+        dz / 2 + (dz > 0.05 ? 0 : thick / 2),
+        `${id}-shot`,
+      );
+
+      return;
+    }
+
+    const size = Math.max(thick, high);
+    const pieces = Math.max(2, Math.ceil(Math.hypot(dx, dy, dz) / size));
+
+    for (let i = 0; i <= pieces; i++) {
+      const t = i / pieces;
+
+      box(
+        from[0] + (to[0] - from[0]) * t,
+        from[1] + (to[1] - from[1]) * t,
+        from[2] + (to[2] - from[2]) * t,
+        size / 2,
+        size / 2,
+        size / 2,
+        `${id}-shot-${i}`,
+      );
+    }
+  }
+
+  /**
+   * Makes the larger pieces of a drawn fitting (a beam, a duct, a tray: any
+   * piece 0.6 m or longer) stop shots, throws and sight, each as a block round
+   * its own extent. `baseY` is the fitting's floor.
+   */
+  public addShotBlocksFor(
+    id: string,
+    baseY: number,
+    elements: PileElement[],
+    longest = 0.6,
+  ): void {
+    elements.forEach((e, i) => {
+      const [hx, hy, hz] = halfExtents(e);
+
+      if (Math.max(hx, hy, hz) * 2 < longest) {
+        return;
+      }
+
+      (this.layout.shotSolids ??= []).push({
+        kind: "box",
+        id: `${id}-shot-${i}`,
+        role: "prop",
+        hidden: true,
+        minX: e.x - hx,
+        maxX: e.x + hx,
+        minZ: e.z - hz,
+        maxZ: e.z + hz,
+        bottom: baseY + e.y - hy,
+        height: baseY + e.y + hy,
+      });
+    });
+  }
+
   /** A site plan poster on a wall. */
   public addPoster(poster: PosterDefinition): void {
     this.layout.posters.push(poster);
@@ -1599,6 +1711,70 @@ export class MapBuilder {
   /** A generator with a filler cap at (x, y, z) that players can fuel. */
   public addGenerator(generator: GeneratorDefinition): void {
     this.layout.generators.push(generator);
+  }
+
+  /**
+   * Builds something with `build`, then moves everything it added by `dz` along
+   * z: its piles, collision boxes, platforms, lights, decals and posters. For a
+   * set of furnishings authored in one place that now belongs in another (the
+   * Server room's racks, moved into the unified spawn room).
+   */
+  public translateZ(dz: number, build: () => void): void {
+    const layout = this.layout;
+    const before = {
+      piles: layout.piles.length,
+      walls: layout.walls.length,
+      platforms: layout.platforms.length,
+      lights: layout.lights.length,
+      decals: layout.decals.length,
+      posters: layout.posters.length,
+      shotSolids: layout.shotSolids?.length ?? 0,
+    };
+
+    build();
+
+    // Every z in the item (a z, a minZ or maxZ, inside nested parts too).
+    const shift = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(shift);
+
+        return;
+      }
+
+      if (value === null || typeof value !== "object") {
+        return;
+      }
+
+      const item = value as Record<string, unknown>;
+
+      for (const key of Object.keys(item)) {
+        if (
+          (key === "z" || key === "minZ" || key === "maxZ") &&
+          typeof item[key] === "number"
+        ) {
+          item[key] = (item[key] as number) + dz;
+        } else if (key !== "elements") {
+          shift(item[key]);
+        }
+      }
+    };
+
+    // A pile's pieces are placed from its own origin: moving that moves all.
+    layout.piles.slice(before.piles).forEach((pile) => {
+      pile.z += dz;
+    });
+
+    for (const key of [
+      "walls",
+      "platforms",
+      "lights",
+      "decals",
+      "posters",
+    ] as const) {
+      layout[key].slice(before[key]).forEach(shift);
+    }
+
+    (layout.shotSolids ?? []).slice(before.shotSolids).forEach(shift);
   }
 
   /** A flat mark on a floor (drawn only), such as oil or a faded line. */

@@ -26,7 +26,7 @@ import {
 } from "./CeilingSlab";
 import { furnishPowerFeeds } from "./PowerFeeds";
 import { furnishRoofWiring } from "./RoofWiring";
-import { furnishDeckService, furnishPowerGrid } from "./PowerGrid";
+import { DECK_SHIFT, furnishDeckService, furnishPowerGrid } from "./PowerGrid";
 import { furnishJunkRoom } from "./JunkRoom";
 import { furnishArmory } from "./Armory";
 import {
@@ -75,6 +75,18 @@ import { furnishWorkshop } from "./WorkshopInterior";
  * float, so the ground beneath them stays open for the next stage.
  */
 const F = UPPER_FLOOR_Y;
+/**
+ * The unified north-east spawn room's south wall (z): the old Server room's
+ * footprint (to z -5) is now open deck except for its first two metres, so the
+ * catwalk between this room's roof and the Break room's is 13 m long, not 8.
+ */
+const SPAWN_SOUTH = -10;
+/**
+ * How far the Server room's furnishings moved north into the unified room (m):
+ * flush with its north wall (the Server room's old north wall was at z -12, the
+ * unified room's is at z -23.7), so everything that hung on that wall still does.
+ */
+const SERVER_SHIFT = -11.7;
 /** The lower balcony and the maintenance platform: 1.2 m under the upper floor. */
 const LOW = 2.8;
 /** The north-west balcony: 1.2 m above the upper floor. */
@@ -141,7 +153,7 @@ function createUpperFloor(): ArenaLayout {
   map.createDeck(
     "deck-east",
     "East deck (open court)",
-    bounds(22, X, -5, 3),
+    bounds(22, X, SPAWN_SOUTH, 3),
     F,
   );
   map.createDeck(
@@ -241,16 +253,7 @@ function createUpperFloor(): ArenaLayout {
     rise: 4 / 14,
     tread: 0.55,
   });
-  map.createStaircase({
-    id: "stairs-spawn-ne",
-    start: 29.7,
-    direction: "-x",
-    crossMin: -16.3,
-    crossMax: -12.3,
-    steps: 14,
-    rise: 4 / 14,
-    tread: 0.55,
-  });
+  // (The north-east spawn area is on the upper floor now: it has no stairs.)
 
   // --------------------------------------------------------------- ladders
   // Added before the railings, which leave an opening where a ladder tops out.
@@ -268,7 +271,7 @@ function createUpperFloor(): ArenaLayout {
   map.createLadder({
     id: "ladder-catwalk-east",
     normal: "+z",
-    face: -5,
+    face: SPAWN_SOUTH,
     along: 27.2,
     bottomY: ROOF_LOW,
     topY: ROOF_HIGH,
@@ -568,52 +571,24 @@ function createUpperFloor(): ArenaLayout {
     CEILING_SLAB_COVER,
     CEILING_SLAB_COVER_TOP,
   );
-  // The north-east spawn area, likewise at ground level, up the staircase
-  // along its south edge to the loading dock.
-  map.createRoom({
-    id: "room-spawn-ne",
-    name: "North-east spawn area (ground floor)",
-    roof: false,
-    bounds: bounds(22, X, -Z, -12),
-    floorY: 0,
-    walls: ["n", "e", "s"],
-    wallHeight: F + WALL_TO_HIGH,
-    doors: [],
-  });
-  map.createWall(
-    "room-spawn-ne-wall-w",
-    "z",
-    22,
-    -23.7,
-    -12.3,
-    F,
-    0.3,
-    WALL_TO_HIGH,
-    "wall",
-    [{ from: -16.3, to: -12.3 }],
-  );
-  map.createWall(
-    "room-spawn-ne-lintel",
-    "z",
-    22,
-    -16.3,
-    -12.3,
-    F + 2.6,
-    0.3,
-    WALL_TO_HIGH - 2.6,
-  );
-
-  // EAST SIDE.
+  // The Server room has absorbed the old north-east spawn yard: it is carried
+  // north over the yard's footprint (a solid floor under it, raised to the
+  // upper floor) and runs from z -24 to z -10, with the rack lanes at its north
+  // end and open floor at its south. It opens west onto the loading dock
+  // through the 4 m doorway the yard's staircase used to climb to. It is not a
+  // spawn area: the only spawn yard is the north-west one, with its stairs.
+  map.createFloorSection("floor-server", bounds(22, X, -Z, -12), F);
   map.createRoom({
     id: "room-server",
     name: "Server room (rack lanes)",
-    bounds: bounds(22, X, -12, -5),
+    bounds: bounds(22, X, -Z, SPAWN_SOUTH),
     floorY: F,
-    walls: ["s", "e", "w"],
-    // As tall as the Storage room (6.5 m to the ceiling), roof and all.
     wallHeight: WALL_TO_HIGH,
-    doors: [{ side: "w", at: -8 }],
+    doors: [{ side: "w", at: -14.3, width: 4 }],
   });
+
+  // EAST SIDE.
+  // (The Server room is part of the north-east spawn room, above.)
   map.createRoom({
     id: "room-break",
     name: "Break room",
@@ -796,7 +771,8 @@ function createUpperFloor(): ArenaLayout {
   // north-east corner and a crate against the east wall.
 
   // Server room: two rows of racks with gaps (narrow 1.5 m lanes), see ServerRoom.
-  furnishServerRoom(map, F);
+  // (Moved into the unified spawn room's north end, against its north wall.)
+  map.translateZ(SERVER_SHIFT, () => furnishServerRoom(map, F));
 
   // Break room: a table and chairs, a sofa, a kitchen run, lockers and a vending
   // machine (see BreakRoom).
@@ -819,7 +795,7 @@ function createUpperFloor(): ArenaLayout {
   furnishStorageRoom(map, F);
   furnishHall(map, F);
   furnishPowerGrid(map, F);
-  furnishDeckService(map, F);
+  map.translateZ(DECK_SHIFT, () => furnishDeckService(map, F));
   furnishSpawnAreas(map);
   furnishStairDetails(map, F);
   furnishConstructionSite(map, F);
@@ -886,12 +862,16 @@ function createUpperFloor(): ArenaLayout {
 
   // A catwalk joins the Break room's roof to the foot of the Server room's roof
   // (a ladder climbs the last 2.7 m) across the east court.
-  map.createCatwalk("catwalk-east", bounds(26.2, 28.2, -5, 3), ROOF_LOW);
+  map.createCatwalk(
+    "catwalk-east",
+    bounds(26.2, 28.2, SPAWN_SOUTH, 3),
+    ROOF_LOW,
+  );
   map.createRailing({
     id: "rail-catwalk-west",
     axis: "z",
     at: 26.2,
-    from: -5,
+    from: SPAWN_SOUTH,
     to: 3,
     floorY: ROOF_LOW,
     inside: 1,
@@ -900,7 +880,7 @@ function createUpperFloor(): ArenaLayout {
     id: "rail-catwalk-east",
     axis: "z",
     at: 28.2,
-    from: -5,
+    from: SPAWN_SOUTH,
     to: 3,
     floorY: ROOF_LOW,
     inside: -1,
@@ -913,7 +893,7 @@ function createUpperFloor(): ArenaLayout {
   map.createTank("tank-barracks", -28.9, -6.5, ROOF_LOW);
   prop("vent", "vent-barracks", -24.2, -5.4, ROOF_LOW);
   prop("vent", "vent-archive", -8, -20, ROOF_LOW);
-  prop("vent", "vent-server", 25, -10.6, ROOF_HIGH);
+  prop("vent", "vent-server", 25, -9.9 + SERVER_SHIFT, ROOF_HIGH);
   map.createTank("tank-break", 28.6, 8, ROOF_LOW, 1.35, 3.9);
   prop("vent", "vent-store", -13.5, 20, ROOF_LOW);
   prop("vent", "vent-workshop", 11, 20, ROOF_HIGH);
@@ -990,52 +970,116 @@ function createUpperFloor(): ArenaLayout {
 
   // (The floating balconies have no beams under them: they stand on posts.)
 
-  // The east catwalk: two stringers and cross beams under it, and knee braces up
-  // from the two room walls it starts at (high enough to walk under).
+  // The wall halogen over the bridge: its head and bracket stop shots and throws.
+  map.addShotBlock(
+    "halogen-wall-bridge-head",
+    0,
+    30.7,
+    31.3,
+    -9.95,
+    -9.4,
+    9.85,
+    9.3,
+  );
+
+  // The east catwalk, 13 m long: two stringers the whole length, cross beams
+  // every 1.75 to 2.25 m, two portal frames (a column each side of the
+  // bridge, tied across and braced in an X) and knee braces up from the two
+  // walls it runs between (the unified spawn room's and the Break room's).
   const CATWALK_UNDER = ROOF_LOW - 0.25;
+  const CATWALK_FROM = SPAWN_SOUTH;
+  const CATWALK_TO = 3;
+  const PORTALS = [-7.0, -3.6];
+  const COLUMN_X = [25.95, 28.45];
 
   for (const x of [26.55, 27.85]) {
     map.createSteel(
       `steel-catwalk-stringer-${x}`,
       "support",
-      [x, CATWALK_UNDER - 0.15, -5],
-      [x, CATWALK_UNDER - 0.15, 3],
+      [x, CATWALK_UNDER - 0.15, CATWALK_FROM],
+      [x, CATWALK_UNDER - 0.15, CATWALK_TO],
       "i",
       0.2,
       0.3,
+      false,
+      true,
     );
   }
 
-  [-3.5, -1, 1.5].forEach((z, i) => {
+  [-9.25, -7.0, -5.25, -3.6, -1.75, 0, 1.6].forEach((z, i) => {
+    // A portal's cross beam reaches the columns either side; the rest tie
+    // the stringers.
+    const wide = PORTALS.includes(z);
+
     map.createSteel(
       `steel-catwalk-cross-${i + 1}`,
       "support",
-      [26.2, CATWALK_UNDER - 0.13, z],
-      [28.2, CATWALK_UNDER - 0.13, z],
+      [wide ? COLUMN_X[0] : 26.2, CATWALK_UNDER - 0.13, z],
+      [wide ? COLUMN_X[1] : 28.2, CATWALK_UNDER - 0.13, z],
       "i",
       0.18,
       0.26,
+      false,
+      true,
     );
+  });
+
+  PORTALS.forEach((z, i) => {
+    // The columns stand on the deck and carry the cross beam's underside.
+    for (const x of COLUMN_X) {
+      map.createSteelColumn(
+        `steel-column-catwalk-${i + 1}-${x}`,
+        x,
+        z,
+        F,
+        CATWALK_UNDER - 0.26,
+        0.25,
+      );
+    }
+
+    // An X of braces between the two columns, in the portal's plane.
+    const diagonals: Array<[number, number]> = [
+      [COLUMN_X[0], COLUMN_X[1]],
+      [COLUMN_X[1], COLUMN_X[0]],
+    ];
+
+    diagonals.forEach(([from, to], k) => {
+      map.createSteel(
+        `steel-catwalk-brace-${i + 1}-${k + 1}`,
+        "brace",
+        [from, F + 0.6, z],
+        [to, CATWALK_UNDER - 0.45, z],
+        "box",
+        0.1,
+        0.14,
+        false,
+        true,
+      );
+    });
   });
 
   for (const x of [26.55, 27.85]) {
     map.createSteel(
       `steel-catwalk-knee-s-${x}`,
       "support",
-      [x, 6.7, -5.05],
-      [x, CATWALK_UNDER - 0.3, -3.6],
+      [x, 6.7, CATWALK_FROM - 0.05],
+      [x, CATWALK_UNDER - 0.3, CATWALK_FROM + 1.4],
       "box",
       0.14,
       0.2,
+      false,
+      true,
     );
     map.createSteel(
       `steel-catwalk-knee-n-${x}`,
       "support",
-      [x, 6.7, 3.05],
-      [x, CATWALK_UNDER - 0.3, 1.6],
+      [x, 6.7, CATWALK_TO + 0.05],
+      [x, CATWALK_UNDER - 0.3, CATWALK_TO - 1.4],
       "box",
       0.14,
       0.2,
+      false,
+      true,
     );
   }
 
@@ -1044,7 +1088,7 @@ function createUpperFloor(): ArenaLayout {
   map.createSteelColumn(
     "steel-column-deck-east-n",
     31.8,
-    -4.8,
+    SPAWN_SOUTH + 0.2,
     F,
     ROOF_LOW - 0.3,
   );
@@ -1286,7 +1330,7 @@ function createUpperFloor(): ArenaLayout {
   });
   // (Off to the side: the wooden slab's opening is over the room's middle.)
   prop("vent", "unit-switch", 5.6, -18.4, ROOF_LOW);
-  prop("machine", "box-server", 24.4, -7.2, ROOF_HIGH, "x", {
+  prop("machine", "box-server", 24.4, -7.2 + SERVER_SHIFT, ROOF_HIGH, "x", {
     width: 1.2,
     depth: 0.75,
     height: 1.1,
@@ -1332,7 +1376,15 @@ function createUpperFloor(): ArenaLayout {
   roofWall("roofwall-archive", "x", -16.3, -13.8, -1.2, ROOF_LOW, [
     { from: -8.8, to: -5.8 },
   ]);
-  roofWall("roofwall-server", "z", 22, -11.8, -7.5, ROOF_HIGH, []);
+  roofWall(
+    "roofwall-server",
+    "z",
+    22,
+    -11.8 + SERVER_SHIFT,
+    -7.5 + SERVER_SHIFT,
+    ROOF_HIGH,
+    [],
+  );
   roofWall("roofwall-break", "z", 22, 3.2, 11.8, ROOF_LOW, [
     { from: 6, to: 9 },
   ]);
@@ -1647,14 +1699,12 @@ function createUpperFloor(): ArenaLayout {
   furnishPowerFeeds(map);
   furnishDebris(map);
 
-  // Fixed spots, two in each spawn area on the ground floor, on the open
-  // stretch between the stairs, the cover and the lamp post, each facing the
-  // staircase out (north-west: east, to its stairs; north-east: west).
+  // The one spawn area is the north-west yard, on the ground floor: two fixed
+  // spots on the open stretch between its stairs, its cover and its lamp post,
+  // each facing the staircase out (east, to its stairs).
   layout.spawnPoints = [
     spawn(1, -27.4, -20.9, -21, -15.8),
     spawn(2, -24.2, -20.4, -21, -15.8),
-    spawn(3, 25.4, -20.7, 22, -14.3),
-    spawn(4, 28.2, -19.9, 22, -14.3),
   ];
 
   return layout;

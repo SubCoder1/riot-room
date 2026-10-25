@@ -42,7 +42,6 @@ const CREAM = "#f0e8d2";
 /** A short label for a room, from its name and id. */
 function label(room: RoomDefinition): string {
   if (room.id === "room-spawn-nw") return "SPAWN NW";
-  if (room.id === "room-spawn-ne") return "SPAWN NE";
   if (room.id === "room-switch") return "POWER ROOM";
 
   return room.name.replace(/\s*\(.*\)\s*/, "").toUpperCase();
@@ -427,7 +426,7 @@ export function createFacilityPosterTexture(
   ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
   ctx.lineJoin = "miter";
 
-  const hereId = poster.here === "nw" ? "room-spawn-nw" : "room-spawn-ne";
+  const hereId = "room-spawn-nw";
 
   // ------------------------------------------------------------- the sheet
   ctx.fillStyle = PAPER;

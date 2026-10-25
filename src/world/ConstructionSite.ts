@@ -976,8 +976,9 @@ export function furnishConstructionSite(map: MapBuilder, floorY: number): void {
       [-8.95, -16.15, 0.3, 0.3],
       [-5.65, -16.15, 0.3, 0.3],
       [-1.35, -16.15, 0.3, 0.3],
-      [22.15, -11.65, 0.3, 0.3],
-      [22.15, -7.65, 0.3, 0.3],
+      // (The ends of the unified room's west roof wall, moved with the Server room.)
+      [22.15, -23.35, 0.3, 0.3],
+      [22.15, -19.35, 0.3, 0.3],
       [22.15, 3.35, 0.3, 0.3],
       [22.15, 5.85, 0.3, 0.3],
       [22.15, 9.15, 0.3, 0.3],

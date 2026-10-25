@@ -22,8 +22,17 @@ describe("Shot blocks for drawn-only props", () => {
   });
 
   it("every block stands on the first floor and is inside the map", () => {
+    // (A block on a hung or raised thing, a beam, a brace or a lamp head,
+    // starts higher: it stands above the first floor.)
+    const overhead = /^(fittings-server-|steel-catwalk-|halogen-wall-)/;
+
     for (const b of ARENA_LAYOUT.shotSolids ?? []) {
-      expect(b.bottom, b.id).toBe(F);
+      if (overhead.test(b.id)) {
+        expect(b.bottom, b.id).toBeGreaterThanOrEqual(F);
+      } else {
+        expect(b.bottom, b.id).toBe(F);
+      }
+
       expect(b.height, b.id).toBeGreaterThan(F);
       expect(Math.abs(b.minX), b.id).toBeLessThan(32);
       expect(Math.abs(b.minZ), b.id).toBeLessThan(24);
@@ -44,7 +53,7 @@ describe("Junk room heaps you can stand on", () => {
 
 describe("Stair handrails", () => {
   it("are solid on the open edge: walking off the side of a flight is stopped", () => {
-    for (const id of ["stairs-spawn-nw", "stairs-spawn-ne"]) {
+    for (const id of ["stairs-spawn-nw"]) {
       const stairs = ARENA_LAYOUT.stairs.find((s) => s.id === id)!;
       const step = 6;
       const sign = stairs.direction.startsWith("+") ? 1 : -1;

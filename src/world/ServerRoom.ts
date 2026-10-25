@@ -376,8 +376,8 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
   // Fewer racks and a wider aisle: two short rows each side of a 2.2 m aisle
   // (z -9.95 to -7.75), a 3.3 m cross lane between the row ends, and a lane
   // behind each row.
-  const NORTH_Z = -10.45;
-  const SOUTH_Z = -7.25;
+  const NORTH_Z = -9.95;
+  const SOUTH_Z = -6.75;
   const rows: Array<
     [string, number, number, number, 1 | -1, number, RackState[]]
   > = [
@@ -450,6 +450,8 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
     }
 
     map.createFitting("fittings-server-trays", F, p.elements, []);
+    // The beams, duct and trays under the ceiling stop shots and throws.
+    map.addShotBlocksFor("fittings-server-trays", F, p.elements);
   }
 
   // ------------------------------------------ the wall patch cabinet
@@ -500,6 +502,7 @@ export function furnishServerRoom(map: MapBuilder, floorY: number): void {
     p.post(x + 0.5, 2.32, z - 0.04, CEILING - 2.32, 0.05, STEEL_BARE);
     plate(p, x, 2.2, z + 0.12, 0.4, 0.08, "z", 1);
     map.createFitting("fittings-server-cabinet", F, p.elements, []);
+    map.addShotBlocksFor("fittings-server-cabinet", F, p.elements, 0.8);
   }
 
   // ----------------------------------- the maintenance console, east end

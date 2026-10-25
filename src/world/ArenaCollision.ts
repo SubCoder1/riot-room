@@ -1128,12 +1128,23 @@ export class ArenaCollision {
   }
 
   /** Distance from (x, z) to the nearest solid footprint (0 if inside one). */
-  public clearanceAt(x: number, z: number): number {
+  public clearanceAt(x: number, z: number, feetY = 0): number {
     let nearest = Number.POSITIVE_INFINITY;
 
     for (const solid of this.solids) {
       // A roof or deck far overhead is no obstacle on the ground.
       if (solid.kind === "box" && (solid.bottom ?? 0) > 6) {
+        continue;
+      }
+
+      // On an upper floor (feet above the ground): the floor itself, and
+      // anything overhead (a roof, a deck), are not obstacles to stand among.
+      if (
+        feetY > 0.5 &&
+        solid.kind === "box" &&
+        (solid.height <= feetY + 0.05 ||
+          (solid.bottom ?? 0) >= feetY + HEADROOM)
+      ) {
         continue;
       }
 

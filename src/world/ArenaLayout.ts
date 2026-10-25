@@ -527,7 +527,7 @@ export interface PosterDefinition {
   nx: number;
   nz: number;
   /** Which spawn area this one is in (its "you are here"). */
-  here: "nw" | "ne";
+  here: "nw";
 }
 
 /** An item lying on a surface that a player can take (it comes back later). */

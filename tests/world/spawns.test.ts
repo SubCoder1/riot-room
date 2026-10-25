@@ -31,24 +31,30 @@ const ids = (count: number): string[] =>
   Array.from({ length: count }, (_, i) => `p${i + 1}`);
 
 describe("Spawn points", () => {
-  it("there are four fixed points, two in each spawn area, with unique ids", () => {
-    expect(points).toHaveLength(4);
+  it("there are two fixed points, both in the one spawn area (the north-west yard, with the stairs), with unique ids", () => {
+    expect(points).toHaveLength(2);
 
-    for (const room of ["room-spawn-nw", "room-spawn-ne"]) {
-      const area = ARENA_LAYOUT.rooms.find((r) => r.id === room)!;
+    const area = ARENA_LAYOUT.rooms.find((r) => r.id === "room-spawn-nw")!;
 
-      expect(
-        points.filter(
-          (p) =>
-            p.x > area.minX &&
-            p.x < area.maxX &&
-            p.z > area.minZ &&
-            p.z < area.maxZ,
-        ),
-        room,
-      ).toHaveLength(2);
+    for (const p of points) {
+      expect(p.x).toBeGreaterThan(area.minX);
+      expect(p.x).toBeLessThan(area.maxX);
+      expect(p.z).toBeGreaterThan(area.minZ);
+      expect(p.z).toBeLessThan(area.maxZ);
     }
 
+    // No spawn point is in the Server room (the old north-east spawn yard).
+    const server = ARENA_LAYOUT.rooms.find((r) => r.id === "room-server")!;
+
+    expect(
+      points.some(
+        (p) =>
+          p.x > server.minX &&
+          p.x < server.maxX &&
+          p.z > server.minZ &&
+          p.z < server.maxZ,
+      ),
+    ).toBe(false);
     expect(new Set(points.map((p) => p.id)).size).toBe(points.length);
   });
 
@@ -76,11 +82,11 @@ describe("Spawn points", () => {
     }
   });
 
-  it("are on the ground floor, on the open floor of the spawn areas", () => {
+  it("are on the ground floor, on the open floor of the spawn yard", () => {
     for (const point of points) {
       expect(point.y).toBe(0);
       expect(Math.abs(point.x)).toBeGreaterThan(20);
-      expect(point.z).toBeLessThan(-14);
+      expect(point.z).toBeLessThan(-12);
     }
   });
 
@@ -102,9 +108,26 @@ describe("Spawn points", () => {
   });
 });
 
+/**
+ * A spread-out pool for the assignment algorithm's tests: the two real spawn
+ * points (the one spawn area is the north-west yard) and two far away, since
+ * the algorithm is about telling players apart, whatever the map has.
+ */
+const POOL = [
+  ...points,
+  { id: "pool-3", label: "P3", x: 25.4, y: 4, z: -13.6, yaw: 0 },
+  { id: "pool-4", label: "P4", x: 28.6, y: 4, z: -12.9, yaw: 0 },
+];
+
+const assign = (
+  playerIds: readonly string[],
+  options: Parameters<typeof assignSpawns>[1] = {},
+): ReturnType<typeof assignSpawns> =>
+  assignSpawns(playerIds, { points: POOL, ...options });
+
 describe("Spawn assignment", () => {
   it.each([2, 3, 4])("%i players each get a unique point", (count) => {
-    const result = assignSpawns(ids(count), { rng: seeded(count) });
+    const result = assign(ids(count), { rng: seeded(count) });
     const used = Object.values(result).map((p) => p.id);
 
     expect(Object.keys(result)).toHaveLength(count);
@@ -112,11 +135,11 @@ describe("Spawn assignment", () => {
   });
 
   it("only hands out predefined points (never arbitrary coordinates)", () => {
-    const valid = new Set(points.map((p) => p.id));
+    const valid = new Set(POOL.map((p) => p.id));
 
     for (let seed = 1; seed <= 30; seed++) {
       for (const point of Object.values(
-        assignSpawns(ids(4), { rng: seeded(seed) }),
+        assign(ids(4), { rng: seeded(seed) }),
       )) {
         expect(valid.has(point.id)).toBe(true);
       }
@@ -125,9 +148,7 @@ describe("Spawn assignment", () => {
 
   it("keeps small groups apart by the minimum spawn distance", () => {
     for (let seed = 1; seed <= 50; seed++) {
-      const spawned = Object.values(
-        assignSpawns(ids(2), { rng: seeded(seed) }),
-      );
+      const spawned = Object.values(assign(ids(2), { rng: seeded(seed) }));
 
       for (let i = 0; i < spawned.length; i++) {
         for (let j = i + 1; j < spawned.length; j++) {
@@ -143,7 +164,7 @@ describe("Spawn assignment", () => {
   });
 
   it("relaxes the distance instead of failing when the arena is full", () => {
-    const result = assignSpawns(ids(4), { rng: seeded(5) });
+    const result = assign(ids(4), { rng: seeded(5) });
     const used = Object.values(result);
 
     expect(used).toHaveLength(4);
@@ -160,7 +181,7 @@ describe("Spawn assignment", () => {
 
   it("never gives two players the same point, even with no distance rule", () => {
     for (let seed = 1; seed <= 50; seed++) {
-      const result = assignSpawns(ids(4), {
+      const result = assign(ids(4), {
         rng: seeded(seed),
         minDistance: 0,
       });
@@ -170,22 +191,22 @@ describe("Spawn assignment", () => {
   });
 
   it("works with every point in use", () => {
-    const result = assignSpawns(ids(points.length), { rng: seeded(9) });
+    const result = assign(ids(POOL.length), { rng: seeded(9) });
 
     expect(new Set(Object.values(result).map((p) => p.id)).size).toBe(
-      points.length,
+      POOL.length,
     );
   });
 
   it("throws only when there are more players than points", () => {
-    expect(() => assignSpawns(ids(points.length + 1))).toThrow(/spawn points/i);
+    expect(() => assign(ids(POOL.length + 1))).toThrow(/spawn points/i);
   });
 
   it("is random: different seeds give different assignments", () => {
     const seen = new Set<string>();
 
     for (let seed = 1; seed <= 30; seed++) {
-      const result = assignSpawns(ids(4), { rng: seeded(seed) });
+      const result = assign(ids(4), { rng: seeded(seed) });
 
       seen.add(
         ids(4)
@@ -205,14 +226,14 @@ describe("Spawn assignment", () => {
     };
 
     for (let seed = 1; seed <= 300; seed++) {
-      const result = assignSpawns(["p1", "p2"], { rng: seeded(seed) });
+      const result = assign(["p1", "p2"], { rng: seeded(seed) });
 
       landed.p1.add(result.p1.id);
       landed.p2.add(result.p2.id);
     }
 
-    expect(landed.p1.size).toBe(points.length);
-    expect(landed.p2.size).toBe(points.length);
+    expect(landed.p1.size).toBe(POOL.length);
+    expect(landed.p2.size).toBe(POOL.length);
   });
 
   it("a new round never repeats the previous assignment", () => {
@@ -220,7 +241,7 @@ describe("Spawn assignment", () => {
     const rng = seeded(3);
 
     for (let round = 0; round < 200; round++) {
-      const result = assignSpawns(ids(2), { rng, previous });
+      const result = assign(ids(2), { rng, previous });
       const mapped = Object.fromEntries(
         Object.entries(result).map(([id, p]) => [id, p.id]),
       );
@@ -234,10 +255,10 @@ describe("Spawn assignment", () => {
   });
 
   it("does not spawn beside a player who is already in the arena", () => {
-    const occupant = { x: points[0].x + 1, z: points[0].z + 1 };
+    const occupant = { x: POOL[0].x + 1, z: POOL[0].z + 1 };
 
     for (let seed = 1; seed <= 40; seed++) {
-      const result = assignSpawns(ids(2), {
+      const result = assign(ids(2), {
         rng: seeded(seed),
         occupied: [occupant],
       });

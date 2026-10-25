@@ -107,7 +107,8 @@ describe("Generators in the map", () => {
       /^support-[a-z]+-\d-1$/.test(w.id),
     );
 
-    expect(masts.length).toBe(7);
+    // (Seven, until the low work halogen on the east deck was taken down.)
+    expect(masts.length).toBe(6);
 
     const grid = ARENA_LAYOUT.piles.filter((pile) =>
       pile.id.startsWith("fittings-grid-"),

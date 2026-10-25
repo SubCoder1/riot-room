@@ -171,7 +171,7 @@ export function validateSpawnPoint(
     problems.push("too close to (or outside) the outer wall");
   }
 
-  if (collision.clearanceAt(point.x, point.z) < SPAWN_CLEARANCE) {
+  if (collision.clearanceAt(point.x, point.z, point.y) < SPAWN_CLEARANCE) {
     problems.push(
       "inside or too close to an obstacle, platform, ramp or stairs",
     );
