@@ -302,10 +302,11 @@ export class FireZoneView {
       const flat = 0.85 + 0.3 * hash(seed, i, 10);
       // A tongue is never lower than it is wide (until the fire is dying): no
       // flat discs lying on the ground.
-      const rawTongue =
-        dying >= 1
-          ? Math.max(height, width * 2.6 * intensity * (0.8 + 0.2 * flicker))
-          : height;
+      // (The floor fades with the tongue, so nothing steps when it starts to die.)
+      const rawTongue = Math.max(
+        height,
+        width * 2.6 * intensity * (0.8 + 0.2 * flicker) * dying,
+      );
       // (A fuel fire's tongues are tall but kept below chest height.)
       const tongue = fuel
         ? Math.min(rawTongue, MOLOTOV_CONFIG.FUEL_FIRE_MAX_FLAME_HEIGHT)
@@ -369,19 +370,23 @@ export class FireZoneView {
         0.26 * fury * Math.cos(time * 2.6 * pace + sway),
       );
       this.rotation.setFromEuler(this.euler);
+      // A dying tongue thins as it sinks, so it tapers away instead of
+      // flattening into a disc.
+      const thin = 0.35 + 0.65 * dying;
+
       this.scale.set(
-        width * flat,
+        width * flat * thin,
         hidden ? 0.001 : Math.max(tongue, 0.001),
-        width / flat,
+        (width / flat) * thin,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.flames.setMatrixAt(i, this.matrix);
 
       // The hot core: narrower and shorter, in the same place.
       this.scale.set(
-        width * flat * 0.55,
+        width * flat * 0.55 * thin,
         hidden ? 0.001 : Math.max(tongue * 0.68, 0.001),
-        (width / flat) * 0.55,
+        (width / flat) * 0.55 * thin,
       );
       this.matrix.compose(this.position, this.rotation, this.scale);
       entry.cores.setMatrixAt(i, this.matrix);

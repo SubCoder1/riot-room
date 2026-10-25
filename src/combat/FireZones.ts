@@ -54,6 +54,7 @@ const LIFE = ACTIVE_END + C.MOLOTOV_FIRE_FADE_TIME;
 
 const easeOut = (t: number): number => 1 - (1 - t) * (1 - t);
 const clamp01 = (t: number): number => Math.min(Math.max(t, 0), 1);
+const smooth = (t: number): number => t * t * (3 - 2 * t);
 
 export function firePhase(age: number): FirePhase {
   return age < SPREAD_END
@@ -98,7 +99,8 @@ export function fireIntensity(age: number): number {
   }
 
   if (age >= ACTIVE_END) {
-    return 1 - clamp01((age - ACTIVE_END) / C.MOLOTOV_FIRE_FADE_TIME);
+    // An eased fall to nothing: no step at its start or its end.
+    return 1 - smooth(clamp01((age - ACTIVE_END) / C.MOLOTOV_FIRE_FADE_TIME));
   }
 
   return clamp01(age / 0.25);
@@ -116,10 +118,11 @@ export function fireDyingFactor(age: number, rank: number): number {
   }
 
   const progress = clamp01((age - ACTIVE_END) / C.MOLOTOV_FIRE_FADE_TIME);
-  // Tongue `rank` starts to sink when progress passes (1 - rank) * 0.7.
-  const start = (1 - rank) * 0.7;
+  // Tongue `rank` starts to sink when progress passes (1 - rank) * 0.5, and
+  // takes half the fade to go: the tongues overlap and each one eases out.
+  const start = (1 - rank) * 0.5;
 
-  return 1 - clamp01((progress - start) / 0.3);
+  return 1 - smooth(clamp01((progress - start) / 0.5));
 }
 
 /** Age at which the fire has finished spreading (its drawn tongues stop moving). */
