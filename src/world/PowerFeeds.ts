@@ -11,6 +11,7 @@ import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
 import { poleOf } from "./MessyWiring";
 import { nightLights, WALL_LAMPS } from "./NightLights";
+import { circuitOfLamp } from "./PowerCircuits";
 import { CHARCOAL, GUNMETAL, STEEL_BARE } from "./RoomKit";
 
 /**
@@ -32,6 +33,12 @@ const COLS = 128;
 const ROWS = 96;
 /** Where every cable ends: just inside the power room, by its south door. */
 const FEED: [number, number] = [1.2, -18.6];
+/**
+ * Where the outdoor lamps' cables end: the foot of the roof generator's
+ * conduit, on the south walkway (the junction box in `PowerGrid`). The roof
+ * generator runs every light outside the building.
+ */
+const ROOF_FEED: [number, number] = [-3.3, 14.5];
 /** One plain black supply cable. */
 const CABLE = 0x24272c;
 const WALL_GAP = 0.18;
@@ -249,8 +256,9 @@ export function furnishPowerFeeds(map: MapBuilder): void {
   };
 
   const goal = nearestFree(FEED[0], FEED[1]);
+  const roofGoal = nearestFree(ROOF_FEED[0], ROOF_FEED[1]);
 
-  if (!goal) {
+  if (!goal || !roofGoal) {
     return;
   }
 
@@ -316,14 +324,14 @@ export function furnishPowerFeeds(map: MapBuilder): void {
   let index = 0;
 
   /** From a point on the floor, a curved cable over the open floor to the feed. */
-  const floorRun = (from: XZ): void => {
+  const floorRun = (from: XZ, to: [number, number] = goal): void => {
     const start = nearestFree(from[0], from[1]);
 
     if (!start) {
       return;
     }
 
-    const cells = route(start, goal);
+    const cells = route(start, to);
 
     if (!cells) {
       return;
@@ -465,7 +473,7 @@ export function furnishPowerFeeds(map: MapBuilder): void {
       clamp(wx, y, wz);
     }
 
-    floorRun([wx, wz]);
+    floorRun([wx, wz], circuitOfLamp(main.id) === "exterior" ? roofGoal : goal);
   }
 
   // -------------------------------------------------------- the wall lamps
@@ -492,15 +500,16 @@ export function furnishPowerFeeds(map: MapBuilder): void {
       clamp(dx, y, dz);
     }
 
-    floorRun([dx, dz]);
+    floorRun([dx, dz], circuitOfLamp(lamp.id) === "exterior" ? roofGoal : goal);
   }
 
   // ---------------------------------------- the first-floor floodlights
   for (const lamp of nightLights(layout).filter(isFirstFloorFloodlight)) {
     const pole = poleOf(layout, lamp);
 
-    // From the foot of its pole (where its own wiring starts) to the feed.
-    floorRun([pole.x, pole.z]);
+    // From the foot of its pole (where its own wiring starts) to the roof
+    // generator's conduit: it runs every light outside the building.
+    floorRun([pole.x, pole.z], roofGoal);
   }
 
   map.createFitting("power-feeds", F, p.elements, []);

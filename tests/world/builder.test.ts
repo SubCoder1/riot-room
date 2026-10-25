@@ -26,9 +26,16 @@ describe("Arena meshes", () => {
   const arena = buildArena(ARENA_LAYOUT);
   const all = meshes(arena);
   // The piles are four merged meshes at most: bags, bricks, planks and chunks.
-  const pileMeshes = new Set(
-    ARENA_LAYOUT.piles.flatMap((p) => p.elements.map((e) => e.shape)),
-  ).size;
+  // A pile the game animates (a generator) has its own meshes: one per shape.
+  const pileMeshes =
+    new Set(
+      ARENA_LAYOUT.piles
+        .filter((p) => !p.animated)
+        .flatMap((p) => p.elements.map((e) => e.shape)),
+    ).size +
+    ARENA_LAYOUT.piles
+      .filter((p) => p.animated)
+      .reduce((n, p) => n + new Set(p.elements.map((e) => e.shape)).size, 0);
 
   it("builds the floor, the perimeter walls, every solid, every roof and lintel, and every ladder", () => {
     const steps = ARENA_LAYOUT.stairs.reduce((n, s) => n + s.steps, 0);

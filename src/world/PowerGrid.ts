@@ -789,6 +789,12 @@ function buildPlatform(map: MapBuilder, F: number, s: Support): void {
   ]);
 }
 
+/** The two generators that run a lighting circuit. */
+const CIRCUIT_BODIES: ReadonlySet<string> = new Set([
+  "fittings-generator",
+  "fittings-generator-roof",
+]);
+
 // ------------------------------------------------------------- generator
 interface GeneratorSpec {
   id: string;
@@ -807,6 +813,12 @@ interface GeneratorParts {
   cap: { x: number; y: number; z: number };
   /** The output sockets, in world plan coordinates. */
   sockets: Array<{ x: number; z: number }>;
+  /** In front of the control panel (world plan). */
+  panel: { x: number; z: number };
+  /** The red indicator lamp's place (world). */
+  indicator: { x: number; y: number; z: number };
+  /** The top of the muffler outlet (world): the smoke comes out here. */
+  exhaust: { x: number; y: number; z: number };
 }
 
 /**
@@ -987,13 +999,18 @@ function buildGenerator(map: MapBuilder, g: GeneratorSpec): GeneratorParts {
     0.03,
     0x4c7a50,
   );
-  p.chunk(
-    wx(panelA, front + 0.01),
-    0.32,
-    wz(panelA, front + 0.01),
-    0.03,
-    0x86322a,
-  );
+  // The red indicator lamp of the two circuit generators is drawn by the game,
+  // so it can glow (see `GeneratorView`); the service generator keeps its
+  // plain lamp.
+  if (!CIRCUIT_BODIES.has(g.id)) {
+    p.chunk(
+      wx(panelA, front + 0.01),
+      0.32,
+      wz(panelA, front + 0.01),
+      0.03,
+      0x86322a,
+    );
+  }
 
   for (const da of [-0.08, 0.02, 0.1]) {
     bx(panelA + da, front, 0.24, 0.035, 0.025, 0.05, STEEL_BARE);
@@ -1018,13 +1035,27 @@ function buildGenerator(map: MapBuilder, g: GeneratorSpec): GeneratorParts {
   const z0 = Math.min(wz(0, 0), wz(L, D));
   const z1 = Math.max(wz(0, 0), wz(L, D));
 
-  map.createFitting(g.id, g.baseY, p.elements, [
+  const pile = map.createFitting(g.id, g.baseY, p.elements, [
     { minX: x0, maxX: x1, minZ: z0, maxZ: z1, top: 1.1 },
   ]);
+
+  // The body is drawn on its own so the game can make it shake while it runs.
+  pile.animated = true;
 
   return {
     cap: { x: wx(capA, capB), y: g.baseY + 1.1, z: wz(capA, capB) },
     sockets,
+    panel: { x: wx(panelA, front + 0.6), z: wz(panelA, front + 0.6) },
+    indicator: {
+      x: wx(panelA, front + 0.012),
+      y: g.baseY + 0.32,
+      z: wz(panelA, front + 0.012),
+    },
+    exhaust: {
+      x: wx(split * 0.55 + 0.22, 0.16),
+      y: g.baseY + 0.92,
+      z: wz(split * 0.55 + 0.22, 0.16),
+    },
   };
 }
 
@@ -1054,6 +1085,11 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     z: main.cap.z,
     capacity: FUEL_CAPACITY,
     startFuel: 20,
+    circuit: "interior",
+    panel: main.panel,
+    indicator: main.indicator,
+    exhaust: main.exhaust,
+    body: "fittings-generator",
   });
 
   {
@@ -1208,6 +1244,11 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     z: roofGen.cap.z,
     capacity: FUEL_CAPACITY / 2,
     startFuel: 10,
+    circuit: "exterior",
+    panel: roofGen.panel,
+    indicator: roofGen.indicator,
+    exhaust: roofGen.exhaust,
+    body: "fittings-generator-roof",
   });
 
   {

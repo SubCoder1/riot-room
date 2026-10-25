@@ -407,6 +407,11 @@ export interface PileDefinition {
   elements: PileElement[];
   /** Ids of its collision boxes in `ArenaLayout.walls`. */
   solids: string[];
+  /**
+   * Drawn as a group of its own (named `anim:<id>`) instead of merged into
+   * the map's piles, so the game can move it (a running generator's shake).
+   */
+  animated?: boolean;
 }
 
 /**
@@ -581,6 +586,16 @@ export interface GeneratorDefinition {
   /** How much fuel it holds, and how much it starts with. */
   capacity: number;
   startFuel: number;
+  /** The lighting circuit it runs (see `PowerCircuits`). */
+  circuit: "interior" | "exterior";
+  /** In front of its control panel: where a player stands to switch it off. */
+  panel: { x: number; z: number };
+  /** Its red indicator lamp (world position), drawn by the game. */
+  indicator: { x: number; y: number; z: number };
+  /** Id of the pile (`PileDefinition.id`) that is its body. */
+  body: string;
+  /** Where its exhaust comes out (world), for the smoke. */
+  exhaust: { x: number; y: number; z: number };
 }
 
 /**

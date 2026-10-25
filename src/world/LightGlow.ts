@@ -169,9 +169,24 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   group.add(beam);
 
   // How bright the lamp is right now (1 normal, 0 out): the lens and beam follow.
-  root.userData.setLevel = (level: number): void => {
-    lensMaterial.color.copy(lensBase).multiplyScalar(0.25 + 0.75 * level);
-    beamMaterial.uniforms.uStrength.value = beamStrength * level;
+  // `power` is the circuit's: 0 is dead dark (a black lens, no beam), whatever
+  // the night's stutter and sag do to `level`.
+  let level = 1;
+  let power = 1;
+  const apply = (): void => {
+    lensMaterial.color
+      .copy(lensBase)
+      .multiplyScalar((0.25 + 0.75 * level) * power);
+    beamMaterial.uniforms.uStrength.value = beamStrength * level * power;
+  };
+
+  root.userData.setLevel = (value: number): void => {
+    level = value;
+    apply();
+  };
+  root.userData.setPower = (value: number): void => {
+    power = value;
+    apply();
   };
 
   return root;

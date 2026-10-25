@@ -115,6 +115,8 @@ export function furnishHangingTubes(map: MapBuilder, floorY: number): void {
 
 export interface HangingTubeGlow {
   group: THREE.Group;
+  /** How lit one fixture's tubes are (0 = dark, 1 = full): its lamp's level. */
+  setLevel(id: string, level: number): void;
   dispose(): void;
 }
 
@@ -157,6 +159,23 @@ export function createHangingTubeGlow(): HangingTubeGlow {
 
   return {
     group,
+    setLevel(id: string, level: number): void {
+      const k = WAREHOUSE_TUBES.findIndex((tube) => tube.id === id);
+
+      if (k < 0) {
+        return;
+      }
+
+      const lit = THREE.MathUtils.clamp(level, 0, 1);
+
+      for (const i of [k * 2, k * 2 + 1]) {
+        mesh.setColorAt(i, color.setRGB(0.88 * lit, 0.93 * lit, 0.96 * lit));
+      }
+
+      if (mesh.instanceColor) {
+        mesh.instanceColor.needsUpdate = true;
+      }
+    },
     dispose(): void {
       geometry.dispose();
       material.dispose();

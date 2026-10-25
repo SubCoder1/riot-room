@@ -11,6 +11,7 @@ import { Moths } from "./Moths";
 import { NightAtmosphere, type Halogen } from "./NightAtmosphere";
 import { FLICKERING, nightLights } from "./NightLights";
 import { createRain } from "./Rain";
+import { circuitOfLamp, type Circuit } from "./PowerCircuits";
 import { ARENA_LAYOUT } from "./UpperFloorMap";
 
 /**
@@ -33,6 +34,28 @@ export class Arena {
   private readonly lampSlots = new Map<string, number>();
   private readonly lampColours = new Map<string, THREE.Vector4>();
   private time = 0;
+  private readonly circuitTarget: Record<Circuit, number> = {
+    interior: 1,
+    exterior: 1,
+  };
+  private readonly circuitChangedAt: Record<Circuit, number> = {
+    interior: 0,
+    exterior: 0,
+  };
+  private readonly circuitLamps: Array<{
+    id: string;
+    circuit: Circuit;
+    light: THREE.Light;
+    base: THREE.Color;
+    glow: THREE.Object3D | null;
+    rainBase: THREE.Vector4 | null;
+    /** The level last shown, and the level now (0 out, 1 on). */
+    applied: number;
+    level: number;
+    /** Its turn in the circuit (0 = nearest the generator) and how many there are. */
+    rank: number;
+    count: number;
+  }> = [];
 
   constructor(layout: ArenaLayout = ARENA_LAYOUT) {
     this.layout = layout;
@@ -110,6 +133,117 @@ export class Arena {
     }
   }
 
+  /**
+   * Switches a lighting circuit on or off (its generator started or stopped).
+   * The lamps do not all change at once: going off they die one by one (the
+   * nearest the generator first, the farthest last), and coming on they start
+   * in the reverse order, the last to die the first back. Each fades over half
+   * a second. The lamps stay in the scene (taking one out changes every shader).
+   */
+  public setCircuitPower(circuit: Circuit, on: boolean): void {
+    const target = on ? 1 : 0;
+
+    if (this.circuitTarget[circuit] !== target) {
+      this.circuitTarget[circuit] = target;
+      this.circuitChangedAt[circuit] = this.time;
+    }
+  }
+
+  /** 0 to 1: how lit a lamp is now (1 = fully on; 1 for a lamp on no circuit). */
+  public lampLevelOf(id: string): number {
+    return this.circuitLamps.find((lamp) => lamp.id === id)?.level ?? 1;
+  }
+
+  /** The lamps on each circuit, found once the night's lamps are built. */
+  private registerCircuitLamps(lights: ReadonlyArray<{ id: string }>): void {
+    for (const { id } of lights) {
+      const circuit = circuitOfLamp(id);
+      const light = this.group.getObjectByName(id);
+
+      if (!circuit || !(light instanceof THREE.Light)) {
+        continue;
+      }
+
+      this.circuitLamps.push({
+        id,
+        circuit,
+        light,
+        base: light.color.clone(),
+        glow: this.group.getObjectByName(`glow-${id}`) ?? null,
+        rainBase: this.lampColours.get(id)?.clone() ?? null,
+        applied: 1,
+        level: 1,
+        rank: 0,
+        count: 1,
+      });
+    }
+
+    // Each circuit's order: nearest its generator first.
+    for (const circuit of ["interior", "exterior"] as const) {
+      const generator = this.layout.generators.find(
+        (g) => g.circuit === circuit,
+      );
+      const lamps = this.circuitLamps.filter((l) => l.circuit === circuit);
+      const distance = (l: (typeof lamps)[number]): number =>
+        generator
+          ? Math.hypot(
+              l.light.position.x - generator.panel.x,
+              l.light.position.z - generator.panel.z,
+            )
+          : 0;
+
+      lamps.sort((a, b) => distance(a) - distance(b));
+      lamps.forEach((lamp, i) => {
+        lamp.rank = i;
+        lamp.count = lamps.length;
+      });
+    }
+  }
+
+  /** Seconds between one lamp's change and the next's. */
+  private static readonly STAGGER = 0.35;
+
+  /** Fades each lamp toward its circuit's target once its turn has come. */
+  private updateCircuits(dt: number): void {
+    for (const lamp of this.circuitLamps) {
+      const target = this.circuitTarget[lamp.circuit];
+      const turn = target === 0 ? lamp.rank : lamp.count - 1 - lamp.rank;
+      const due =
+        this.time - this.circuitChangedAt[lamp.circuit] >= turn * Arena.STAGGER;
+
+      if (lamp.level !== target && due) {
+        lamp.level += (target - lamp.level) * (1 - Math.exp(-7 * dt));
+
+        if (Math.abs(target - lamp.level) < 0.004) {
+          lamp.level = target;
+        }
+      }
+
+      const level = lamp.level;
+
+      // Fully on and already shown so: the night's own flicker rules.
+      if (level === 1 && lamp.applied === 1) {
+        continue;
+      }
+
+      // The lamp's colour carries the level (the flicker works on intensity).
+      lamp.light.color.copy(lamp.base).multiplyScalar(level);
+      // The head's lens goes black and its beam out (see `createFixtureGlow`).
+      lamp.glow?.userData.setPower?.(level);
+
+      const slot = this.lampSlots.get(lamp.id);
+
+      if (this.rainLights && slot !== undefined && lamp.rainBase) {
+        this.rainLights.uCol.value[slot]
+          .copy(lamp.rainBase)
+          .multiplyScalar(level);
+      }
+
+      this.moths?.setLampOut(lamp.id, level < 0.05);
+      lamp.applied = level;
+    }
+  }
+
   /** The wooden slab over the Generator Room is broken: the rain falls through its opening. */
   public setRainOpening(open: boolean): void {
     if (this.rainLights) {
@@ -151,6 +285,7 @@ export class Arena {
   public update(dt: number): void {
     this.time += dt;
     this.atmosphere?.update(dt);
+    this.updateCircuits(dt);
     this.moths?.update(this.time);
   }
 
@@ -343,5 +478,6 @@ export class Arena {
       undefined,
       sky,
     );
+    this.registerCircuitLamps(lights);
   }
 }

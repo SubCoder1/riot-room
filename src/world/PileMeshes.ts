@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import type { ArenaLayout, PileElement } from "./ArenaLayout";
+import type { ArenaLayout, PileDefinition, PileElement } from "./ArenaLayout";
 import { createStainTexture } from "../vfx/SoftTexture";
 
 /**
@@ -142,7 +142,7 @@ function brickGeometry(): THREE.BufferGeometry {
 
 function chunkGeometry(): THREE.BufferGeometry {
   // An icosahedron roughened by a few fixed bumps: angular and not a ball.
-  const geometry = new THREE.IcosahedronGeometry(0.5, 0).toNonIndexed();
+  const geometry = new THREE.IcosahedronGeometry(0.5, 0);
   const position = geometry.getAttribute("position");
 
   for (let i = 0; i < position.count; i++) {
@@ -264,60 +264,83 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
     pipe: pipeGeometry(),
     cable: cableGeometry(),
   };
-  const parts: Record<keyof typeof sources, THREE.BufferGeometry[]> = {
-    bag: [],
-    brick: [],
-    plank: [],
-    chunk: [],
-    pipe: [],
-    cable: [],
-  };
 
   group.name = "BuildingMaterial";
 
-  for (const pile of layout.piles) {
-    for (const element of pile.elements) {
-      parts[element.shape].push(
-        placed(
-          sources[element.shape],
-          element,
-          pile.baseY,
-          pile.x,
-          pile.z,
-          element.shape === "plank",
-        ),
+  /** One merged mesh per shape for these piles, added to `into`. */
+  const build = (
+    piles: readonly PileDefinition[],
+    into: THREE.Object3D,
+    label: string,
+  ): void => {
+    const parts: Record<keyof typeof sources, THREE.BufferGeometry[]> = {
+      bag: [],
+      brick: [],
+      plank: [],
+      chunk: [],
+      pipe: [],
+      cable: [],
+    };
+
+    for (const pile of piles) {
+      for (const element of pile.elements) {
+        parts[element.shape].push(
+          placed(
+            sources[element.shape],
+            element,
+            pile.baseY,
+            pile.x,
+            pile.z,
+            element.shape === "plank",
+          ),
+        );
+      }
+    }
+
+    for (const shape of Object.keys(parts) as Array<keyof typeof sources>) {
+      const list = parts[shape];
+
+      if (list.length === 0) {
+        continue;
+      }
+
+      const merged = mergeGeometries(list, false);
+
+      for (const part of list) {
+        part.dispose();
+      }
+
+      const mesh = new THREE.Mesh(
+        merged,
+        shape === "chunk"
+          ? rubbleMaterial
+          : shape === "pipe"
+            ? pipeMaterial
+            : shape === "cable"
+              ? cableMaterial
+              : pieceMaterial,
       );
+
+      mesh.name = `${label}-${shape}`;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      into.add(mesh);
     }
-  }
+  };
 
-  for (const shape of Object.keys(parts) as Array<keyof typeof sources>) {
-    const list = parts[shape];
+  build(
+    layout.piles.filter((pile) => !pile.animated),
+    group,
+    "Piles",
+  );
 
-    if (list.length === 0) {
-      continue;
-    }
+  // A pile the game moves (a running generator) is a group of its own.
+  for (const pile of layout.piles.filter((p) => p.animated)) {
+    const own = new THREE.Group();
 
-    const merged = mergeGeometries(list, false);
-
-    for (const part of list) {
-      part.dispose();
-    }
-
-    const mesh = new THREE.Mesh(
-      merged,
-      shape === "chunk"
-        ? rubbleMaterial
-        : shape === "pipe"
-          ? pipeMaterial
-          : shape === "cable"
-            ? cableMaterial
-            : pieceMaterial,
-    );
-
-    mesh.name = `Piles-${shape}`;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
+    own.name = `anim:${pile.id}`;
+    build([pile], own, `Piles-${pile.id}`);
+    group.add(own);
   }
 
   for (const source of Object.values(sources)) {
