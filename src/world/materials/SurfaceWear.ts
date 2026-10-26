@@ -27,6 +27,10 @@ export const WEAR_WOOD = 0;
 export const WEAR_METAL = 1;
 export const WEAR_MASONRY = 2;
 export const WEAR_PLASTIC = 3;
+/** Broken concrete and stone (rocks, slabs): grain, aggregate, pits, cracks. */
+export const WEAR_RUBBLE = 4;
+/** A brick: speckle, chips, mortar smeared on it. */
+export const WEAR_BRICK = 5;
 
 export interface WearOptions {
   /**
@@ -203,6 +207,58 @@ const concrete = (e: string): string => /* glsl */ `
 `;
 
 /** Plastic and rubber (cables, coils): dirt, fading and a few scratches, no rust. */
+/**
+ * Broken concrete and stone: a coarse unevenness, light flecks of aggregate
+ * where it has fractured, dark pits and hairline cracks, and dirt in the low
+ * places. World-space noise (no texture), faded with distance where it would
+ * only shimmer.
+ */
+const rubble = (): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float near = 1.0 - smoothstep( 6.0, 18.0, length( vViewPosition ) );
+    float coarse = wxNoise( p * 13.0 );
+    float agg = smoothstep( 0.6, 0.88, wxNoise( p * 46.0 + vec3( 3.0 ) ) ) * near;
+    float pit = smoothstep( 0.72, 0.92, wxNoise( p * 66.0 + vec3( 9.0 ) ) ) * near;
+    float crack = ( 1.0 - smoothstep( 0.0, 0.03, abs( wxNoise( p * 8.0 + vec3( 5.0 ) ) - 0.5 ) ) ) * 0.8;
+    float low = 1.0 - smoothstep( 0.0, 0.6, mod( p.y + 0.02, 4.0 ) );
+
+    // Old, dirty concrete (darker, warmer, stained) against fresh fracture
+    // (lighter, cooler, clean): patches of each, a metre or so across.
+    float fresh = smoothstep( 0.5, 0.68, wxNoise( p * 2.1 + vec3( 21.0 ) ) );
+    float lum = dot( diffuseColor.rgb, vec3( 0.299, 0.587, 0.114 ) );
+
+    diffuseColor.rgb = mix(
+      diffuseColor.rgb * vec3( 0.85, 0.85, 0.86 ),
+      vec3( lum * 1.2 ) * vec3( 1.0, 1.0, 1.0 ) + 0.008,
+      fresh * 0.4
+    );
+    diffuseColor.rgb *= 0.84 + 0.3 * coarse;
+    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 1.4 + 0.01, agg * 0.4 );
+    diffuseColor.rgb *= 1.0 - 0.42 * pit;
+    diffuseColor.rgb *= 1.0 - 0.3 * crack;
+    diffuseColor.rgb *= 1.0 - 0.4 * low * ( 0.5 + 0.5 * wxNoise( p * 3.0 ) );
+  }
+`;
+
+/** A brick: speckled, chipped, with grey mortar smeared on some faces. */
+const brick = (): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float near = 1.0 - smoothstep( 5.0, 15.0, length( vViewPosition ) );
+    float speck = wxNoise( p * 38.0 + vec3( 2.0 ) );
+    float mortar = smoothstep( 0.58, 0.82, wxNoise( p * 17.0 + vec3( 7.0 ) ) );
+    float chip = smoothstep( 0.74, 0.92, wxNoise( p * 55.0 + vec3( 4.0 ) ) ) * near;
+    float tint = wxNoise( p * 2.3 + vec3( 11.0 ) );
+
+    diffuseColor.rgb *= 0.8 + 0.4 * speck;
+    // Each brick leans warmer or duskier, by where it lies.
+    diffuseColor.rgb *= mix( vec3( 1.1, 0.95, 0.88 ), vec3( 0.92, 0.96, 1.04 ), tint );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.36, 0.35, 0.33 ), mortar * 0.45 );
+    diffuseColor.rgb *= 1.0 - 0.4 * chip;
+  }
+`;
+
 const plastic = (): string => /* glsl */ `
   {
     vec3 p = vWxPos;
@@ -284,8 +340,12 @@ const color = (kind: WearKind, exposure: number, deck: boolean): string => {
       ${metal(e)}
     } else if ( vWxKind < 2.5 ) {
       ${concrete(e)}
-    } else {
+    } else if ( vWxKind < 3.5 ) {
       ${plastic()}
+    } else if ( vWxKind < 4.5 ) {
+      ${rubble()}
+    } else {
+      ${brick()}
     }
   `;
 

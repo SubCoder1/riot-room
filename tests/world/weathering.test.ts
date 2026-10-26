@@ -262,7 +262,7 @@ describe("Broken walls and barriers", () => {
     // Neighbours of the broken ones are intact, and so is some of the cover.
     expect(solidOf("cover-overlook-a")).toBeDefined();
     expect(solidOf("room-barracks-wall-e-1")).toBeDefined();
-    expect(solidOf("room-archive-wall-s-1")).toBeDefined();
+    expect(solidOf("room-archive-wall-n-1")).toBeDefined();
   });
 
   it("each broken wall is still one wall end to end: slices touch, nothing is missing", () => {
@@ -501,7 +501,7 @@ describe("Exterior barriers", () => {
     }
   });
 
-  it("there are no cement bags on the map, but the three in the Workshop's corner", () => {
+  it("cement bags are only in the Workshop's corner and the Junk Room's supplies", () => {
     expect(
       layout.piles.some((p) => p.kind === "bags" || p.kind === "bagwall"),
     ).toBe(false);
@@ -510,8 +510,13 @@ describe("Exterior barriers", () => {
       p.elements.some((e) => e.shape === "bag"),
     );
 
-    expect(withBags.map((p) => p.id)).toEqual(["fittings-bags"]);
-    expect(withBags[0].elements).toHaveLength(3);
+    expect(withBags.map((p) => p.id).sort()).toEqual([
+      "fittings-bags",
+      "junk-supplies",
+    ]);
+    expect(
+      withBags.find((p) => p.id === "fittings-bags")!.elements,
+    ).toHaveLength(3);
   });
 
   it("no barrier is put inside a room", () => {

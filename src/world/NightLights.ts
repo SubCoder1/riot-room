@@ -29,7 +29,7 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     z: 8,
     // The warm yellow of the site's work halogens (the scaffold's).
     color: 0xffcf94,
-    intensity: 130,
+    intensity: 75,
     distance: 15,
     target: { x: -18.6, y: 4.0, z: 8 },
     angle: 0.9,
@@ -47,19 +47,6 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     distance: 12,
     target: { x: -26.0, y: 0.8, z: -17.2 },
     angle: 0.72,
-  },
-  {
-    id: "halogen-wall-bridge",
-    // Bolted high on the Server room's south wall, over the bridge's
-    // north end, a yellowish-orange work halogen aimed down the bridge and toward the deck.
-    x: 31.0,
-    y: 9.6,
-    z: -9.64,
-    color: 0xffb450,
-    intensity: 120,
-    distance: 14,
-    target: { x: 27.2, y: 5.8, z: -4.5 },
-    angle: 0.85,
   },
   {
     id: "halogen-roof-east",
@@ -99,8 +86,6 @@ export const WALL_LAMPS: Record<string, [number, number]> = {
   "halogen-wall-room-armory": [-1, 0],
   // On the spawn yard's east wall (the wall is toward +x).
   "halogen-wall-spawn": [1, 0],
-  // On the south wall of the unified spawn room (the wall is toward -z).
-  "halogen-wall-bridge": [0, -1],
 };
 
 /** Floodlights left off (nobody switched them on tonight). */
@@ -242,3 +227,6 @@ export function nightLights(layout: ArenaLayout): LightDefinition[] {
     intensity: l.target ? l.intensity * 1.2 : l.intensity,
   }));
 }
+
+/** The floodlight knocked over at the collapsed entrance: on two seconds, off two seconds. */
+export const BLINKING_LAMP = { id: "halogen-scene-1", period: 2 } as const;

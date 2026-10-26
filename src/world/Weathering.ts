@@ -139,7 +139,12 @@ export function addWeathering(layout: ArenaLayout): void {
   // A drift of dust round each pile.
   for (const pile of layout.piles) {
     // A railing re-dressed as pipes or brick is not a pile: no drift of dust.
-    if (/-(pipes|brick)$/.test(pile.id)) {
+    // (And the small fittings of the vault entrance's site stand on swept
+    // floor: only the collapse itself has dust drifted round it.)
+    if (
+      /-(pipes|brick)$/.test(pile.id) ||
+      /^fittings-vault-(post|halogen|drum)/.test(pile.id)
+    ) {
       continue;
     }
 
