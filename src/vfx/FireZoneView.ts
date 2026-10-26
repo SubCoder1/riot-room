@@ -261,10 +261,20 @@ export class FireZoneView {
       const spread = 0.12 + 0.22 * hash(seed, clump, 42);
       const offsetAngle = hash(seed, i, 0) * Math.PI * 2;
       const offsetAlong = Math.sqrt(hash(seed, i, 1)) * spread;
-      const px =
-        Math.cos(clumpAngle) * clumpAlong + Math.cos(offsetAngle) * offsetAlong;
-      const pz =
-        Math.sin(clumpAngle) * clumpAlong + Math.sin(offsetAngle) * offsetAlong;
+      // Every third tongue is scattered evenly over the whole burn instead of
+      // in a clump: low flames between the patches, so the fire reads as one
+      // fire spread over the ground and not as separate bonfires.
+      const scattered = i % 3 === 2;
+      const scatterAngle = hash(seed, i, 60) * Math.PI * 2;
+      const scatterAlong = Math.sqrt(hash(seed, i, 61)) * 0.92;
+      const px = scattered
+        ? Math.cos(scatterAngle) * scatterAlong
+        : Math.cos(clumpAngle) * clumpAlong +
+          Math.cos(offsetAngle) * offsetAlong;
+      const pz = scattered
+        ? Math.sin(scatterAngle) * scatterAlong
+        : Math.sin(clumpAngle) * clumpAlong +
+          Math.sin(offsetAngle) * offsetAlong;
       const angle = Math.atan2(pz, px);
       // An uneven edge: flames stay inside the radius, some a little short of it.
       const edge =
@@ -272,7 +282,9 @@ export class FireZoneView {
       const along = Math.min(Math.hypot(px, pz), edge);
       // Taller in the heart of a clump, low at its edges: a tongue's share of
       // its clump's height falls with its distance from the clump's centre.
-      const heart = 1 - 0.55 * Math.min(offsetAlong / spread, 1);
+      const heart = scattered
+        ? 0.55
+        : 1 - 0.55 * Math.min(offsetAlong / spread, 1);
       const flicker =
         0.7 +
         0.3 *
@@ -353,15 +365,7 @@ export class FireZoneView {
           )
         : 0;
 
-      const hidden =
-        this.lineClear !== null &&
-        !this.lineClear(
-          zone.position.x,
-          zone.position.y + 0.5,
-          zone.position.z,
-          zone.position.x + fx,
-          zone.position.z + fz,
-        );
+      const hidden = this.isHidden(zone, fx, fz);
 
       this.position.set(fx, ground, fz);
       this.euler.set(
@@ -431,6 +435,43 @@ export class FireZoneView {
     }
 
     entry.embers.instanceMatrix.needsUpdate = true;
+  }
+
+  /**
+   * Whether a wall stands between the fire's heart and a tongue at (fx, fz).
+   * A thin post or column does not: the fire burns round it, so the line is
+   * tried again from a hand's width to either side, and only a line blocked
+   * from all three (a wall, a crate, a stack) hides the tongue.
+   */
+  private isHidden(zone: FireZone, fx: number, fz: number): boolean {
+    if (this.lineClear === null) {
+      return false;
+    }
+
+    const x0 = zone.position.x;
+    const z0 = zone.position.z;
+    const y = zone.position.y + 0.5;
+    const x1 = x0 + fx;
+    const z1 = z0 + fz;
+
+    if (this.lineClear(x0, y, z0, x1, z1)) {
+      return false;
+    }
+
+    const length = Math.hypot(fx, fz);
+
+    if (length < 1e-3) {
+      return true;
+    }
+
+    // The side step, perpendicular to the line.
+    const sx = (-fz / length) * 0.3;
+    const sz = (fx / length) * 0.3;
+
+    return !(
+      this.lineClear(x0 + sx, y, z0 + sz, x1, z1) ||
+      this.lineClear(x0 - sx, y, z0 - sz, x1, z1)
+    );
   }
 
   public dispose(): void {
