@@ -376,7 +376,8 @@ export type PileKind =
 
 /** One piece of a pile (a bag, a brick, a plank or a chunk), centred on the pile. */
 export interface PileElement {
-  shape: "bag" | "brick" | "plank" | "chunk" | "pipe" | "cable";
+  shape:
+    "bag" | "brick" | "plank" | "chunk" | "rock" | "slab" | "pipe" | "cable";
   /** Centre, metres: x and z from the pile's centre, y above the surface it stands on. */
   x: number;
   y: number;
@@ -478,6 +479,14 @@ export interface ArenaLayout {
   pickups: PickupDefinition[];
   /** Site plans on the spawn-area walls. */
   posters: PosterDefinition[];
+  /** Police tape strung across approaches (drawn only, never solid). */
+  tapes?: TapeDefinition[];
+  /** Steel drums with a fire burning in them (the fire and its glow are drawn only). */
+  fireDrums?: FireDrumDefinition[];
+  /** A puddle with a live current through it, until the power is cut. */
+  electricPuddles?: ElectricPuddleDefinition[];
+  /** The one switch that cuts that current (mounted on a wall, facing `nx`, `nz`). */
+  powerCutoff?: PowerCutoffDefinition;
   /**
    * Blocks that stop a shot, a throw or a line of sight but never a body: the
    * small drawn props (a chair, a bucket, a cable reel) that are not worth a
@@ -495,6 +504,37 @@ export interface GlassPaneDefinition {
 }
 
 /** A short-range point light: a task light or a pendant lamp. */
+/** A shallow puddle (an ellipse on the floor `y`) the current runs through. */
+export interface ElectricPuddleDefinition {
+  id: string;
+  x: number;
+  z: number;
+  y: number;
+  /** Half sizes along x and z, metres. */
+  rx: number;
+  rz: number;
+  /** A strip across it (z from, to) with no water and no current: a vent grate's way stays open. */
+  gap?: { minZ: number; maxZ: number };
+}
+
+/** Where the cutoff lever is: on a wall at (x, y, z), facing out along (nx, nz). */
+export interface PowerCutoffDefinition {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  nx: number;
+  nz: number;
+}
+
+/** A drum with a fire in it: where its mouth is (the floor it stands on is `y` - 0.88). */
+export interface FireDrumDefinition {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface LightDefinition {
   id: string;
   x: number;
@@ -512,6 +552,20 @@ export interface LightDefinition {
   target?: { x: number; y: number; z: number };
   angle?: number;
   castShadow?: boolean;
+}
+
+/** One length of tape: its ends (absolute) and how far its middle hangs. */
+export interface TapeRun {
+  from: [number, number, number];
+  to: [number, number, number];
+  sag: number;
+}
+
+/** Tape strung round one place, and where it is read from (its text faces there). */
+export interface TapeDefinition {
+  id: string;
+  runs: TapeRun[];
+  viewer: [number, number, number];
 }
 
 /** A site plan hung on a wall: drawn from the layout when the arena is built. */
@@ -579,13 +633,10 @@ export interface FuelSpillDefinition {
 export interface GeneratorDefinition {
   id: string;
   name: string;
-  /** The filler cap: where a player stands near to add fuel. */
+  /** The filler cap (drawn only: nothing is poured into it). */
   x: number;
   y: number;
   z: number;
-  /** How much fuel it holds, and how much it starts with. */
-  capacity: number;
-  startFuel: number;
   /** The lighting circuit it runs (see `PowerCircuits`). */
   circuit: "interior" | "exterior";
   /** In front of its control panel: where a player stands to switch it off. */

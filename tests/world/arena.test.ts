@@ -113,11 +113,14 @@ describe("Ground and walls", () => {
   });
 
   it("a room wall blocks, and its doorway lets the player through", () => {
-    // The archive's south wall (z = -16.3..-16) with its doorway at x = -8.
+    // The archive's south wall (z -16.3..-16) is whole (its old front door is
+    // walled up); the Power Room's south wall (z -17.3..-17) has its doorway at x = 3.
     expect(world.isBlocked(-4, -16.15, F, 0.1)).toBe(true);
-    expect(world.isBlocked(-8, -16.15, F, PLAYER_RADIUS)).toBe(false);
-    expect(world.isBlocked(-8, -15, F, PLAYER_RADIUS)).toBe(false);
-    expect(world.isBlocked(-8, -19, F, PLAYER_RADIUS)).toBe(false);
+    expect(world.isBlocked(-8, -16.15, F, 0.1)).toBe(true);
+    expect(world.isBlocked(0, -17.15, F, 0.1)).toBe(true);
+    expect(world.isBlocked(3, -17.15, F, PLAYER_RADIUS)).toBe(false);
+    expect(world.isBlocked(3, -16, F, PLAYER_RADIUS)).toBe(false);
+    expect(world.isBlocked(3, -20, F, PLAYER_RADIUS)).toBe(false);
   });
 
   it("every doorway is wide enough for the player on both sides", () => {
@@ -139,6 +142,17 @@ describe("Ground and walls", () => {
         if (room.id === "room-hall" && door.side === "e" && door.at === 19.5) {
           expect(
             layout.walls.some((w) => w.id.startsWith("fittings-yard-stock")),
+          ).toBe(true);
+          continue;
+        }
+
+        // The Server room's doorway, the vault entrance: brought down under
+        // its own wall and shut until a breach is built.
+        if (room.id === "room-server" && door.side === "w") {
+          expect(
+            layout.walls.some((w) =>
+              w.id.startsWith("fittings-vault-collapse"),
+            ),
           ).toBe(true);
           continue;
         }

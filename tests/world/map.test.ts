@@ -105,7 +105,7 @@ describe("What was built", () => {
       layout.rooms.some((r) => (r.maxX - r.minX) * (r.maxZ - r.minZ) >= 140),
     ).toBe(true);
     expect(
-      layout.rooms.some((r) => (r.maxX - r.minX) * (r.maxZ - r.minZ) <= 60),
+      layout.rooms.some((r) => (r.maxX - r.minX) * (r.maxZ - r.minZ) <= 70),
     ).toBe(true);
   });
 
@@ -388,8 +388,19 @@ describe("What was built", () => {
       false,
     );
 
-    const masts = layout.walls.filter((w) =>
-      /^support-[a-z]+-\d-1$/.test(w.id),
+    // (A mast's box is fitted to what is drawn: its tallest part is the post.)
+    const masts = Object.values(
+      layout.walls
+        .filter((w) => /^support-[a-z]+-\d-1(\+\d+)?$/.test(w.id))
+        .reduce<Record<string, (typeof layout.walls)[number]>>((best, w) => {
+          const key = w.id.replace(/\+\d+$/, "");
+
+          if (!best[key] || w.height > best[key].height) {
+            best[key] = w;
+          }
+
+          return best;
+        }, {}),
     );
 
     expect(masts.length).toBeGreaterThanOrEqual(5);
@@ -607,6 +618,9 @@ describe("Getting around", () => {
     const sealed: string[] = [];
 
     for (const room of layout.rooms) {
+      // The Server room is the vault: its only doorway is collapsed shut.
+      if (room.id === "room-server") continue;
+
       const cells = freeCells(room, room.floorY);
       const unreachable = cells.filter(
         (c) => distanceAtHeight(onFoot, c.x, c.z, room.floorY) === Infinity,
@@ -713,21 +727,18 @@ describe("Getting around", () => {
     const openNw = walkField(-26.5, -20.5, 0, { ladders: false });
 
     expect(distanceAtHeight(shutNw, 0, 0, 0)).toBe(Infinity);
-    expect(rooms(openNw)).toEqual([]);
+    // Everything but the vault (the Server room, shut) is reachable from it.
+    expect(rooms(openNw)).toEqual(["room-server"]);
 
-    // The north-east room opens on its west wall only, onto the loading dock
-    // (z -16.3 to -12.3). With that doorway shut it is sealed.
-    const shutNe = walkField(27, -20, F, {
-      ladders: false,
-      forbid: (x, z) => x < 23 && z > -16.4 && z < -12.2,
-    });
+    // The Server room opens on its west wall only, onto the loading dock
+    // (z -16.3 to -12.3), and that doorway is collapsed: from inside, the dock
+    // cannot be reached, and nothing outside reaches in.
     const openNe = walkField(27, -20, F, { ladders: false });
 
-    expect(distanceAtHeight(shutNe, 18, -14, F)).toBe(Infinity);
-    expect(rooms(openNe)).toEqual([]);
+    expect(distanceAtHeight(openNe, 18, -14, F)).toBe(Infinity);
   });
 
-  it("the north-west staircase serves the west and north-west; the north-east room's doorway serves the east", () => {
+  it("the north-west staircase serves the west, north-west and east; the shut Server room serves nothing", () => {
     const fromNw = walkField(-26.5, -20.5, 0, { ladders: false });
     const fromNe = walkField(27, -20, F, { ladders: false });
     const to = (field: ReturnType<typeof walkField>, id: string): number => {
@@ -743,8 +754,11 @@ describe("Getting around", () => {
       expect(to(fromNw, id), id).toBeLessThan(to(fromNe, id));
     }
 
+    // (The east is reached by the stairs and the walkways: the Server room's
+    // doorway no longer leads out, so from there nothing is reachable.)
     for (const id of ["room-break", "room-warehouse"]) {
-      expect(to(fromNe, id), id).toBeLessThan(to(fromNw, id));
+      expect(to(fromNw, id), id).toBeLessThan(Infinity);
+      expect(to(fromNe, id), id).toBe(Infinity);
     }
   });
 

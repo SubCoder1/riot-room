@@ -30,8 +30,13 @@ const HEAD_ABOVE_EYE = 0.1;
 /** A step is climbed once the feet are this close to it (the legs, not the centre). */
 const STEP_REACH = 0.3;
 
-/** How fast the drawn body catches up after a step (per second). */
-const STEP_SMOOTHING = 14;
+/**
+ * How fast the drawn body catches up after a step (rad/s of a critically
+ * damped spring). A plain exponential moved the view 6 cm in the first frame
+ * of every tread, a jolt each quarter-second on stairs; the spring starts each
+ * rise from the speed the view already has, so a flight is one smooth climb.
+ */
+const STEP_SMOOTHING = 11;
 
 /** Walking (no Shift) on stairs runs at this share of the walk speed. */
 const STAIRS_WALK_FACTOR = 0.6;
@@ -431,6 +436,7 @@ export class Player {
       this.velocity.set(v.dirX * v.exitSpeed, 0, v.dirZ * v.exitSpeed);
       this.vault = null;
       this.stepLag = 0;
+      this.stepLagSpeed = 0;
     }
   }
 
@@ -439,6 +445,8 @@ export class Player {
    * after a step; it decays to 0. Rendering subtracts it from the feet height.
    */
   public stepLag = 0;
+  /** The speed the drawn feet are catching up at (m/s). */
+  private stepLagSpeed = 0;
 
   /**
    * ========================================================
@@ -737,6 +745,8 @@ export class Player {
   public teleport(x: number, feetY: number, z: number): void {
     this.ladder = null;
     this.ventMove = null;
+    this.stepLag = 0;
+    this.stepLagSpeed = 0;
     this.position.set(x, feetY + this.eyeHeight, z);
     this.velocity.set(0, 0, 0);
     this.jumpBufferLeft = 0;
@@ -1084,6 +1094,10 @@ export class Player {
           this.position.z,
           feetY,
           wasGrounded && moving ? STEP_REACH : 0,
+          // Only a step in the way of where the body is heading is climbed
+          // early (not the one it just left, not one behind it).
+          this.velocity.x,
+          this.velocity.z,
         )
       : 0;
 
@@ -1097,7 +1111,24 @@ export class Player {
 
     // A step up or down is taken in one frame by the physics; the drawn body
     // trails behind and catches up, so climbing small steps looks smooth.
-    this.stepLag *= Math.exp(-STEP_SMOOTHING * dt);
+    {
+      // Critically damped: lag'' = -2w lag' - w^2 lag (semi-implicit Euler,
+      // in small steps so a long frame cannot overshoot).
+      const w = STEP_SMOOTHING;
+      const n = Math.max(1, Math.ceil(dt / 0.008));
+      const h = dt / n;
+
+      for (let i = 0; i < n; i++) {
+        this.stepLagSpeed +=
+          (-2 * w * this.stepLagSpeed - w * w * this.stepLag) * h;
+        this.stepLag += this.stepLagSpeed * h;
+      }
+
+      if (Math.abs(this.stepLag) < 1e-4 && Math.abs(this.stepLagSpeed) < 1e-3) {
+        this.stepLag = 0;
+        this.stepLagSpeed = 0;
+      }
+    }
 
     this.grounded = false;
 

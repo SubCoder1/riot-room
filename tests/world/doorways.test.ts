@@ -16,6 +16,8 @@ const NOT_OPEN: Record<string, "crouch" | "sealed"> = {
   "room-archive:w:-17.1": "crouch",
   "room-workshop:n:1": "sealed",
   "room-hall:e:19.5": "sealed",
+  // The vault entrance, collapsed.
+  "room-server:w:-14.3": "sealed",
 };
 
 const doors = layout.rooms.flatMap((room) =>

@@ -26,9 +26,11 @@ import { ArmoryMechanismView } from "../world/ArmoryMechanismView";
 import { createTubeGlow } from "../world/ArmoryLighting";
 import { createHangingTubeGlow } from "../world/HangingTubes";
 import {
+  BARRACKS_BULB,
   BREAK_BULB,
   JUNK_BULBS,
   POWER_BULB,
+  YARD_BULB,
   createJunkBulbGlow,
 } from "../world/JunkRoom";
 import {
@@ -63,7 +65,6 @@ import {
   UPPER_FLOOR_Y,
 } from "../world/ArenaLayout";
 import { ARENA_LAYOUT } from "../world/UpperFloorMap";
-import { GeneratorFuel } from "../world/GeneratorFuel";
 import {
   inTunnel,
   ventCeilingY,
@@ -99,7 +100,12 @@ import {
 } from "../combat/ThrowableFlight";
 import { createCapsule, segmentCapsuleEntry } from "../combat/Shapes";
 import { TrainingDummy } from "../combat/TrainingDummy";
-import { WorldHealthBars } from "../ui/WorldHealthBars";
+import { ElectricHazard } from "../combat/ElectricHazard";
+import { ElectricPuddleView } from "../vfx/ElectricPuddleView";
+import { HitFeedback } from "../ui/HitFeedback";
+import { EquippedHud } from "../ui/EquippedHud";
+import { Minimap } from "../ui/Minimap";
+import { PlayerHealthBar } from "../ui/PlayerHealthBar";
 import { PlayerUtilities } from "../inventory/PlayerUtilities";
 import { ThrowStance, type HeldKind } from "../inventory/ThrowStance";
 import type { UtilityType } from "../inventory/PlayerUtilities";
@@ -187,8 +193,8 @@ export class Game {
   /** F4 toggles the combat debug overlay, F6 toggles the dummy's guard. */
   private previousF4 = false;
 
-  /** Health bars above enemies' heads and floating damage numbers. */
-  private readonly enemyHealthBars: WorldHealthBars;
+  /** Floating damage numbers and the BLOCKED tag (no health over anyone's head). */
+  private readonly hitFeedback: HitFeedback;
 
   /** This player's utilities and what they have selected (not shared). */
   private readonly utilities = new PlayerUtilities();
@@ -198,6 +204,12 @@ export class Game {
   private readonly weaponWheelView: WeaponWheelView;
   /** The M-key paper plan: drawn only, the game keeps running under it. */
   private readonly tacticalMap: TacticalMap;
+  /** The small corner plan, and the player's own health bar. */
+  private readonly minimap: Minimap;
+  private readonly healthBar: PlayerHealthBar;
+  private readonly equippedHud: EquippedHud;
+  /** The bottom-left cluster: the heart and the equipped item, on one centreline. */
+  private readonly hudCluster = document.createElement("div");
 
   // ============================================================
   // THROWABLES (grenade, Molotov, smoke grenade: equip, aim with right
@@ -278,6 +290,9 @@ export class Game {
   private tubeLamp: THREE.Light | null | undefined;
   private tubeBase = 0;
   private shutterCrush!: ShutterCrush;
+  /** The live puddle at the Power Room's door, and its cutoff lever. */
+  private electricHazard!: ElectricHazard;
+  private electricView: ElectricPuddleView | null = null;
   private readonly shutterSolid: BoxSolid = {
     kind: "box",
     id: "armory-shutter",
@@ -327,13 +342,6 @@ export class Game {
   /** Roof hatches that have been opened this round (they stay open). */
   private readonly openHatches = new Set<string>();
 
-  /** The fuel in each generator, by its layout id. */
-  private readonly generatorFuel = new Map<string, GeneratorFuel>(
-    ARENA_LAYOUT.generators.map((g) => [
-      g.id,
-      new GeneratorFuel(g.capacity, g.startFuel),
-    ]),
-  );
   /**
    * Grenades lying on the spawn-area workbenches: each one's drawn model and
    * when it is back (ms; 0 = there now).
@@ -342,7 +350,7 @@ export class Game {
     string,
     { mesh: THREE.Object3D; readyAt: number }
   >();
-  /** A short message after adding fuel, and when it goes away (ms). */
+  /** A short message after using a generator panel, and when it goes away (ms). */
   private fuelNotice = "";
   private fuelNoticeUntil = 0;
   private readonly throwOrigin = new THREE.Vector3();
@@ -534,6 +542,10 @@ export class Game {
     );
     this.smoke = new SmokeSystem(this.combat, this.throwWorld);
     this.smokeView = new SmokeCloudView(this.smoke);
+    // Smoke is stopped by walls, props and the ceiling: nothing of it is drawn
+    // past one.
+    this.smokeView.reach = (x0, y0, z0, x1, y1, z1) =>
+      this.collision.segmentClearFraction(x0, y0, z0, x1, y1, z1);
     // A Molotov that breaks starts a fire where it landed.
     this.projectiles.onBurst = (item, point) => {
       this.burstFire(item.ownerId, point, item.velocity);
@@ -590,7 +602,22 @@ export class Game {
       () => this.playerCombatant.id,
     );
 
-    this.enemyHealthBars = new WorldHealthBars(
+    this.electricHazard = new ElectricHazard(
+      this.combat,
+      ARENA_LAYOUT.electricPuddles ?? [],
+    );
+
+    const puddles = ARENA_LAYOUT.electricPuddles ?? [];
+
+    if (puddles.length > 0) {
+      this.electricView = new ElectricPuddleView(
+        puddles,
+        ARENA_LAYOUT.powerCutoff,
+      );
+      this.arena.group.add(this.electricView.group);
+    }
+
+    this.hitFeedback = new HitFeedback(
       document.body,
       this.combat.events,
       () => this.combat.getCombatants(),
@@ -604,9 +631,9 @@ export class Game {
     this.combat.lineOfSight = (from, to) =>
       !this.collision.segmentBlocked(from.x, from.y, from.z, to.x, to.y, to.z);
 
-    // Bars hide behind cover like anything else, and in thick smoke: what
+    // The tag hides behind cover like anything else, and in thick smoke: what
     // can't be seen through smoke can't be seen at all.
-    this.enemyHealthBars.lineOfSight = (from, to) =>
+    this.hitFeedback.lineOfSight = (from, to) =>
       canPerceive(from, to, this.combat.lineOfSight, this.smoke);
 
     this.weaponWheelView = new WeaponWheelView(
@@ -626,6 +653,20 @@ export class Game {
     // ever reported here): the networking that brings teammates in supplies
     // their id, position, facing and whether they are up, through this feed.
     this.tacticalMap.setTeammateSource(() => this.teammateMarkers());
+
+    // The corner minimap is the same plan and the same feed, small.
+    this.minimap = new Minimap(document.body, ARENA_LAYOUT, (room, door) =>
+      doorPassage(this.collision, room, door),
+    );
+    this.minimap.setTeammateSource(() => this.teammateMarkers());
+    this.hudCluster.className = "hud-cluster";
+    document.body.append(this.hudCluster);
+    this.healthBar = new PlayerHealthBar(this.hudCluster);
+    this.equippedHud = new EquippedHud(
+      this.hudCluster,
+      this.utilities,
+      (type) => Game.carryMax(type),
+    );
 
     // Arms and fists stop at cover and walls instead of sinking into them.
     this.character.armProbe = (from, to) => this.armClearFraction(from, to);
@@ -783,7 +824,7 @@ export class Game {
     // The weapon wheel and the throw stance come first: whether the player is
     // aiming a throwable decides if they can guard or punch this frame.
     this.updateWeaponWheel(dt);
-    this.updateTacticalMap();
+    this.updateTacticalMap(dt);
     this.updateClimb();
     this.updateArmory(dt);
     this.updateHatches(dt);
@@ -948,8 +989,8 @@ export class Game {
     // flight, the explosions and the smoke.
     this.updateThrowables(dt);
 
-    // Health bars and damage numbers follow the heads, from the final camera.
-    this.enemyHealthBars.update(dt, this.renderer.camera);
+    // Damage numbers follow the heads, from the final camera.
+    this.hitFeedback.update(dt, this.renderer.camera);
 
     // ----------------------------------------------------------
     // Render
@@ -1057,11 +1098,21 @@ export class Game {
     return [];
   }
 
-  private updateTacticalMap(): void {
+  private updateTacticalMap(dt: number): void {
     if (this.input.consumeMapToggle()) {
       this.tacticalMap.toggle();
     }
 
+    this.minimap.setVisible(!this.tacticalMap.isOpen);
+    this.minimap.update(
+      this.player.position.x,
+      this.player.position.y,
+      this.player.position.z,
+      this.input.yaw,
+      dt,
+    );
+    this.healthBar.update(this.playerCombatant.health);
+    this.equippedHud.update();
     this.tacticalMap.update(
       this.player.position.x,
       this.player.position.z,
@@ -1140,10 +1191,10 @@ export class Game {
         // Lifted the Armory vent's grille from the roof.
       } else if (this.takePickupIfNear()) {
         // Took a grenade off a workbench.
+      } else if (this.useCutoffIfNear()) {
+        // Threw the Power Room's cutoff lever.
       } else if (this.usePanelIfNear()) {
         // Used a generator's control panel.
-      } else if (this.addFuelIfNear()) {
-        // Poured a bottle into a generator's filler cap.
       } else {
         const ladder = this.player.ladderInReach();
 
@@ -1196,13 +1247,15 @@ export class Game {
                 ? "PRESS {E} TO LIFT GRILLE"
                 : this.pickupPrompt()
                   ? this.pickupPrompt()
-                  : this.powerPrompt()
-                    ? this.powerPrompt()
-                    : this.fuelPrompt()
-                      ? this.fuelPrompt()
-                      : this.player.ladderInReach()
-                        ? "PRESS {E} TO CLIMB"
-                        : "";
+                  : this.cutoffPrompt()
+                    ? this.cutoffPrompt()
+                    : this.powerPrompt()
+                      ? this.powerPrompt()
+                      : this.noticePrompt()
+                        ? this.noticePrompt()
+                        : this.player.ladderInReach()
+                          ? "PRESS {E} TO CLIMB"
+                          : "";
 
     // A key in braces, {E}, is drawn in the key colour.
     if (this.climbPrompt.dataset.text !== text) {
@@ -1386,6 +1439,11 @@ export class Game {
     this.generatorSmoke.update(dt);
     this.syncArmory();
     this.shutterCrush.update();
+    this.electricHazard.update(dt);
+    this.electricView?.update(
+      performance.now() / 1000,
+      this.electricHazard.live,
+    );
     this.armoryView.update(
       this.armoryShutter,
       this.armoryDoor,
@@ -1452,9 +1510,33 @@ export class Game {
       object.frustumCulled = false;
     });
 
+    // The depth programs a shadow pass uses (one for each kind of caster: the
+    // skinned body, the instanced and the plain meshes) are not built by
+    // `compile`: they are built the first time a caster is drawn into a map.
+    // The lamps' maps are only redrawn while the camera is near them, so the
+    // first time the body came inside one's range (the stairs up from the
+    // spawn) the game froze to build them. Draw every map once, with everything
+    // in it, here.
+    const shadowed: Array<[ShadowLight, boolean]> = [];
+
+    scene.traverse((object) => {
+      const light = object as ShadowLight;
+
+      if ((object as THREE.Light).isLight && light.castShadow && light.shadow) {
+        shadowed.push([light, light.shadow.autoUpdate]);
+        light.shadow.autoUpdate = true;
+        light.shadow.needsUpdate = true;
+      }
+    });
+
     this.renderer.camera.updateMatrixWorld(true);
     this.renderer.renderer.compile(scene, this.renderer.camera);
     this.renderer.renderer.render(scene, this.renderer.camera);
+
+    for (const [light, auto] of shadowed) {
+      light.shadow.autoUpdate = auto;
+    }
+
     // The fuel fire's flames are their own geometry: draw them once as well.
     this.fireView.previewFuel(true);
     this.renderer.renderer.render(scene, this.renderer.camera);
@@ -1794,7 +1876,7 @@ export class Game {
   /**
    * The generator whose control panel the player stands at: within 1.1 m of
    * the spot in front of it, on its floor, and nearer the panel than its filler
-   * cap (nearer the cap, E adds fuel).
+   * cap.
    */
   private generatorAtPanel(): GeneratorDefinition | null {
     if (this.player.isClimbing || this.player.isInVent) {
@@ -1825,6 +1907,46 @@ export class Game {
     return null;
   }
 
+  /** Whether the player stands at the cutoff lever (on its floor, within reach of it). */
+  private atCutoff(): boolean {
+    const c = ARENA_LAYOUT.powerCutoff;
+
+    if (!c || this.player.isClimbing || this.player.isInVent) {
+      return false;
+    }
+
+    const feetY = this.player.position.y - this.player.eyeHeight;
+
+    return (
+      Math.abs(feetY - (c.y - 1.35)) < 0.6 &&
+      Math.hypot(
+        this.player.position.x - c.x,
+        this.player.position.z - (c.z + c.nz * 0.6),
+      ) <= 1.1
+    );
+  }
+
+  /** "PRESS E TO CUT POWER" at the lever while the current is on. */
+  private cutoffPrompt(): string {
+    return this.electricHazard.live && this.atCutoff()
+      ? "PRESS {E} TO CUT POWER"
+      : "";
+  }
+
+  /** E at the lever: the current through the puddle is cut. True if E was used here. */
+  private useCutoffIfNear(): boolean {
+    if (!this.atCutoff() || !this.electricHazard.live) {
+      return false;
+    }
+
+    // (A networked game sends this request and applies the answer.)
+    this.electricHazard.setLive(false);
+    this.fuelNotice = "Power Room entrance  ·  power CUT";
+    this.fuelNoticeUntil = performance.now() + 2200;
+
+    return true;
+  }
+
   /** The prompt at a generator's control panel ("" elsewhere). */
   private powerPrompt(): string {
     const g = this.generatorAtPanel();
@@ -1834,7 +1956,7 @@ export class Game {
     }
 
     if (this.power.isOn(g.circuit)) {
-      // Only Batman switches one off: a thug is left to the fuel prompt.
+      // Only Batman switches one off: a thug is left with nothing to press.
       return canShutDown(this.localRole) ? "PRESS {E} TO SWITCH OFF" : "";
     }
 
@@ -1918,6 +2040,8 @@ export class Game {
       [JUNK_BULBS[0], "bulb-junk-a"],
       [JUNK_BULBS[1], "bulb-junk-b"],
       [BREAK_BULB, "bulb-break-a"],
+      [BARRACKS_BULB, "light-room-barracks"],
+      [YARD_BULB, "light-room-yard"],
     ];
 
     // Each bulb's glass goes with its own lamp, one by one.
@@ -1951,70 +2075,9 @@ export class Game {
     return PowerState.circuitOfGenerator(id) ?? "interior";
   }
 
-  /** The generator whose filler cap the player is standing at, if any. */
-  private generatorInReach(): { id: string; name: string } | null {
-    const feetY = this.player.position.y - this.player.eyeHeight;
-
-    for (const g of ARENA_LAYOUT.generators) {
-      const dx = this.player.position.x - g.x;
-      const dz = this.player.position.z - g.z;
-      const rise = g.y - feetY;
-
-      if (Math.hypot(dx, dz) <= 1.7 && rise > 0.2 && rise < 2.4) {
-        return { id: g.id, name: g.name };
-      }
-    }
-
-    return null;
-  }
-
-  /** The prompt at a generator's filler cap ("" away from any). */
-  private fuelPrompt(): string {
-    if (performance.now() < this.fuelNoticeUntil) {
-      return this.fuelNotice;
-    }
-
-    const near = this.generatorInReach();
-    const fuel = near ? this.generatorFuel.get(near.id) : undefined;
-
-    if (!near || !fuel || this.player.isClimbing) {
-      return "";
-    }
-
-    if (fuel.isFull) {
-      return "";
-    }
-
-    return (this.utilities.quantityOf("MOLOTOV") ?? 0) > 0
-      ? "PRESS {E} TO ADD FUEL"
-      : "NEEDS A MOLOTOV";
-  }
-
-  /** E at a filler cap: pours a Molotov's petrol in. True if at one. */
-  private addFuelIfNear(): boolean {
-    const near = this.generatorInReach();
-    const fuel = near ? this.generatorFuel.get(near.id) : undefined;
-
-    if (!near || !fuel) {
-      return false;
-    }
-
-    const have = this.utilities.quantityOf("MOLOTOV") ?? 0;
-    const result = fuel.fill(have);
-
-    if (result.ok) {
-      this.utilities.remove("MOLOTOV", 1);
-      this.fuelNotice = `Fuel added  +${result.added}  ·  ${Math.round(result.level)} / ${fuel.capacity}`;
-    } else {
-      this.fuelNotice =
-        result.reason === "full"
-          ? `${near.name}  ·  already full`
-          : `${near.name}  ·  no petrol: needs a Molotov`;
-    }
-
-    this.fuelNoticeUntil = performance.now() + 1800;
-
-    return true;
+  /** The short message after using a generator's panel, while it lasts. */
+  private noticePrompt(): string {
+    return performance.now() < this.fuelNoticeUntil ? this.fuelNotice : "";
   }
 
   /** Opens or shuts a roof hatch: its solid goes (or comes back) and its panel is hidden (or shown). */
@@ -3040,6 +3103,7 @@ export class Game {
     // stays open for the whole session.
     this.armoryShutter.reset();
     this.shutterCrush.reset();
+    this.electricHazard.reset();
 
     // The stash is full again.
 
@@ -3521,6 +3585,10 @@ export class Game {
   public dispose(): void {
     this.armoryView.dispose();
     this.tacticalMap.dispose();
+    this.minimap.dispose();
+    this.healthBar.dispose();
+    this.equippedHud.dispose();
+    this.hudCluster.remove();
     this.tubeGlow.dispose();
     this.hangingTubes.dispose();
     this.junkBulbs.dispose();

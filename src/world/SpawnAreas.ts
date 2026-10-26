@@ -590,11 +590,13 @@ export function furnishSpawnAreas(map: MapBuilder): void {
   // (the console's task lamp is lit).
   map.addLight({
     id: "light-spawn-worktable",
-    x: -28.3,
-    y: 1.45,
-    z: -23.2,
+    // (Out in the room in front of the plan, not half a metre off the wall,
+    // where it threw a hard bright spot on the wall beside the plan.)
+    x: -27.2,
+    y: 1.8,
+    z: -21.9,
     color: 0xffb468,
-    intensity: 9,
+    intensity: 8,
     distance: 5,
   });
 

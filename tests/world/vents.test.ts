@@ -376,12 +376,10 @@ describe("The upper-floor vents", () => {
       blocks.some((b) => b.minZ >= -14 && b.maxZ <= -12 && b.minX > -7),
     ).toBe(true);
     // ... and it turns north through the Archive's door.
-    const door = room("room-archive").doors.find((d) => d.side === "s")!;
-
+    // (The vent runs under the floor and the wall: the room's front door is
+    // walled up, the grate is the way in.)
     expect(
-      blocks.some(
-        (b) => b.minX <= door.at && b.maxX >= door.at && b.maxZ < -16,
-      ),
+      blocks.some((b) => b.minX <= -8 && b.maxX >= -8 && b.maxZ < -16),
     ).toBe(true);
   });
 

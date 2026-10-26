@@ -528,8 +528,11 @@ export class ArenaCollision {
     z: number,
     feetY: number,
     stepReach = 0,
+    headX = 0,
+    headZ = 0,
   ): number {
     let ground = 0;
+    const heading = Math.hypot(headX, headZ);
 
     for (const solid of this.near(x, z, stepReach)) {
       // Nobody stands on top of a wall, a railing or a post.
@@ -541,12 +544,18 @@ export class ArenaCollision {
 
       // A step is climbed as the feet meet it, not once the body's centre is
       // over it: a block just above the feet is stepped onto from `stepReach` away.
+      // (A tread of a flight already reached keeps counting while the centre
+      // is still short of it: without that, once the feet stood on it the next
+      // frame dropped them to the tread below and they climbed again, up and
+      // down, until the centre was over the edge.)
       if (
         height === NO_SURFACE &&
         stepReach > 0 &&
         solid.kind === "box" &&
-        solid.height > feetY + 0.02 &&
-        this.reachesFromFront(solid, x, z)
+        (solid.height > feetY + 0.02 ||
+          (this.stepInfo.has(solid) && solid.height >= feetY - 0.02)) &&
+        this.reachesFromFront(solid, x, z) &&
+        (heading === 0 || this.headsToward(solid, x, z, headX, headZ, heading))
       ) {
         height = this.solidHeight(solid, x, z, stepReach);
       }
@@ -557,6 +566,25 @@ export class ArenaCollision {
     }
 
     return ground;
+  }
+
+  /** Whether moving along (headX, headZ) from (x, z) goes toward the box. */
+  private headsToward(
+    solid: BoxSolid,
+    x: number,
+    z: number,
+    headX: number,
+    headZ: number,
+    heading: number,
+  ): boolean {
+    const nearX = Math.min(Math.max(x, solid.minX), solid.maxX);
+    const nearZ = Math.min(Math.max(z, solid.minZ), solid.maxZ);
+
+    return (
+      ((nearX - x) * headX + (nearZ - z) * headZ) / heading > 1e-6 ||
+      // (Already against it, level with its edge: still counts as toward.)
+      (nearX === x && nearZ === z)
+    );
   }
 
   /**

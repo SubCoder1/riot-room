@@ -27,6 +27,10 @@ import {
   type GeneratorDefinition,
   type PickupDefinition,
   type PosterDefinition,
+  type ElectricPuddleDefinition,
+  type FireDrumDefinition,
+  type PowerCutoffDefinition,
+  type TapeDefinition,
   type RiseDirection,
   type RoomDefinition,
   type Side,
@@ -188,7 +192,7 @@ function fitBoxToPieces<T extends FitBox>(
   const margin = 0.15;
   const low = baseY + (box.bottom ?? 0);
   const high = baseY + box.top;
-  const pad = 0.03;
+  const pad = 0.01;
   const near: Array<{
     x0: number;
     x1: number;
@@ -232,7 +236,7 @@ function fitBoxToPieces<T extends FitBox>(
   }
 
   const CELL = 0.1;
-  const STEP = 0.2;
+  const STEP = 0.05;
   const cols = Math.max(1, Math.ceil((box.maxX - box.minX) / CELL));
   const rows = Math.max(1, Math.ceil((box.maxZ - box.minZ) / CELL));
   const heights: number[][] = [];
@@ -252,7 +256,8 @@ function fitBoxToPieces<T extends FitBox>(
         }
       }
 
-      // Round up to a step of 20 cm, never above the box's own top.
+      // Round up to a step of 5 cm (so a body never stands more than that
+      // above what is drawn), never above the box's own top.
       row.push(h > 0 ? Math.min(box.top, Math.ceil(h / STEP) * STEP) : 0);
     }
 
@@ -311,7 +316,11 @@ function fitBoxToPieces<T extends FitBox>(
     (q) => q.maxX - q.minX >= 0.2 && q.maxZ - q.minZ >= 0.2,
   );
 
-  if (big.length === 0 || big.length > 10) {
+  const kept = parts.filter(
+    (q) => (q.maxX - q.minX) * (q.maxZ - q.minZ) >= 0.01,
+  );
+
+  if (big.length === 0 || big.length > 10 || kept.length > 40) {
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -338,7 +347,9 @@ function fitBoxToPieces<T extends FitBox>(
     ];
   }
 
-  return big;
+  // (The slivers beside the big parts stay too: a thin shelf edge or a leg is
+  // drawn there, and a body must not walk into it.)
+  return kept;
 }
 
 /**
@@ -347,7 +358,6 @@ function fitBoxToPieces<T extends FitBox>(
  * blocks however they are drawn.
  */
 const EXACT_FITTINGS = [
-  "junk-pile",
   "bunk-barracks",
   "armory-crates",
   "armory-bay",
@@ -1366,6 +1376,8 @@ export class MapBuilder {
       frame?: FramePart[];
       /** Keep the box exactly as given (do not fit it to the drawn pieces). */
       exact?: boolean;
+      /** What the solid is to a body (default a prop, which can be vaulted). */
+      role?: PartRole;
     }>,
   ): PileDefinition {
     const solids: string[] = [];
@@ -1406,7 +1418,7 @@ export class MapBuilder {
       this.layout.walls.push({
         kind: "box",
         id: solidId,
-        role: "prop",
+        role: b.role ?? "prop",
         hidden: true,
         ...(b.frame
           ? {
@@ -1698,6 +1710,26 @@ export class MapBuilder {
     this.layout.posters.push(poster);
   }
 
+  /** A puddle the current runs through. */
+  public addElectricPuddle(puddle: ElectricPuddleDefinition): void {
+    (this.layout.electricPuddles ??= []).push(puddle);
+  }
+
+  /** The switch that cuts the current. */
+  public setPowerCutoff(cutoff: PowerCutoffDefinition): void {
+    this.layout.powerCutoff = cutoff;
+  }
+
+  /** A drum with a fire burning in it (its mouth at `y`). */
+  public addFireDrum(drum: FireDrumDefinition): void {
+    (this.layout.fireDrums ??= []).push(drum);
+  }
+
+  /** Police tape strung round a place. */
+  public addTape(tape: TapeDefinition): void {
+    (this.layout.tapes ??= []).push(tape);
+  }
+
   /** The staircases defined so far (to dress their steps). */
   public getStairs(): readonly StairsDefinition[] {
     return this.layout.stairs;
@@ -1715,7 +1747,7 @@ export class MapBuilder {
 
   /**
    * Builds something with `build`, then moves everything it added by `dz` along
-   * z: its piles, collision boxes, platforms, lights, decals and posters. For a
+   * z: its piles, collision boxes, platforms, lights, decals, posters and fire drums. For a
    * set of furnishings authored in one place that now belongs in another (the
    * Server room's racks, moved into the unified spawn room).
    */
@@ -1729,6 +1761,7 @@ export class MapBuilder {
       decals: layout.decals.length,
       posters: layout.posters.length,
       shotSolids: layout.shotSolids?.length ?? 0,
+      fireDrums: layout.fireDrums?.length ?? 0,
     };
 
     build();
@@ -1775,6 +1808,7 @@ export class MapBuilder {
     }
 
     (layout.shotSolids ?? []).slice(before.shotSolids).forEach(shift);
+    (layout.fireDrums ?? []).slice(before.fireDrums).forEach(shift);
   }
 
   /** A flat mark on a floor (drawn only), such as oil or a faded line. */

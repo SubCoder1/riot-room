@@ -6,12 +6,15 @@ import {
   ROOF_HIGH,
   ROOF_LOW,
   ROOF_MID,
+  DOOR_HEIGHT,
   ROOF_THICKNESS,
   UPPER_FLOOR_Y,
+  WALL_THICKNESS,
   spawn,
   type ArenaLayout,
 } from "./ArenaLayout";
 import { MapBuilder, bounds } from "./MapParts";
+import { entranceOf, furnishCollapsedEntrance } from "./CollapsedEntrance";
 import { addWeathering } from "./Weathering";
 import { furnishHall, furnishStorageRoom, furnishYard } from "./StorageRoom";
 import { furnishDebris } from "./Debris";
@@ -81,6 +84,8 @@ const F = UPPER_FLOOR_Y;
  * catwalk between this room's roof and the Break room's is 13 m long, not 8.
  */
 const SPAWN_SOUTH = -10;
+/** The Power Room's east wall: one and a half metres further out than it was (7), for room to move. */
+const POWER_EAST = 8.5;
 /**
  * How far the Server room's furnishings moved north into the unified room (m):
  * flush with its north wall (the Server room's old north wall was at z -12, the
@@ -528,7 +533,8 @@ function createUpperFloor(): ArenaLayout {
     bounds: bounds(-14, -1, -Z, -16),
     floorY: F,
     doors: [
-      { side: "s", at: -8 },
+      // (The front door on the south wall is walled up: the way in is the
+      // crawl hole on the west, and the doorway east into the Power Room.)
       { side: "e", at: -20 },
       // A hole in the west wall, low enough that only a crouching body fits
       // (the lintel below is 1.2 m over the floor; a crouch needs 1.1).
@@ -549,7 +555,7 @@ function createUpperFloor(): ArenaLayout {
   map.createRoom({
     id: "room-switch",
     name: "Switch room (switchgear)",
-    bounds: bounds(-1, 7, -Z, -17),
+    bounds: bounds(-1, POWER_EAST, -Z, -17),
     floorY: F,
     walls: ["n", "s", "e"],
     doors: [{ side: "s", at: 3 }],
@@ -560,7 +566,7 @@ function createUpperFloor(): ArenaLayout {
   // opening for the breakable wooden slab beside the generator.
   map.createRoofSection(
     "room-switch-roof",
-    bounds(-1, 7, -Z, -17),
+    bounds(-1, POWER_EAST, -Z, -17),
     ROOF_LOW,
     ROOF_THICKNESS,
     CEILING_SLAB_AREA,
@@ -578,7 +584,7 @@ function createUpperFloor(): ArenaLayout {
   // through the 4 m doorway the yard's staircase used to climb to. It is not a
   // spawn area: the only spawn yard is the north-west one, with its stairs.
   map.createFloorSection("floor-server", bounds(22, X, -Z, -12), F);
-  map.createRoom({
+  const serverRoom = map.createRoom({
     id: "room-server",
     name: "Server room (rack lanes)",
     bounds: bounds(22, X, -Z, SPAWN_SOUTH),
@@ -586,6 +592,21 @@ function createUpperFloor(): ArenaLayout {
     wallHeight: WALL_TO_HIGH,
     doors: [{ side: "w", at: -14.3, width: 4 }],
   });
+
+  // The Server room's doorway is the vault entrance, brought down under its
+  // own wall (see CollapsedEntrance): shut until a breach is built.
+  {
+    const site = furnishCollapsedEntrance(
+      map,
+      entranceOf([serverRoom], WALL_THICKNESS, DOOR_HEIGHT),
+    );
+
+    map.addTape({
+      id: "tape-vault",
+      runs: site.tape,
+      viewer: site.viewer,
+    });
+  }
 
   // EAST SIDE.
   // (The Server room is part of the north-east spawn room, above.)
@@ -765,6 +786,39 @@ function createUpperFloor(): ArenaLayout {
 
   // Industrial Junk Room: a construction-waste pile, two racks, drums and cables (see JunkRoom).
   furnishJunkRoom(map, F);
+
+  // The Power Room's street door stands in a puddle with a live current in it;
+  // the cutoff lever is on the main panel inside, reached by the Junk Room's way in.
+  map.addElectricPuddle({
+    id: "puddle-power-door",
+    // Across the doorway and over the east half of the Power Room's floor.
+    x: 3.9,
+    z: -18.4,
+    y: F,
+    rx: 3.0,
+    rz: 2.2,
+  });
+  // ...and it spills out through the door across the north walkway
+  // up to the vent grate.
+  map.addElectricPuddle({
+    id: "puddle-power-walkway",
+    x: 3,
+    // Ends before the north vent's grate (z -13.6 to -12.4): the grate and the
+    // floor past it are dry, and the vent stays open.
+    z: -15.9,
+    y: F,
+    rx: 3.4,
+    rz: 1.8,
+  });
+  map.setPowerCutoff({
+    id: "cutoff-power-room",
+    // On the front of the Power Room's main panel (x 2.8 to 4, face at z -23.1).
+    x: 3.4,
+    y: F + 1.35,
+    z: -23.1,
+    nx: 0,
+    nz: 1,
+  });
 
   // Switch room: switchgear along the wall and a machine in the middle.
   // (The third switchgear cabinet is the main distribution panel: see PowerGrid.)
@@ -971,18 +1025,6 @@ function createUpperFloor(): ArenaLayout {
   // columns are solid, and each sits in a corner against two walls.
 
   // (The floating balconies have no beams under them: they stand on posts.)
-
-  // The wall halogen over the bridge: its head and bracket stop shots and throws.
-  map.addShotBlock(
-    "halogen-wall-bridge-head",
-    0,
-    30.7,
-    31.3,
-    -9.95,
-    -9.4,
-    9.85,
-    9.3,
-  );
 
   // The east catwalk, 13 m long: two stringers the whole length, cross beams
   // every 1.75 to 2.25 m, two portal frames (a column each side of the
@@ -1448,10 +1490,15 @@ function createUpperFloor(): ArenaLayout {
   map.createPile("bricks", "bricks-barracks-fall", -23.2, -2.2, F, {
     minZ: -3.0,
   });
-  // The Archive's south partition: an uneven top.
-  // (No lower than 2.6 m: the sorting desk stands against it, and a body on the desk
-  // and a jump would otherwise step over the low parts and out of the room.)
-  map.breakSolid("room-archive-wall-s-2", [1, 0.8, 0.7, 0.9, 0.7, 0.75], 2.6);
+  // The Junk Room's south wall: broken down low over the steel platform that
+  // stands against it (x -3.3 to -2.1, 1.2 m up). From the platform it is a
+  // vault in (2.3 m over the floor is 1.1 m over its top, under the roof's 7.8); from the floor
+  // beside it, or from inside, it is too high to cross.
+  map.breakSolid(
+    "room-archive-wall-s-1",
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.6, 0.6, 1],
+    2.3,
+  );
   // The Hall's north wall.
   map.breakSolid("room-hall-wall-n-2", [1, 0.78, 0.92, 0.55, 0.8]);
   // The screen wall on the west terrace has partly collapsed.

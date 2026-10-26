@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { ArenaCollision } from "../../src/world/ArenaCollision";
 import { ROOF_LOW } from "../../src/world/ArenaLayout";
 import { nightLights } from "../../src/world/NightLights";
-import { circuitOfLamp } from "../../src/world/PowerCircuits";
 import { ARENA_LAYOUT as layout } from "../../src/world/UpperFloorMap";
 import { spawnPlayer } from "./playerHarness";
 
@@ -56,13 +55,14 @@ describe("The Server room, carried north over the old spawn yard", () => {
     }
   });
 
-  it("opens west onto the loading dock, and the way out is walkable", () => {
+  it("has its doorway onto the loading dock shut by the collapse (the vault entrance)", () => {
     const p = spawnPlayer(26.0, 4, -14.3, Math.PI / 2);
 
     p.input.keys.add("KeyW");
     p.step(3);
 
-    expect(p.player.position.x).toBeLessThan(21);
+    // It cannot get out: it stops at the rubble, inside the doorway.
+    expect(p.player.position.x).toBeGreaterThan(22);
     expect(p.feet()).toBeCloseTo(4, 2);
   });
 
@@ -168,39 +168,31 @@ describe("The Server room is cleared of the old spawn dressing", () => {
   });
 });
 
-describe("The wall halogen over the bridge", () => {
-  const lamp = nightLights(layout).find((l) => l.id === "halogen-wall-bridge")!;
+describe("Under the bridge", () => {
   const catwalk = layout.platforms.find((p) => p.id === "catwalk-east")!;
 
-  it("is one yellowish-orange halogen, high on the room's south wall over the bridge's north end", () => {
-    expect(lamp).toBeDefined();
-    expect(lamp.y).toBeGreaterThanOrEqual(8.5);
-    // On the wall's outer face (z -10): a short bracket out from it.
-    expect(lamp.z).toBeGreaterThan(room.maxZ);
-    expect(lamp.z).toBeLessThan(room.maxZ + 0.6);
-    // At the east corner of the wall (the room's east wall is at x 31.7), the
-    // bridge's end a few metres west of it.
-    expect(lamp.x).toBeGreaterThan(30);
-    expect(lamp.x).toBeLessThan(room.maxX - 0.3);
-    // Aimed down the bridge and down toward the ground (not straight across).
-    expect(lamp.target!.z).toBeGreaterThan(lamp.z);
+  it("has no wall halogen over it any more", () => {
+    expect(
+      nightLights(layout).some((l) => l.id === "halogen-wall-bridge"),
+    ).toBe(false);
+    expect(
+      layout.shotBlocks?.some((b) => b.id.startsWith("halogen-wall-bridge")),
+    ).toBeFalsy();
+  });
 
-    const down = Math.atan2(
-      lamp.y - lamp.target!.y,
-      Math.hypot(lamp.target!.x - lamp.x, lamp.target!.z - lamp.z),
-    );
+  it("has a drum with a fire in it, on the deck below, clear of the walkway and the catwalk's edge", () => {
+    const fire = layout.fireDrums!.find((d) => d.id === "fire-drum-bridge")!;
 
-    expect(down).toBeGreaterThan(0.45);
-    expect(down).toBeLessThan(0.9);
-    // Yellowish-orange: red high, green mid, blue low.
-    const r = (lamp.color >> 16) & 255;
-    const g = (lamp.color >> 8) & 255;
-    const b = lamp.color & 255;
-
-    expect(r).toBeGreaterThan(g);
-    expect(g).toBeGreaterThan(b + 40);
-    // Outdoor: on the roof generator's circuit.
-    expect(circuitOfLamp("halogen-wall-bridge")).toBe("exterior");
+    expect(fire).toBeDefined();
+    expect(fire.y).toBeCloseTo(4.82, 2);
+    expect(fire.x).toBeGreaterThan(catwalk.minX);
+    expect(fire.x).toBeLessThan(catwalk.maxX);
+    expect(fire.z).toBeGreaterThan(catwalk.minZ);
+    expect(fire.z).toBeLessThan(catwalk.maxZ);
+    // The drum is solid; the way past it stays wide enough to walk.
+    expect(world.isBlocked(fire.x, fire.z, 4, 0.3)).toBe(true);
+    expect(world.isBlocked(fire.x - 1.1, fire.z, 4, 0.3)).toBe(false);
+    expect(world.isBlocked(fire.x, fire.z + 1.1, 4, 0.3)).toBe(false);
   });
 
   it("the bridge's steel is complete: stringers, cross beams, portal columns and braces, and knees at both walls, the whole 13 m", () => {
@@ -332,13 +324,9 @@ describe("Shots and throws stop at what was added", () => {
   it("the roof wall over the Server room's west edge stops a shot across it", () => {
     expect(stops([20, 11.5, -21.3], [25, 11.5, -21.3])).toBe(true);
   });
-
-  it("the wall halogen's head stops a shot", () => {
-    expect(stops([31.0, 9.6, -7], [31.0, 9.6, -9.9])).toBe(true);
-  });
 });
 
-describe("The low work halogen on the deck is gone, and the bridge halogen is wired", () => {
+describe("The low work halogen on the deck is gone", () => {
   it("has no support-deck-1 left, in the layout or the lights", () => {
     expect(layout.piles.some((p) => p.id.startsWith("support-deck-1"))).toBe(
       false,
@@ -347,24 +335,15 @@ describe("The low work halogen on the deck is gone, and the bridge halogen is wi
       false,
     );
   });
+});
 
-  it("has a lead from the deck's board to a junction, and a conduit climbing the wall to the lamp", () => {
-    const service = layout.piles.find((p) => p.id === "deck-service")!;
-    const conduit = service.elements.filter(
-      (e) =>
-        Math.abs(service.x + e.x - 31.0) < 0.05 &&
-        Math.abs(service.z + e.z - -9.95) < 0.05 &&
-        e.sx > 4,
-    );
+describe("The fire drum under the bridge", () => {
+  it("can be jumped onto but is not vaulted", () => {
+    const drum = new ArenaCollision();
+    const fire = layout.fireDrums!.find((d) => d.id === "fire-drum-bridge")!;
 
-    expect(conduit.length).toBeGreaterThan(0);
-    // It stands from near the deck to the lamp's bracket (y 9.6).
-    const top = Math.max(...conduit.map((e) => service.baseY + e.y + e.sx / 2));
-    const bottom = Math.min(
-      ...conduit.map((e) => service.baseY + e.y - e.sx / 2),
-    );
-
-    expect(top).toBeGreaterThan(9.0);
-    expect(bottom).toBeLessThan(4.8);
+    expect(drum.findVault(fire.x, fire.z + 1, 0, -1, 4)).toBeNull();
+    // Standing on it from a jump: its top is a surface.
+    expect(drum.groundHeight(fire.x, fire.z, 5.2)).toBeGreaterThan(4.8);
   });
 });

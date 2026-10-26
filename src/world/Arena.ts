@@ -1,6 +1,9 @@
 import * as THREE from "three";
 
 import { buildArena } from "./ArenaBuilder";
+import { ArenaCollision } from "./ArenaCollision";
+import { createCrimeTape } from "./CrimeTape";
+import { doorPassage } from "./DoorPassage";
 import { createFacilityPoster } from "./FacilityPoster";
 import { ARENA_HALF_X, ARENA_HALF_Z, type ArenaLayout } from "./ArenaLayout";
 import { createFixtureGlow } from "./LightGlow";
@@ -9,7 +12,8 @@ import { createPuddles } from "./Puddles";
 import { createSky } from "./Sky";
 import { Moths } from "./Moths";
 import { NightAtmosphere, type Halogen } from "./NightAtmosphere";
-import { FLICKERING, nightLights } from "./NightLights";
+import { BarrelFire } from "./BarrelFire";
+import { BLINKING_LAMP, FLICKERING, nightLights } from "./NightLights";
 import { createRain } from "./Rain";
 import { circuitOfLamp, type Circuit } from "./PowerCircuits";
 import { ARENA_LAYOUT } from "./UpperFloorMap";
@@ -33,6 +37,7 @@ export class Arena {
   private readonly layout: ArenaLayout;
   private atmosphere: NightAtmosphere | null = null;
   private moths: Moths | null = null;
+  private readonly barrelFires: BarrelFire[] = [];
   private rainLights: {
     uPos: { value: THREE.Vector4[] };
     uCol: { value: THREE.Vector4[] };
@@ -289,18 +294,37 @@ export class Arena {
     }
   }
 
+  /** Whether the fallen floodlight is showing as lit (it blinks). */
+  private blinkLit = true;
+
   /** Advances the night's flicker and lightning. */
   public update(dt: number): void {
     this.time += dt;
+
+    const lit = Math.floor(this.time / BLINKING_LAMP.period) % 2 === 0;
+
+    if (lit !== this.blinkLit) {
+      this.blinkLit = lit;
+      this.setLampBroken(BLINKING_LAMP.id, !lit);
+    }
+
     this.atmosphere?.update(dt);
     this.updateCircuits(dt);
     this.moths?.update(this.time);
+
+    for (const fire of this.barrelFires) {
+      fire.update(this.time);
+    }
   }
 
   /** Puts the lights back to their base values. */
   public dispose(): void {
     this.atmosphere?.dispose();
     this.moths?.dispose();
+
+    for (const fire of this.barrelFires) {
+      fire.dispose();
+    }
   }
 
   private buildArena(): void {
@@ -327,7 +351,7 @@ export class Arena {
     // One 4096 map over 84 m: without a bias the flat tops of ducts and
     // roofs shimmer (shadow acne), worst when a flash brightens the light.
     keyLight.shadow.bias = -0.0004;
-    keyLight.shadow.normalBias = 0.06;
+    keyLight.shadow.normalBias = 0.025;
     this.group.add(keyLight);
 
     const flickering: THREE.Light[] = [];
@@ -339,12 +363,35 @@ export class Arena {
     }> = [];
 
     // The site plans on the spawn-area walls.
+    // (Drawn with the doors as they stand now: a shutter or stock across an
+    // opening shows shut, as on the M-key map.)
+    const world =
+      this.layout.posters.length > 0 ? new ArenaCollision(this.layout) : null;
+
     for (const poster of this.layout.posters) {
-      const mesh = createFacilityPoster(this.layout, poster);
+      const mesh = createFacilityPoster(
+        this.layout,
+        poster,
+        world ? (room, door) => doorPassage(world, room, door) : undefined,
+      );
 
       if (mesh) {
         this.group.add(mesh);
       }
+    }
+
+    // Police tape across the approach to the collapsed vault entrance.
+    for (const tape of this.layout.tapes ?? []) {
+      this.group.add(createCrimeTape(tape.runs, tape.viewer));
+    }
+
+    // Fires burning in steel drums.
+    for (const drum of this.layout.fireDrums ?? []) {
+      const fire = new BarrelFire(drum);
+
+      fire.update(0);
+      this.barrelFires.push(fire);
+      this.group.add(fire.group);
     }
 
     // Task lights and pendants over work areas: short range, no shadows.
@@ -377,7 +424,7 @@ export class Arena {
           spot.shadow.camera.far = light.distance;
           spot.shadow.bias = -0.0005;
           // Without it the grazing light down a vent's walls shimmers (acne).
-          spot.shadow.normalBias = 0.04;
+          spot.shadow.normalBias = 0.015;
         }
 
         this.group.add(spot);
@@ -446,8 +493,14 @@ export class Arena {
         lamp.shadow.mapSize.set(512, 512);
         lamp.shadow.camera.near = 0.3;
         lamp.shadow.camera.far = light.distance;
-        lamp.shadow.bias = -0.002;
-        lamp.shadow.normalBias = 0.03;
+        lamp.shadow.bias = -0.0008;
+        lamp.shadow.normalBias = 0.01;
+
+        // The Junk Room's bulb throws softer shadows: its racks and heap would
+        // otherwise leave big black patches on the floor.
+        if (light.id.startsWith("bulb-junk")) {
+          lamp.shadow.intensity = 0.6;
+        }
       }
 
       this.group.add(lamp);

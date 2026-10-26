@@ -50,7 +50,7 @@ describe("Player on the map", () => {
     expect(airborne).toBeLessThan(6);
   });
 
-  it("sprints from the north-east spawn room out through its doorway to the dock, level and grounded the whole way", () => {
+  it("sprints from the Server room toward its doorway and is stopped by the collapse, level and grounded", () => {
     const p = spawnPlayer(26.0, UPPER, -14.3, WEST);
     let airborne = 0;
 
@@ -60,7 +60,8 @@ describe("Player on the map", () => {
 
     expect(p.feet()).toBeCloseTo(UPPER, 2);
     expect(p.player.isGrounded).toBe(true);
-    expect(p.player.position.x).toBeLessThan(21);
+    // Nowhere near the dock: it stops at the rubble inside the doorway.
+    expect(p.player.position.x).toBeGreaterThan(22);
     expect(airborne).toBe(0);
   });
 
@@ -77,13 +78,13 @@ describe("Player on the map", () => {
   });
 
   it("goes through a doorway into a room and stops at its far wall", () => {
-    // On the north walkway in front of the archive's doorway (x = -8), facing north.
-    const p = spawnPlayer(-8, UPPER, -13.5, NORTH);
+    // On the north walkway in front of the Power Room's doorway (x = 3), facing north.
+    const p = spawnPlayer(3, UPPER, -13.5, NORTH);
 
     walk(p, 3);
 
     expect(p.feet()).toBeCloseTo(UPPER, 2);
-    expect(p.player.position.z).toBeLessThan(-16.5); // inside the room
+    expect(p.player.position.z).toBeLessThan(-17.5); // inside the room
     expect(p.player.position.z).toBeGreaterThan(-24);
   });
 
@@ -390,7 +391,7 @@ describe("Jumping under a roof", () => {
 
 describe("Thin tops", () => {
   it("nobody can stand on a wall, a railing or a post", () => {
-    const wall = layout.walls.find((w) => w.id === "room-archive-wall-s-1")!;
+    const wall = layout.walls.find((w) => w.id === "room-hall-wall-n-2~2")!;
     const rail = layout.walls.find((w) => w.id === "rail-bw-east-1")!;
 
     for (const solid of [wall, rail]) {
@@ -589,4 +590,53 @@ describe("Crashing into things", () => {
     expect(p.player.position.z).toBeGreaterThan(-16);
     expect(crashedSpeed).toBeLessThan(1);
   });
+});
+
+describe("Walking a flight of stairs", () => {
+  /** Walks 400 frames and counts how often the feet reverse (up, then down, then up). */
+  const walk = (x: number, feet: number, yaw: number, keys: string[]) => {
+    const p = spawnPlayer(x, feet, -15.8, yaw);
+
+    p.step(0.3);
+    keys.forEach((k) => p.input.keys.add(k));
+
+    let last = p.feet();
+    let dir = 0;
+    let reversals = 0;
+    let airborne = 0;
+
+    p.step(400 / 60, () => {
+      const f = p.feet();
+
+      if (Math.abs(f - last) > 0.01) {
+        const s = Math.sign(f - last);
+
+        if (dir !== 0 && s !== dir) reversals++;
+
+        dir = s;
+      }
+
+      if (!p.player.isGrounded) airborne++;
+
+      last = f;
+    });
+
+    return { end: p.feet(), reversals, airborne };
+  };
+
+  it.each([
+    ["up", -30.5, 0, -Math.PI / 2, ["KeyW"], 4],
+    ["up, sprinting", -30.5, 0, -Math.PI / 2, ["KeyW", "ShiftLeft"], 4],
+    ["down", -19.5, 4, Math.PI / 2, ["KeyW"], 0],
+    ["down, sprinting", -19.5, 4, Math.PI / 2, ["KeyW", "ShiftLeft"], 0],
+  ] as const)(
+    "%s: the feet rise (or fall) steadily, never up and down over a tread's edge",
+    (_name, x, feet, yaw, keys, end) => {
+      const r = walk(x, feet, yaw, [...keys]);
+
+      expect(r.end).toBeCloseTo(end, 2);
+      expect(r.reversals).toBe(0);
+      expect(r.airborne).toBe(0);
+    },
+  );
 });
