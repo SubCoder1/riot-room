@@ -38,8 +38,8 @@ export interface TeamMarker {
 
 export type TeammateSource = () => readonly TeamMarker[];
 
-const W = 1200;
-const H = 900;
+export const W = 1200;
+export const H = 900;
 /** Sheet pixels per metre, and where the plan's top-left corner is on the sheet. */
 const SCALE = 18;
 const PLAN_X = 24;
@@ -54,9 +54,13 @@ const ROOM_FILLS = ["#1c242d", "#1f2a37", "#1b2b2e", "#251f2d"];
 const GROUND_ROOM = "#1a2c2f";
 const WALL = "#78828e";
 const EDGE = "#a3adb9";
+/** The minimap's walls: a subdued gray, clear against the dark but never bright. */
+const COMPACT_WALL = "#5d6670";
+/** The minimap's stairs: a muted gray, never the white of the player marker. */
+const COMPACT_STAIR = "#6b7480";
 const NAME = "#c5cfdb";
 const VENT = "rgba(63, 190, 205, 0.62)";
-const STAIR = "#59636f";
+const STAIR = "#7d8895";
 const BLOCKED = "#a8403f";
 const FRIEND = "#3cc8d4";
 const SELF = "#f1f4f7";
@@ -73,9 +77,9 @@ const NAME_NEAR = 46;
 const SVG = "http://www.w3.org/2000/svg";
 
 /** Sheet position of a world point (the one transform for everything). */
-const sx = (x: number, layout: ArenaLayout): number =>
+export const sx = (x: number, layout: ArenaLayout): number =>
   PLAN_X + (x + layout.width / 2) * SCALE;
-const sz = (z: number, layout: ArenaLayout): number =>
+export const sz = (z: number, layout: ArenaLayout): number =>
   PLAN_Y + (z + layout.depth / 2) * SCALE;
 
 /** A short label for a room, from its name and id. */
@@ -172,6 +176,7 @@ function drawStairs(
   ctx: CanvasRenderingContext2D,
   stairs: StairsDefinition,
   layout: ArenaLayout,
+  compact = false,
 ): void {
   const alongX = stairs.direction.endsWith("x");
   const sign = stairs.direction.startsWith("+") ? 1 : -1;
@@ -184,8 +189,8 @@ function drawStairs(
   const y0 = alongX ? sz(stairs.crossMin, layout) : sz(lo, layout);
   const y1 = alongX ? sz(stairs.crossMax, layout) : sz(hi, layout);
 
-  ctx.strokeStyle = STAIR;
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = compact ? COMPACT_STAIR : STAIR;
+  ctx.lineWidth = compact ? 2 : 1;
 
   for (let i = 0; i <= stairs.steps; i++) {
     const t = i / stairs.steps;
@@ -208,6 +213,24 @@ function drawStairs(
   const cy = (y0 + y1) / 2;
   const dx = alongX ? sign : 0;
   const dy = alongX ? 0 : sign;
+
+  if (compact) {
+    // The minimap's stairs: the steps and an open chevron up the flight, in
+    // muted gray, never the solid triangle that means "you".
+    ctx.strokeStyle = COMPACT_STAIR;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - dx * 6 - dy * 7, cy - dy * 6 - dx * 7);
+    ctx.lineTo(cx + dx * 6, cy + dy * 6);
+    ctx.lineTo(cx - dx * 6 + dy * 7, cy - dy * 6 + dx * 7);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
+
+    return;
+  }
 
   ctx.fillStyle = EDGE;
   ctx.beginPath();
@@ -240,6 +263,13 @@ export function drawTacticalSheet(
   layout: ArenaLayout,
   passage: (room: RoomDefinition, door: DoorDefinition) => DoorPassage = () =>
     "open",
+  here?: { x: number; z: number },
+  /**
+   * The minimap's drawing: the same plan, but only what reads at a glance when
+   * small: room fills and walls, door gaps, stairs and the bridge. No names,
+   * vents, ladders or ground label.
+   */
+  compact = false,
 ): void {
   // No backing panel: the plan is drawn straight onto the game.
   ctx.clearRect(0, 0, W, H);
@@ -252,24 +282,6 @@ export function drawTacticalSheet(
 
   ctx.fillStyle = OPEN_GROUND;
   ctx.fillRect(ax, ay, aw, ah);
-
-  // Vents run under the floors: a quiet dashed line.
-  ctx.strokeStyle = VENT;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
-
-  for (const network of [layout.vents, layout.upperVents]) {
-    for (const t of network.tunnels) {
-      ctx.strokeRect(
-        sx(t.minX, layout),
-        sz(t.minZ, layout),
-        (t.maxX - t.minX) * SCALE,
-        (t.maxZ - t.minZ) * SCALE,
-      );
-    }
-  }
-
-  ctx.setLineDash([]);
 
   // Walkways, decks, balconies: the upper floor's open routes.
   for (const zone of [...layout.zones].sort((a, b) => a.floorY - b.floorY)) {
@@ -287,8 +299,18 @@ export function drawTacticalSheet(
 
   // Rooms: a fill each, and a solid wall.
   const rooms = [...layout.rooms].sort((a, b) => a.floorY - b.floorY);
+  // The Yard and the Storage room are one open space (no wall between them):
+  // they are drawn, and named, as one room.
+  const yard = rooms.find((r) => r.id === "room-yard");
+  const shown = rooms
+    .filter((r) => r.id !== "room-yard")
+    .map((r) =>
+      r.id === "room-workshop" && yard
+        ? { ...r, minX: Math.min(r.minX, yard.minX) }
+        : r,
+    );
 
-  for (const room of rooms) {
+  for (const room of shown) {
     const x = sx(room.minX, layout);
     const y = sz(room.minZ, layout);
     const w = (room.maxX - room.minX) * SCALE;
@@ -296,10 +318,29 @@ export function drawTacticalSheet(
 
     ctx.fillStyle = fillFor(room);
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = WALL;
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = compact ? COMPACT_WALL : WALL;
+    ctx.lineWidth = compact ? 4 : 3;
     ctx.strokeRect(x, y, w, h);
   }
+
+  // (Drawn after the floors and rooms, so the upper floor's vents show over them.)
+  // Vents run under the floors: a quiet dashed line.
+  ctx.strokeStyle = VENT;
+  ctx.lineWidth = compact ? 3 : 1.8;
+  ctx.setLineDash(compact ? [10, 6] : [6, 4]);
+
+  for (const network of [layout.vents, layout.upperVents]) {
+    for (const t of network.tunnels) {
+      ctx.strokeRect(
+        sx(t.minX, layout),
+        sz(t.minZ, layout),
+        (t.maxX - t.minX) * SCALE,
+        (t.maxZ - t.minZ) * SCALE,
+      );
+    }
+  }
+
+  ctx.setLineDash([]);
 
   for (const room of rooms) {
     for (const door of room.doors) {
@@ -308,7 +349,7 @@ export function drawTacticalSheet(
   }
 
   for (const stairs of layout.stairs) {
-    drawStairs(ctx, stairs, layout);
+    drawStairs(ctx, stairs, layout, compact);
   }
 
   // Raised bridges and catwalks (they pass over the floor below).
@@ -328,7 +369,7 @@ export function drawTacticalSheet(
     ctx.lineWidth = 1.6;
     ctx.strokeRect(x, y, w, h);
 
-    if (p.id === "catwalk-east") {
+    if (p.id === "catwalk-east" && !compact) {
       ctx.save();
       ctx.translate(x + w / 2, y + h / 2);
       ctx.rotate(-Math.PI / 2);
@@ -341,11 +382,12 @@ export function drawTacticalSheet(
     }
   }
 
-  // Ladders: a short rail with a rung or two, on the face they climb.
+  // Ladders: a rail pair with rungs on the face they climb: the other ways
+  // up besides the stairs, so they are drawn to be found.
   ctx.strokeStyle = EDGE;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
 
-  for (const ladder of layout.ladders) {
+  for (const ladder of compact ? [] : layout.ladders) {
     if (ladder.secret) {
       continue;
     }
@@ -353,7 +395,7 @@ export function drawTacticalSheet(
     const alongZ = ladder.normal.endsWith("x");
     const x = sx(ladder.x, layout);
     const y = sz(ladder.z, layout);
-    const half = (ladder.width * SCALE) / 2;
+    const half = Math.max((ladder.width * SCALE) / 2, 9);
 
     ctx.beginPath();
 
@@ -367,19 +409,23 @@ export function drawTacticalSheet(
 
     ctx.stroke();
 
-    for (const k of [-0.5, 0.5]) {
+    for (const k of [-0.6, -0.2, 0.2, 0.6]) {
       ctx.beginPath();
 
       if (alongZ) {
-        ctx.moveTo(x - 3, y + k * half * 2);
-        ctx.lineTo(x + 3, y + k * half * 2);
+        ctx.moveTo(x - 5, y + k * half * 2);
+        ctx.lineTo(x + 5, y + k * half * 2);
       } else {
-        ctx.moveTo(x + k * half * 2, y - 3);
-        ctx.lineTo(x + k * half * 2, y + 3);
+        ctx.moveTo(x + k * half * 2, y - 5);
+        ctx.lineTo(x + k * half * 2, y + 5);
       }
 
       ctx.stroke();
     }
+  }
+
+  if (compact) {
+    return;
   }
 
   // Room names.
@@ -387,18 +433,59 @@ export function drawTacticalSheet(
   ctx.textBaseline = "middle";
   ctx.fillStyle = NAME;
 
-  for (const room of rooms) {
+  for (const room of shown) {
     const text = label(room);
 
     fitText(ctx, text, (room.maxX - room.minX) * SCALE - 14, 13);
 
     if (ctx.measureText(text).width <= (room.maxX - room.minX) * SCALE - 8) {
+      // (In the room the plan hangs in, the name moves up to make way for the
+      // you-are-here mark.)
+      const holdsHere =
+        here !== undefined &&
+        here.x > room.minX &&
+        here.x < room.maxX &&
+        here.z > room.minZ &&
+        here.z < room.maxZ;
+
       ctx.fillText(
         text,
         sx((room.minX + room.maxX) / 2, layout),
-        sz((room.minZ + room.maxZ) / 2, layout),
+        holdsHere
+          ? sz(room.minZ, layout) + 16
+          : sz((room.minZ + room.maxZ) / 2, layout),
       );
     }
+  }
+
+  // The "you are here" mark of a wall plan: a cross, and a plain line saying so.
+  if (here) {
+    const hx = sx(here.x, layout);
+    const hz = sz(here.z, layout);
+
+    ctx.lineCap = "round";
+
+    for (const [colour, width] of [
+      ["#0a0c0f", 7],
+      [BLOCKED, 3.5],
+    ] as const) {
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(hx - 8, hz - 8);
+      ctx.lineTo(hx + 8, hz + 8);
+      ctx.moveTo(hx + 8, hz - 8);
+      ctx.lineTo(hx - 8, hz + 8);
+      ctx.stroke();
+    }
+
+    ctx.lineCap = "butt";
+    ctx.font = '700 13px "Segoe UI", Inter, Arial, sans-serif';
+    ctx.fillStyle = "#f1f4f7";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText("YOU ARE HERE", hx, hz + 14);
+    ctx.textBaseline = "middle";
   }
 
   ctx.fillStyle = "rgba(154,166,179,0.2)";

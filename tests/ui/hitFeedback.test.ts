@@ -2,12 +2,7 @@ import * as THREE from "three";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ATTACKS } from "../../src/combat/AttackDefinitions";
-import {
-  BAR_WIDTH,
-  MAX_DISTANCE,
-  WorldHealthBars,
-  headTopOf,
-} from "../../src/ui/WorldHealthBars";
+import { HitFeedback, MAX_DISTANCE, headTopOf } from "../../src/ui/HitFeedback";
 import {
   TestFighter,
   makeScene,
@@ -15,9 +10,9 @@ import {
   type Scene,
 } from "../combat/helpers";
 
-describe("WorldHealthBars: a plain bar above the enemy's head", () => {
+describe("HitFeedback: damage numbers and the block tag, never a health bar", () => {
   let scene: Scene;
-  let bars: WorldHealthBars;
+  let bars: HitFeedback;
   let camera: THREE.PerspectiveCamera;
   let combatants: TestFighter[];
   let rolls: number[];
@@ -46,18 +41,18 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     return { x: Number(m[1]), y: Number(m[2]) };
   };
 
-  const barEl = (): HTMLElement => bars.barElement("defender")!;
-
   const numbers = (): HTMLElement[] =>
-    Array.from(document.querySelectorAll(".enemy-hp__number"));
+    Array.from(document.querySelectorAll(".hit-number"));
 
-  /** Width of the red fill in pixels (full health = BAR_WIDTH). */
-  const fillPx = (): number =>
-    Number(
-      /([\d.]+)px/.exec(
-        (barEl().querySelector(".enemy-hp__fill") as HTMLElement).style.width,
-      )![1],
-    );
+  /** Shows the BLOCKED tag by blocking one punch. */
+  const blockOne = (): HTMLElement => {
+    bars.update(0, camera);
+    scene.defender.blocking = true;
+    runAttack(scene, "light-punch");
+    bars.update(0, camera);
+
+    return bars.tagElement("defender")!;
+  };
 
   const head = (): THREE.Vector3 => {
     const out = new THREE.Vector3();
@@ -82,7 +77,7 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
 
     let n = 0;
 
-    bars = new WorldHealthBars(
+    bars = new HitFeedback(
       document.body,
       scene.system.events,
       () => combatants,
@@ -91,110 +86,21 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     );
   });
 
-  it("has a bar for the enemy and none for the player", () => {
-    expect(bars.barElement("attacker")).toBeUndefined();
+  it("puts nothing over anyone's head that shows health: no bar, no fill, no hp", () => {
     bars.update(0, camera);
-    expect(bars.barElement("attacker")).toBeUndefined();
-    expect(barEl()).toBeDefined();
-    expect(barEl().style.visibility).toBe("visible");
-  });
-
-  it("sits above the head, centred on it, and follows when the enemy moves", () => {
-    bars.update(0, camera);
-
-    const headScreen = screenOf(head());
-    const first = at(barEl());
-
-    expect(first.y).toBeLessThan(headScreen.y - 5);
-    expect(Math.abs(first.x - headScreen.x)).toBeLessThanOrEqual(1);
-
-    scene.defender.position.x += 1.5;
-    bars.update(0, camera);
-
-    const moved = at(barEl());
-    const movedHead = screenOf(head());
-
-    expect(Math.abs(moved.x - first.x)).toBeGreaterThan(20);
-    expect(Math.abs(moved.x - movedHead.x)).toBeLessThanOrEqual(1);
-    expect(moved.y).toBeLessThan(movedHead.y - 5);
-  });
-
-  it("is one size on screen at every distance: a position only, no scaling or fading", () => {
-    for (const z of [-3, -8, -14]) {
-      aimCamera(0, 1.7, z);
-      bars.update(0, camera);
-
-      expect(barEl().style.visibility).toBe("visible");
-      expect(barEl().style.transform).toMatch(
-        /^translate\(-?\d+px, -?\d+px\) translate\(-50%, -100%\)$/,
-      );
-      expect(barEl().style.transform).not.toMatch(/rotate|scale|matrix/);
-      expect(barEl().style.opacity).toBe("");
-      expect(fillPx()).toBe(BAR_WIDTH);
-    }
-  });
-
-  it("is only shown within a set distance", () => {
-    aimCamera(0, 1.7, -(MAX_DISTANCE - 2));
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("visible");
-
-    aimCamera(0, 1.7, -(MAX_DISTANCE + 2));
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("hidden");
-
-    aimCamera(0, 1.7, -6);
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("visible");
-  });
-
-  it("is hidden behind the camera and behind cover", () => {
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("visible");
-
-    // Behind the camera.
-    camera.position.set(0, 1.7, -6);
-    camera.lookAt(0, 1.7, -20);
-    camera.updateMatrixWorld(true);
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("hidden");
-
-    // Behind cover.
-    aimCamera(0, 1.7, -6);
-    bars.lineOfSight = () => false;
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("hidden");
-
-    // Visible again once the way is clear.
-    bars.lineOfSight = () => true;
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("visible");
-  });
-
-  it("is a solid left-aligned bar that shortens from the right as health drops", () => {
-    bars.update(0, camera);
-    expect(fillPx()).toBe(BAR_WIDTH);
-
-    const before = at(barEl());
-
+    scene.defender.health.damage(37);
     runAttack(scene, "light-punch");
     bars.update(0, camera);
 
-    const damage = ATTACKS["light-punch"].damage;
-
-    expect(fillPx()).toBe(Math.round(((100 - damage) / 100) * BAR_WIDTH));
-    expect(barEl().dataset.hp).toBe(String(100 - damage));
-
-    // The bar itself stays where it was: nothing slides or re-centres.
-    expect(at(barEl())).toEqual(before);
-
-    // The fill is the only thing drawn: no trail, gloss, flash or frame.
-    expect(barEl().querySelectorAll(".enemy-hp__fill")).toHaveLength(1);
     expect(
-      barEl().querySelectorAll(
-        ".enemy-hp__trail, .enemy-hp__gloss, .enemy-hp__flash, .enemy-hp__frame",
-      ),
+      document.querySelectorAll(".enemy-hp, .enemy-hp__fill"),
     ).toHaveLength(0);
+    expect(document.querySelector("[data-hp]")).toBeNull();
+    // The only things in the layer are damage numbers and the (empty) tag.
+    const text = document.querySelector(".hit-feedback-layer")!.textContent;
+
+    expect(text).not.toMatch(/\d+ ?\/ ?\d+/);
+    expect(bars.tagElement("attacker")).toBeUndefined();
   });
 
   it("shows the real damage as -N for light, heavy and flying hits", () => {
@@ -227,7 +133,7 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     }
   });
 
-  it("a damage number pops in beside the enemy, rises toward the bar while drifting, then fades and is removed", () => {
+  it("a damage number pops in beside the enemy, rises toward the head while drifting, then fades and is removed", () => {
     bars.update(0, camera);
     runAttack(scene, "light-punch");
     bars.update(0, camera);
@@ -235,11 +141,11 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     const number = numbers()[0];
     const start = at(number);
     const headScreen = screenOf(head());
-    const barScreen = at(barEl());
+    const headTop = screenOf(head());
 
-    // Beside the enemy: clearly off to one side of the head, below the bar.
+    // Beside the enemy: clearly off to one side of the head, below its top.
     expect(Math.abs(start.x - headScreen.x)).toBeGreaterThan(25);
-    expect(start.y).toBeGreaterThan(barScreen.y);
+    expect(start.y).toBeGreaterThan(headTop.y);
     // Pop-in: starts small and fully visible.
     expect(scaleOf(number)).toBeCloseTo(0.7, 1);
     expect(Number(number.style.opacity)).toBe(1);
@@ -257,11 +163,11 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
       Math.abs(start.x - headScreen.x),
     );
 
-    // Near the end: fading and a little smaller, up by the bar.
+    // Near the end: fading and a little smaller, up by the head.
     bars.update(0.4, camera);
     expect(Number(number.style.opacity)).toBeLessThan(0.6);
     expect(scaleOf(number)).toBeLessThan(1);
-    expect(at(number).y).toBeLessThan(barScreen.y + 40);
+    expect(at(number).y).toBeLessThan(headTop.y + 40);
 
     // Gone after the animation, and not left in the page.
     bars.update(0.2, camera);
@@ -299,18 +205,33 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     expect(numbers().length).toBeLessThanOrEqual(24);
   });
 
-  it("a blocked attack shows no number and does not touch the bar", () => {
-    bars.update(0, camera);
-    scene.defender.blocking = true;
-    runAttack(scene, "light-punch");
-    bars.update(0, camera);
+  it("a blocked attack shows no number, takes no health, and tags the enemy BLOCKED", () => {
+    const tag = blockOne();
 
     expect(scene.defender.health.current).toBe(100);
     expect(numbers()).toHaveLength(0);
-    expect(fillPx()).toBe(BAR_WIDTH);
-    expect(
-      (barEl().querySelector(".enemy-hp__tag") as HTMLElement).textContent,
-    ).toBe("BLOCKED");
+    expect(tag.textContent).toBe("BLOCKED");
+    expect(tag.style.visibility).toBe("visible");
+
+    // The tag goes again on its own.
+    bars.update(1, camera);
+    expect(tag.style.visibility).toBe("hidden");
+  });
+
+  it("the tag hides behind cover and beyond the set distance", () => {
+    const tag = blockOne();
+
+    bars.lineOfSight = () => false;
+    bars.update(0, camera);
+    expect(tag.style.visibility).toBe("hidden");
+
+    bars.lineOfSight = () => true;
+    bars.update(0, camera);
+    expect(tag.style.visibility).toBe("visible");
+
+    aimCamera(0, 1.7, -(MAX_DISTANCE + 2));
+    bars.update(0, camera);
+    expect(tag.style.visibility).toBe("hidden");
   });
 
   it("a hit of zero damage shows no number", () => {
@@ -331,23 +252,18 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     expect(numbers()).toHaveLength(0);
   });
 
-  it("a dead enemy has no bar; a respawn brings it back full", () => {
+  it("a killing blow shows a KO number, and nothing is left over the dead", () => {
     bars.update(0, camera);
     scene.defender.health.damage(95);
     runAttack(scene, "heavy-run-punch");
     bars.update(0, camera);
 
     expect(scene.defender.health.current).toBe(0);
-    expect(barEl().style.visibility).toBe("hidden");
     expect(numbers()[0].dataset.kind).toBe("ko");
-
-    scene.defender.health.reset();
-    bars.update(0, camera);
-    expect(barEl().style.visibility).toBe("visible");
-    expect(fillPx()).toBe(BAR_WIDTH);
+    expect(bars.tagElement("defender")!.style.visibility).toBe("hidden");
   });
 
-  it("an enemy that is removed takes its bar and numbers with it", () => {
+  it("an enemy that is removed takes its tag and numbers with it", () => {
     bars.update(0, camera);
     runAttack(scene, "light-punch");
     bars.update(0, camera);
@@ -356,38 +272,24 @@ describe("WorldHealthBars: a plain bar above the enemy's head", () => {
     combatants = [scene.attacker];
     bars.update(0, camera);
 
-    expect(bars.barElement("defender")).toBeUndefined();
-    expect(document.querySelectorAll(".enemy-hp")).toHaveLength(0);
+    expect(bars.tagElement("defender")).toBeUndefined();
     expect(bars.floatingCount).toBe(0);
   });
 
-  it("reads health from the combatant: the UI never invents or changes it", () => {
+  it("reads health from the combatant and never changes it", () => {
     bars.update(0, camera);
     scene.defender.health.damage(37);
     bars.update(0, camera);
 
-    expect(fillPx()).toBe(Math.round(0.63 * BAR_WIDTH));
     expect(scene.defender.health.current).toBe(63);
-  });
-
-  it("each enemy shows its own health", () => {
-    const other = new TestFighter("other");
-
-    other.position.set(3, 0, 3);
-    combatants.push(other);
-    other.health.damage(60);
-    bars.update(0, camera);
-
-    expect(bars.barElement("defender")!.dataset.hp).toBe("100");
-    expect(bars.barElement("other")!.dataset.hp).toBe("40");
   });
 
   it("dispose removes everything and stops listening", () => {
     bars.update(0, camera);
     bars.dispose();
-    expect(document.querySelectorAll(".enemy-hp-layer")).toHaveLength(0);
+    expect(document.querySelectorAll(".hit-feedback-layer")).toHaveLength(0);
 
     runAttack(scene, "light-punch");
-    expect(document.querySelectorAll(".enemy-hp__number")).toHaveLength(0);
+    expect(document.querySelectorAll(".hit-number")).toHaveLength(0);
   });
 });

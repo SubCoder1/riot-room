@@ -71,12 +71,12 @@ canvas {
 }
 
 /* ------------------------------------------------------------------
-   Enemy health bars and damage numbers. Each bar is projected from the
-   enemy's head every frame (see src/ui/WorldHealthBars.ts), so it follows the
-   enemy and keeps one size on screen at any distance.
+   Hit feedback: damage numbers and the BLOCKED tag, placed from the enemy's
+   head every frame (see src/ui/HitFeedback.ts). Nothing here shows anyone's
+   health: that is only in the player's own HUD (.player-health).
    ------------------------------------------------------------------ */
 
-.enemy-hp-layer {
+.hit-feedback-layer {
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -86,30 +86,12 @@ canvas {
   font-family: var(--font-ui);
 }
 
-/* A plain solid red bar: no frame, gloss, glow or background. Its box is
-   BAR_WIDTH wide and the fill is left aligned, so it shortens from the right. */
-.enemy-hp {
+.hit-tag {
   position: absolute;
   left: 0;
   top: 0;
-  width: 160px;
+  white-space: nowrap;
   will-change: transform;
-}
-
-.enemy-hp__fill {
-  height: 7px;
-  background: #e5262a;
-  /* A short ease so a hit reads as a quick shrink, not a jump. */
-  transition: width 120ms ease-out;
-}
-
-.enemy-hp__tag {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 3px;
-  text-align: center;
   font-size: 14px;
   font-weight: 400;
   letter-spacing: 0.22em;
@@ -120,7 +102,7 @@ canvas {
 /* A damage number: placed, scaled and faded by script each frame.
    Colour follows the attack's weight (light = yellow, heavy = red); size
    follows the kind of hit. */
-.enemy-hp__number {
+.hit-number {
   position: absolute;
   left: 0;
   top: 0;
@@ -135,20 +117,20 @@ canvas {
   will-change: transform, opacity;
 }
 
-.enemy-hp__number[data-weight="heavy"] {
+.hit-number[data-weight="heavy"] {
   color: #ff2d2d;
 }
 
-.enemy-hp__number[data-kind="heavy"] {
+.hit-number[data-kind="heavy"] {
   font-size: 80px;
 }
 
-.enemy-hp__number[data-kind="flying"] {
+.hit-number[data-kind="flying"] {
   font-size: 74px;
 }
 
 /* A killing blow is the biggest and always red. */
-.enemy-hp__number[data-kind="ko"] {
+.hit-number[data-kind="ko"] {
   font-size: 98px;
   color: #ff1a2e;
 }
@@ -334,5 +316,159 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .tactical-map {
     transition: opacity 0.1s linear;
+  }
+}
+
+/* ------------------------------------------------------------------
+   The player's own health: the HP and a segmented bar. Only a
+   segment's colour glides; the number and the segments change with the
+   health itself.
+   ------------------------------------------------------------------ */
+
+/* The bottom-left cluster: the health and the equipped item share one
+   centreline (flex, align-items: center), so neither sits high or low. */
+.hud-cluster {
+  position: fixed;
+  /* A fixed height (the tallest thing in it, the item icon): the health keeps
+     its place whatever is, or is not, in hand. */
+  height: clamp(56px, 5vw, 76px);
+  left: 28px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  pointer-events: none;
+  user-select: none;
+  z-index: 10;
+}
+
+.player-health {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: clamp(10px, 1vw, 14px);
+}
+
+.player-health__value {
+  min-width: 2.1em;
+  text-align: right;
+  font-size: clamp(40px, 3.6vw, 54px);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: #f2f4f5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Eight crisp rectangles in a dark frame: charcoal when empty, a muted
+   gray-green when filled, a muted red when critical. */
+/* Seven crisp rectangles with no panel behind them: each has its own thin
+   dark outline. Charcoal when empty, a muted gray-green when filled, a
+   muted red when critical. */
+.player-health__bar {
+  display: flex;
+  gap: 4px;
+}
+
+.player-health__segment {
+  width: clamp(14px, 1.3vw, 19px);
+  height: clamp(18px, 1.6vw, 23px);
+  background: #2a3034;
+  box-shadow: 0 0 0 1px rgba(3, 4, 5, 0.85);
+  transition: background-color 220ms ease-out;
+}
+
+.player-health__segment.on {
+  background: #789483;
+}
+
+.player-health.critical .player-health__segment.on {
+  background: #a8403f;
+}
+
+/* ------------------------------------------------------------------
+   The equipped item, just right of the health bar: its icon and its numbers,
+   in muted light grays. Only the item in hand; nothing else is listed.
+   ------------------------------------------------------------------ */
+.equipped {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #c9cfd4;
+}
+
+.equipped.is-empty {
+  visibility: hidden;
+}
+
+.equipped.is-spent {
+  opacity: 0.5;
+}
+
+.hud-icon {
+  display: block;
+  flex: none;
+  width: clamp(56px, 5vw, 76px);
+  height: clamp(56px, 5vw, 76px);
+  overflow: visible;
+  fill: none;
+  stroke: #b9c0c6;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+.equipped__count {
+  display: flex;
+  align-items: baseline;
+  white-space: pre;
+  font-size: clamp(32px, 2.9vw, 42px);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.equipped__have {
+  color: #e6e9ec;
+}
+
+.equipped__max {
+  color: #8d959c;
+  font-size: 0.8em;
+}
+
+/* ------------------------------------------------------------------
+   The corner minimap: a round window on the M-key plan, turned to your
+   heading. Circular clipping only: no rim, ring, glow or other frame.
+   ------------------------------------------------------------------ */
+.minimap {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: clamp(194px, 18.5vw, 264px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(14, 16, 19, 0.8);
+  pointer-events: none;
+  user-select: none;
+  z-index: 4;
+  transition: opacity 140ms ease-out;
+}
+
+.minimap.hidden {
+  opacity: 0;
+}
+
+.minimap > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-health__segment {
+    transition: none;
   }
 }

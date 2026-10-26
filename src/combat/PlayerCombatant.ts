@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { AttackDefinition, HitboxHand } from "./AttackDefinitions";
 import {
   Health,
+  MAX_HEALTH,
   type Combatant,
   type HitInfo,
   type Hurtbox,
@@ -20,7 +21,7 @@ import type { CapsuleShape } from "./Shapes";
 export class PlayerCombatant implements Combatant {
   public readonly id = "player";
   public readonly name = "Player";
-  public readonly health = new Health(100);
+  public readonly health = new Health(MAX_HEALTH);
 
   private readonly rig: CharacterRig;
   private readonly getYaw: () => number;

@@ -7,11 +7,14 @@ import type {
 } from "./AttackDefinitions";
 import type { CapsuleShape } from "./Shapes";
 
+/** Every player starts a match with this much health, and never has more. */
+export const MAX_HEALTH = 100;
+
 export class Health {
   public readonly max: number;
   public current: number;
 
-  constructor(max: number) {
+  constructor(max: number = MAX_HEALTH) {
     this.max = max;
     this.current = max;
   }
@@ -20,11 +23,13 @@ export class Health {
     return this.current <= 0;
   }
 
-  /** Returns the damage actually dealt. */
+  /** Returns the damage actually dealt (never more than is left; never negative). */
   public damage(amount: number): number {
-    const dealt = Math.min(Math.max(amount, 0), this.current);
+    const dealt = Number.isFinite(amount)
+      ? Math.min(Math.max(amount, 0), Math.max(this.current, 0))
+      : 0;
 
-    this.current -= dealt;
+    this.current = Math.min(Math.max(this.current - dealt, 0), this.max);
 
     return dealt;
   }

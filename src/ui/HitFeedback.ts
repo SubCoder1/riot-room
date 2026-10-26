@@ -6,26 +6,21 @@ import type { CombatEvent, CombatEventBus } from "../combat/CombatEvents";
 import { createCapsule } from "../combat/Shapes";
 
 /**
- * A health bar above every nearby enemy's head, and damage numbers that pop up
- * beside an enemy you hit and float to its bar.
+ * Hit feedback over an enemy: damage numbers that pop up beside an enemy you
+ * hit and float up to its head, and a "BLOCKED" tag when your hit is blocked.
  *
- * The bar is a plain solid red rectangle, left aligned: as health drops it
- * shortens from the right. It is anchored to the head in the 3D world, always
- * faces the camera and is the same size on screen at any distance. It simply
- * isn't shown beyond MAX_DISTANCE, when something solid is in the way, when the
- * enemy is behind the camera, or when the enemy is dead.
+ * There is deliberately no health bar, number or colour over anyone's head: a
+ * player's health is shown only to that player, in their own HUD. The numbers
+ * show the damage a hit did, never what is left.
  *
- * It only *reads* combat events and combatant health (re-read every frame), so
- * the UI is never the source of truth. Nothing here changes damage, hit
- * detection or health.
+ * It only *reads* combat events and the combatants' poses, so the UI is never
+ * the source of truth. Nothing here changes damage, hit detection or health.
  */
 
-/** Metres between the top of the head and the bar. */
+/** Metres between the top of the head and the tag. */
 const ABOVE_HEAD = 0.28;
-/** Bars are shown only within this distance (metres) of the camera. */
+/** The tag is shown only within this distance (metres) of the camera. */
 export const MAX_DISTANCE = 16;
-/** Width of a full bar in pixels (the same at every distance). */
-export const BAR_WIDTH = 160;
 const BLOCK_TAG_SECONDS = 0.7;
 
 /** Damage numbers. */
@@ -42,22 +37,19 @@ export function hitKindOf(attackId: DamageSourceId): HitKind {
   return "light";
 }
 
-interface Bar {
+interface Anchor {
   id: string;
   combatant: Combatant;
-  element: HTMLElement;
-  fill: HTMLElement;
   tag: HTMLElement;
   tagLeft: number;
   // Last values written to the DOM, so unchanged frames cost nothing.
   shown: boolean;
   lastTransform: string;
-  lastWidth: number;
 }
 
 interface FloatingNumber {
   element: HTMLElement;
-  bar: Bar;
+  anchor: Anchor;
   age: number;
   /** World offsets from the enemy's head: where it starts and where it ends. */
   start: THREE.Vector3;
@@ -96,13 +88,13 @@ export function headTopOf(combatant: Combatant, out: THREE.Vector3): boolean {
 
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
-export class WorldHealthBars {
+export class HitFeedback {
   /** Optional: true when nothing solid lies between the two points. */
   public lineOfSight:
     ((from: THREE.Vector3, to: THREE.Vector3) => boolean) | null = null;
 
   private readonly layer: HTMLElement;
-  private readonly bars = new Map<string, Bar>();
+  private readonly anchors = new Map<string, Anchor>();
   private readonly active: FloatingNumber[] = [];
   private readonly spare: FloatingNumber[] = [];
   private readonly getCombatants: () => readonly Combatant[];
@@ -123,16 +115,16 @@ export class WorldHealthBars {
     this.random = random;
 
     this.layer = document.createElement("div");
-    this.layer.className = "enemy-hp-layer";
+    this.layer.className = "hit-feedback-layer";
     this.layer.setAttribute("aria-hidden", "true");
     parent.appendChild(this.layer);
 
     this.unsubscribe = events.subscribe((event) => this.onEvent(event));
   }
 
-  /** The bar element above an enemy (for tests and tooling). */
-  public barElement(id: string): HTMLElement | undefined {
-    return this.bars.get(id)?.element;
+  /** The "BLOCKED" tag element over an enemy (for tests and tooling). */
+  public tagElement(id: string): HTMLElement | undefined {
+    return this.anchors.get(id)?.tag;
   }
 
   /** How many damage numbers are currently floating. */
@@ -156,17 +148,17 @@ export class WorldHealthBars {
 
       seen.add(combatant.id);
 
-      const bar = this.barFor(combatant);
+      const anchor = this.anchorFor(combatant);
 
-      bar.tagLeft = Math.max(0, bar.tagLeft - dt);
-      this.place(bar, camera, width, height);
+      anchor.tagLeft = Math.max(0, anchor.tagLeft - dt);
+      this.place(anchor, camera, width, height);
     }
 
-    // An enemy that was removed takes its bar (and numbers) with it.
-    for (const [id, bar] of this.bars) {
+    // An enemy that was removed takes its tag (and numbers) with it.
+    for (const [id, anchor] of this.anchors) {
       if (!seen.has(id)) {
-        bar.element.remove();
-        this.bars.delete(id);
+        anchor.tag.remove();
+        this.anchors.delete(id);
       }
     }
 
@@ -175,7 +167,7 @@ export class WorldHealthBars {
 
       number.age += dt;
 
-      if (number.age >= NUMBER_SECONDS || !this.bars.has(number.bar.id)) {
+      if (number.age >= NUMBER_SECONDS || !this.anchors.has(number.anchor.id)) {
         this.recycle(k);
         continue;
       }
@@ -188,18 +180,18 @@ export class WorldHealthBars {
   public dispose(): void {
     this.unsubscribe();
     this.layer.remove();
-    this.bars.clear();
+    this.anchors.clear();
     this.active.length = 0;
     this.spare.length = 0;
   }
 
   // ----------------------------------------------------------
-  // Bars
+  // Anchors (one per enemy: where its numbers and its tag are placed)
   // ----------------------------------------------------------
 
-  /** The bar for an enemy by id, made on demand (a hit can come before the first frame). */
-  private barById(id: string): Bar | undefined {
-    const existing = this.bars.get(id);
+  /** The anchor for an enemy by id, made on demand (a hit can come before the first frame). */
+  private anchorById(id: string): Anchor | undefined {
+    const existing = this.anchors.get(id);
 
     if (existing) {
       return existing;
@@ -208,66 +200,57 @@ export class WorldHealthBars {
     const combatant = this.getCombatants().find((c) => c.id === id);
 
     return combatant && combatant.id !== this.playerId
-      ? this.barFor(combatant)
+      ? this.anchorFor(combatant)
       : undefined;
   }
 
-  private barFor(combatant: Combatant): Bar {
-    let bar = this.bars.get(combatant.id);
+  private anchorFor(combatant: Combatant): Anchor {
+    let anchor = this.anchors.get(combatant.id);
 
-    if (bar) {
-      return bar;
+    if (anchor) {
+      return anchor;
     }
 
-    const element = document.createElement("div");
-    const fill = document.createElement("div");
     const tag = document.createElement("div");
 
-    element.className = "enemy-hp";
-    fill.className = "enemy-hp__fill";
-    tag.className = "enemy-hp__tag";
-    element.append(fill, tag);
-    element.style.visibility = "hidden";
-    this.layer.appendChild(element);
+    tag.className = "hit-tag";
+    tag.style.visibility = "hidden";
+    this.layer.appendChild(tag);
 
-    bar = {
+    anchor = {
       id: combatant.id,
       combatant,
-      element,
-      fill,
       tag,
       tagLeft: 0,
       shown: false,
       lastTransform: "",
-      lastWidth: -1,
     };
-    this.bars.set(combatant.id, bar);
+    this.anchors.set(combatant.id, anchor);
 
-    return bar;
+    return anchor;
   }
 
-  /** Projects the bar above the head and writes only what changed. */
+  /** Projects the "BLOCKED" tag above the head, only while it is up. */
   private place(
-    bar: Bar,
+    anchor: Anchor,
     camera: THREE.Camera,
     width: number,
     height: number,
   ): void {
-    const health = bar.combatant.health;
-    const dead = health.current <= 0;
-
-    let visible = !dead && headTopOf(bar.combatant, tmpHead);
+    let visible =
+      anchor.tagLeft > 0 &&
+      anchor.combatant.health.current > 0 &&
+      headTopOf(anchor.combatant, tmpHead);
 
     if (visible) {
       tmpPoint.copy(tmpHead);
       tmpPoint.y += ABOVE_HEAD;
 
-      // Only enemies within range show a bar.
       if (tmpPoint.distanceTo(tmpCamera) > MAX_DISTANCE) {
         visible = false;
       }
 
-      // Something solid between the camera and the bar hides it.
+      // Something solid between the camera and the tag hides it.
       if (
         visible &&
         this.lineOfSight &&
@@ -288,9 +271,10 @@ export class WorldHealthBars {
       }
     }
 
-    if (visible !== bar.shown) {
-      bar.shown = visible;
-      bar.element.style.visibility = visible ? "visible" : "hidden";
+    if (visible !== anchor.shown) {
+      anchor.shown = visible;
+      anchor.tag.style.visibility = visible ? "visible" : "hidden";
+      anchor.tag.textContent = visible ? "BLOCKED" : "";
     }
 
     if (!visible) {
@@ -301,22 +285,10 @@ export class WorldHealthBars {
     const y = Math.round((-tmpPoint.y * 0.5 + 0.5) * height);
     const transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
 
-    if (transform !== bar.lastTransform) {
-      bar.lastTransform = transform;
-      bar.element.style.transform = transform;
+    if (transform !== anchor.lastTransform) {
+      anchor.lastTransform = transform;
+      anchor.tag.style.transform = transform;
     }
-
-    // Left aligned: the bar shortens from the right as health drops.
-    const fraction = Math.min(1, Math.max(0, health.current / health.max));
-    const fillWidth = Math.round(fraction * BAR_WIDTH);
-
-    if (fillWidth !== bar.lastWidth) {
-      bar.lastWidth = fillWidth;
-      bar.fill.style.width = `${fillWidth}px`;
-    }
-
-    bar.element.dataset.hp = String(Math.ceil(health.current));
-    bar.tag.textContent = bar.tagLeft > 0 ? "BLOCKED" : "";
   }
 
   // ----------------------------------------------------------
@@ -325,11 +297,11 @@ export class WorldHealthBars {
 
   private onEvent(event: CombatEvent): void {
     if (event.type === "hit") {
-      const bar = this.barById(event.targetId);
+      const anchor = this.anchorById(event.targetId);
 
-      if (bar && event.attackerId === this.playerId && event.damage > 0) {
+      if (anchor && event.attackerId === this.playerId && event.damage > 0) {
         this.spawnNumber(
-          bar,
+          anchor,
           event.damage,
           event.attackId,
           event.healthLeft <= 0,
@@ -340,10 +312,10 @@ export class WorldHealthBars {
       // A guarded blast still hurts, but the guard is shown like any block.
       (event.type === "guard-reduced" && event.attackId === "grenade-blast")
     ) {
-      const bar = this.barById(event.targetId);
+      const anchor = this.anchorById(event.targetId);
 
-      if (bar && event.attackerId === this.playerId) {
-        bar.tagLeft = BLOCK_TAG_SECONDS;
+      if (anchor && event.attackerId === this.playerId) {
+        anchor.tagLeft = BLOCK_TAG_SECONDS;
       }
     }
   }
@@ -353,7 +325,7 @@ export class WorldHealthBars {
   // ----------------------------------------------------------
 
   private spawnNumber(
-    bar: Bar,
+    anchor: Anchor,
     damage: number,
     attackId: DamageSourceId,
     killed: boolean,
@@ -385,7 +357,7 @@ export class WorldHealthBars {
 
     const spread = 0.45 + this.random() * 0.35;
 
-    number.bar = bar;
+    number.anchor = anchor;
     number.age = 0;
     number.active = true;
     number.start
@@ -414,11 +386,11 @@ export class WorldHealthBars {
   private createNumber(): FloatingNumber {
     const element = document.createElement("div");
 
-    element.className = "enemy-hp__number";
+    element.className = "hit-number";
 
     return {
       element,
-      bar: undefined as unknown as Bar,
+      anchor: undefined as unknown as Anchor,
       age: 0,
       start: new THREE.Vector3(),
       end: new THREE.Vector3(),
@@ -441,14 +413,14 @@ export class WorldHealthBars {
     width: number,
     height: number,
   ): void {
-    if (!headTopOf(number.bar.combatant, tmpHead)) {
+    if (!headTopOf(number.anchor.combatant, tmpHead)) {
       return;
     }
 
     const t = Math.min(1, number.age / NUMBER_SECONDS);
     const rise = easeOutCubic(t);
 
-    // Float from the side toward the head/bar, drifting sideways on the way.
+    // Float from the side toward the head, drifting sideways on the way.
     tmpPoint
       .copy(number.start)
       .lerp(number.end, rise)
