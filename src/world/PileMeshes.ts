@@ -1,5 +1,9 @@
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import {
+  mergeGeometries,
+  mergeVertices,
+  toCreasedNormals,
+} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import type {
   ArenaLayout,
@@ -12,6 +16,8 @@ import {
   WEAR_MASONRY,
   WEAR_METAL,
   WEAR_PLASTIC,
+  WEAR_RUBBLE,
+  WEAR_BRICK,
   WEAR_WOOD,
   weather,
 } from "./materials/SurfaceWear";
@@ -188,6 +194,192 @@ function chunkGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
+/** A cheap repeatable 0..1 number from a point. */
+function noise3(x: number, y: number, z: number, salt: number): number {
+  const n =
+    Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + salt * 19.19) * 43758.5453;
+
+  return n - Math.floor(n);
+}
+
+/** Smooth value noise in 0..1 (so a rock's surface has hills and not static). */
+function smooth3(x: number, y: number, z: number, salt: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fy = y - iy;
+  const fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx);
+  const v = fy * fy * (3 - 2 * fy);
+  const w = fz * fz * (3 - 2 * fz);
+  const at = (a: number, b: number, c: number): number =>
+    noise3(ix + a, iy + b, iz + c, salt);
+  const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+  return lerp(
+    lerp(
+      lerp(at(0, 0, 0), at(1, 0, 0), u),
+      lerp(at(0, 1, 0), at(1, 1, 0), u),
+      v,
+    ),
+    lerp(
+      lerp(at(0, 0, 1), at(1, 0, 1), u),
+      lerp(at(0, 1, 1), at(1, 1, 1), u),
+      v,
+    ),
+    w,
+  );
+}
+
+/**
+ * A broken piece of concrete or stone: a rounded lump cut flat by a few
+ * planes (the faces where it broke), its corners and faces roughened by two
+ * scales of noise, smooth-shaded so the lumps catch light as lumps. Three
+ * variants (different cuts and hills) are mixed through every heap.
+ */
+function rockGeometry(variant: number): THREE.BufferGeometry {
+  const raw = new THREE.IcosahedronGeometry(0.5, 3);
+
+  raw.deleteAttribute("normal");
+  raw.deleteAttribute("uv");
+
+  const geometry = mergeVertices(raw, 1e-4);
+  const position = geometry.getAttribute("position");
+  const v = new THREE.Vector3();
+  // The fracture planes: a direction each and how deep it cuts.
+  const planes = Array.from({ length: 8 + variant * 2 }, (_, k) => ({
+    n: new THREE.Vector3(
+      noise3(k, variant, 1, 3) - 0.5,
+      noise3(k, variant, 2, 3) - 0.5,
+      noise3(k, variant, 3, 3) - 0.5,
+    ).normalize(),
+    d: 0.2 + 0.16 * noise3(k, variant, 4, 3),
+  }));
+
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i);
+
+    // Hills first, then the cuts (so the broken faces stay flat).
+    const hills =
+      1 +
+      0.16 * (smooth3(v.x * 3.1, v.y * 3.1, v.z * 3.1, variant) - 0.5) +
+      0.1 * (smooth3(v.x * 9, v.y * 9, v.z * 9, variant + 5) - 0.5);
+
+    v.multiplyScalar(hills);
+
+    for (const plane of planes) {
+      const over = v.dot(plane.n) - plane.d;
+
+      if (over > 0) {
+        v.addScaledVector(plane.n, -over);
+      }
+    }
+
+    // A little grit on the cut faces.
+    v.multiplyScalar(
+      1 + 0.025 * (noise3(v.x * 40, v.y * 40, v.z * 40, variant) - 0.5),
+    );
+    position.setXYZ(i, v.x, v.y, v.z);
+  }
+
+  // Crisp where the lump was cut, soft where it is only rounded.
+  const creased = toCreasedNormals(geometry, 0.55);
+
+  geometry.dispose();
+
+  return creased;
+}
+
+/**
+ * A slab broken from a floor or wall: a thick plate whose corners are cut off
+ * on the slant (never a rectangle), its rim bitten away and its faces uneven.
+ * Three variants (different cuts) are mixed through every heap.
+ */
+function slabGeometry(variant: number): THREE.BufferGeometry {
+  const geometry = new THREE.BoxGeometry(1, 1, 1, 7, 2, 7);
+
+  // (Like the rocks it is merged with: no texture coordinates.)
+  geometry.deleteAttribute("uv");
+
+  const position = geometry.getAttribute("position");
+  const v = new THREE.Vector3();
+  // Corner cuts: a slanted plane across each corner, each cut its own depth.
+  const corners = [
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ].map(([sx, sz], k) => ({
+    n: new THREE.Vector3(
+      sx,
+      (noise3(k, variant, 5, 3) - 0.5) * 0.5,
+      sz,
+    ).normalize(),
+    d: 0.52 + 0.3 * noise3(k, variant, 6, 3),
+  }));
+  // Two long fractures across the plate.
+  const fractures = [0, 1].map((k) => ({
+    n: new THREE.Vector3(
+      noise3(k, variant, 7, 3) - 0.5,
+      (noise3(k, variant, 8, 3) - 0.5) * 0.4,
+      noise3(k, variant, 9, 3) - 0.5,
+    ).normalize(),
+    d: 0.62 + 0.18 * noise3(k, variant, 10, 3),
+  }));
+
+  // Two more shapes have a deep diagonal fracture across them, a whole wedge
+  // broken off: a slab snapped in two, not a block with its corners clipped.
+  if (variant >= 3) {
+    const turn = noise3(variant, 11, 3, 3) * Math.PI;
+
+    fractures.push({
+      n: new THREE.Vector3(
+        Math.cos(turn),
+        (variant - 3.5) * 0.35,
+        Math.sin(turn),
+      ).normalize(),
+      d: 0.2 + 0.1 * noise3(variant, 12, 3, 3),
+    });
+  }
+
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i);
+
+    const edge = Math.max(Math.abs(v.x), Math.abs(v.z)) * 2;
+    // The rim is chipped: the further out, the more it is bitten away.
+    const bite =
+      edge > 0.6
+        ? (edge - 0.6) *
+          0.9 *
+          smooth3(v.x * 7, v.z * 7, v.y * 3, 9 + variant) *
+          2
+        : 0;
+
+    v.x -= Math.sign(v.x) * bite * 0.4;
+    v.z -= Math.sign(v.z) * bite * 0.4;
+    v.y -= Math.sign(v.y) * bite * 0.3;
+    v.y += 0.07 * (smooth3(v.x * 5, v.z * 5, variant, 4) - 0.5);
+
+    for (const plane of [...corners, ...fractures]) {
+      const over = v.dot(plane.n) - plane.d;
+
+      if (over > 0) {
+        v.addScaledVector(plane.n, -over);
+      }
+    }
+
+    position.setXYZ(i, v.x, v.y, v.z);
+  }
+
+  // (The same kind of normals as the rocks it is merged with: unindexed.)
+  const creased = toCreasedNormals(geometry, 0.5);
+
+  geometry.dispose();
+
+  return creased;
+}
+
 /** Brown, muted and not too dark: board and plywood, not painted steel. */
 function looksLikeWood(color: THREE.Color): boolean {
   const hsl = { h: 0, s: 0, l: 0 };
@@ -208,7 +400,11 @@ function wearOf(kind: PileKind, element: PileElement): number {
   const color = new THREE.Color(element.color);
 
   switch (element.shape) {
+    case "rock":
+    case "slab":
+      return WEAR_RUBBLE;
     case "brick":
+      return WEAR_BRICK;
     case "bag":
     case "chunk":
       return WEAR_MASONRY;
@@ -302,6 +498,64 @@ function placed(
         shade.lerp(BAG_DUST, 0.32);
       }
     }
+    if (element.shape === "rock" || element.shape === "slab") {
+      // Old dirty faces and fresh pale fractures, patches of dirt, a stain of
+      // damp green or rust here and there: never one even tone.
+      const px = position.getX(i);
+      const py = position.getY(i);
+      const pz = position.getZ(i);
+      const seed = element.x * 3.7 + element.z * 5.3;
+      const mottle = smooth3(px * 4 + seed, py * 4, pz * 4, 11);
+      const fresh = smooth3(px * 2.2, py * 2.2 + seed, pz * 2.2, 12);
+
+      shade.multiplyScalar(0.6 + 0.45 * mottle);
+      // Grain: fine, uneven speckle across every face.
+      shade.multiplyScalar(0.84 + 0.3 * noise3(px * 23, py * 23, pz * 23, 14));
+
+      if (element.shape === "slab") {
+        // The broad faces are the old wall, dirty and dark; the chipped rim
+        // and the cut edges are fresh, paler and rougher.
+        const rim = Math.max(Math.abs(py), Math.abs(pz)) > 0.4;
+
+        shade.multiplyScalar(rim ? 1.2 : 0.55);
+      }
+      // Fracture faces (lower, to the sides) lighter than the weathered top.
+      shade.lerp(
+        new THREE.Color(0x8d8c88),
+        Math.max(0, fresh - 0.6) * 0.7 * (py < 0.2 ? 1 : 0.3),
+      );
+
+      const stain = smooth3(px * 3, py * 3 + seed, pz * 3, 13);
+
+      if (stain > 0.72) {
+        shade.lerp(
+          noise3(seed, 1, 2, 3) < 0.5
+            ? new THREE.Color(0x3d4a38)
+            : new THREE.Color(0x5a3a28),
+          (stain - 0.72) * 2.2,
+        );
+      }
+
+      // Dust in the low places and under the heap.
+      if (py < -0.15) {
+        shade.lerp(new THREE.Color(0x4a4742), 0.35);
+      }
+    } else if (element.shape === "brick") {
+      // A brick is never one flat colour: soot, mortar and chips.
+      const mottle = noise3(
+        position.getX(i) * 9,
+        position.getY(i) * 9 + element.x,
+        position.getZ(i) * 9 + element.z,
+        2,
+      );
+
+      shade.multiplyScalar(0.78 + 0.4 * mottle);
+
+      if (position.getY(i) > 0.4 && mottle > 0.7) {
+        shade.lerp(new THREE.Color(0x8c887e), 0.4);
+      }
+    }
+
     colors[i * 3] = shade.r;
     colors[i * 3 + 1] = shade.g;
     colors[i * 3 + 2] = shade.b;
@@ -344,6 +598,64 @@ function placed(
   return geometry;
 }
 
+const extentSources = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * How far below and above its centre a piece's drawn mesh really reaches (not
+ * its box): the lowest and highest vertex of the actual shape after its scale
+ * and its turn. A rounded rock or a chipped slab is smaller than the box round
+ * it, so placing by the box leaves it hanging over the floor; placing by this
+ * puts what is drawn on the surface. Null for shapes that fill their box.
+ */
+export function meshExtent(
+  element: PileElement,
+): { low: number; high: number } | null {
+  const solid =
+    element.shape === "rock" ||
+    element.shape === "slab" ||
+    element.shape === "chunk";
+
+  if (!solid) {
+    return null;
+  }
+
+  const variant =
+    element.shape === "chunk"
+      ? "chunk"
+      : `${element.shape}${Math.floor(noise3(element.x, 0, element.z, 7) * (element.shape === "slab" ? 5 : 3))}`;
+  let geometry = extentSources.get(variant);
+
+  if (!geometry) {
+    geometry =
+      element.shape === "chunk"
+        ? chunkGeometry()
+        : element.shape === "rock"
+          ? rockGeometry(Number(variant.slice(4)))
+          : slabGeometry(Number(variant.slice(4)));
+    extentSources.set(variant, geometry);
+  }
+
+  const position = geometry.getAttribute("position");
+  const matrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(),
+    new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(element.rx, element.ry, element.rz),
+    ),
+    new THREE.Vector3(element.sx, element.sy, element.sz),
+  );
+  const v = new THREE.Vector3();
+  let low = Infinity;
+  let high = -Infinity;
+
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i).applyMatrix4(matrix);
+    low = Math.min(low, v.y);
+    high = Math.max(high, v.y);
+  }
+
+  return { low, high };
+}
+
 /** The pieces of every pile, merged by kind of piece. */
 export function createPiles(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
@@ -352,9 +664,22 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
     brick: brickGeometry(),
     plank: plankGeometry(),
     chunk: chunkGeometry(),
+    rock0: rockGeometry(0),
+    rock1: rockGeometry(1),
+    rock2: rockGeometry(2),
+    slab0: slabGeometry(0),
+    slab1: slabGeometry(1),
+    slab2: slabGeometry(2),
+    slab3: slabGeometry(3),
+    slab4: slabGeometry(4),
     pipe: pipeGeometry(),
     cable: cableGeometry(),
   };
+  /** Which source an element is drawn from (rocks come in three cuts). */
+  const sourceOf = (element: PileElement): keyof typeof sources =>
+    element.shape === "rock" || element.shape === "slab"
+      ? (`${element.shape}${Math.floor(noise3(element.x, 0, element.z, 7) * (element.shape === "slab" ? 5 : 3))}` as keyof typeof sources)
+      : element.shape;
 
   group.name = "BuildingMaterial";
 
@@ -364,21 +689,28 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
     into: THREE.Object3D,
     label: string,
   ): void => {
-    const parts: Record<keyof typeof sources, THREE.BufferGeometry[]> = {
+    // (The three cuts of rock and the slabs are one mesh: same material, same
+    // attributes, so a heap of broken concrete costs one draw call.)
+    const parts: Record<string, THREE.BufferGeometry[]> = {
       bag: [],
       brick: [],
       plank: [],
       chunk: [],
+      rock: [],
       pipe: [],
       cable: [],
     };
 
     for (const pile of piles) {
       for (const element of pile.elements) {
-        parts[element.shape].push(
+        const key = sourceOf(element);
+
+        parts[
+          key.startsWith("rock") || key.startsWith("slab") ? "rock" : key
+        ].push(
           placed(
             pile.kind,
-            sources[element.shape],
+            sources[key],
             element,
             pile.baseY,
             pile.x,
@@ -389,7 +721,7 @@ export function createPiles(layout: ArenaLayout): THREE.Group {
       }
     }
 
-    for (const shape of Object.keys(parts) as Array<keyof typeof sources>) {
+    for (const shape of Object.keys(parts)) {
       const list = parts[shape];
 
       if (list.length === 0) {

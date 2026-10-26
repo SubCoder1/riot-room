@@ -16,19 +16,62 @@ const BRICK = [0x6f4638, 0x7a4e3e, 0x5d3a30];
 const TIMBER = [0x6a5035, 0x7a5c3c, 0x4e3a28];
 const SHEET = [0x4f5a66, 0x5d6672, 0x6a4a38];
 const PIPE = [0x4a5260, 0x5f6772];
+const ROCK = [0x6a6d70, 0x7b7d7f, 0x585b5e, 0x8a8780, 0x4c4f53];
 
 /** [surface height, clusters]. */
 const LEVELS: ReadonlyArray<readonly [number, number]> = [
-  [0, 36],
-  [4, 26],
-  [8.1, 12],
-  [10.8, 12],
+  [0, 64],
+  [4, 46],
+  [8.1, 30],
+  [10.8, 26],
 ];
+
+/** A few small rocks and a spray of pebbles round them: gravel kicked loose. */
+function rocks(p: Pieces, random: () => number, x: number, z: number): void {
+  const pick = <T>(list: readonly T[]): T =>
+    list[Math.floor(random() * list.length)];
+
+  p.chunk(x, 0, z, 0.1 + random() * 0.14, pick(ROCK), random() * 5);
+
+  if (random() < 0.5) {
+    p.chunk(
+      x + (random() - 0.5) * 0.35,
+      0,
+      z + (random() - 0.5) * 0.35,
+      0.07 + random() * 0.07,
+      pick(ROCK),
+      random() * 5,
+    );
+  }
+
+  const pebbles = 3 + Math.floor(random() * 5);
+
+  for (let i = 0; i < pebbles; i++) {
+    const a = random() * Math.PI * 2;
+    const d = 0.1 + random() * 0.55;
+
+    p.chunk(
+      x + Math.cos(a) * d,
+      0,
+      z + Math.sin(a) * d,
+      0.025 + random() * 0.045,
+      pick(ROCK),
+      random() * 5,
+    );
+  }
+}
 
 function scrap(p: Pieces, random: () => number, x: number, z: number): void {
   const pick = <T>(list: readonly T[]): T =>
     list[Math.floor(random() * list.length)];
   const kind = random();
+
+  // Small rocks and pebbles are the commonest thing on a building site.
+  if (random() < 0.4) {
+    rocks(p, random, x, z);
+
+    return;
+  }
 
   if (kind < 0.3) {
     p.chunk(x, 0, z, 0.1 + random() * 0.16, pick(CONCRETE), random() * 3);

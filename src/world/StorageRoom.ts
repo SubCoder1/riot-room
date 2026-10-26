@@ -1021,22 +1021,59 @@ export function furnishYard(map: MapBuilder, floorY: number): void {
     map.createFitting("fittings-yard-barricade", F, p.elements, boxes);
   }
 
-  // ------------------------------------- air compressor, south wall (west)
+  // ------------------------------- mini scissor lift, south wall (west)
   {
     const p = new Pieces();
+    const cx = -15.0;
+    const cz = 23.2;
 
-    // Base frame and motor on the floor, two upright receivers behind.
-    p.box(-15.0, 0.12, 23.2, 1.5, 0.12, 0.9, CHARCOAL);
-    p.box(-15.0, 0.24, 23.2, 1.3, 0.5, 0.6, STEEL);
-    p.box(-15.0, 0.74, 23.2, 1.2, 0.08, 0.5, CHARCOAL);
-    p.post(-15.45, 0.24, 23.2, 1.5, 0.27, 0x4a5640);
-    p.post(-14.55, 0.24, 23.2, 1.5, 0.27, 0x4a5640);
-    p.post(-15.45, 1.74, 23.2, 0.04, 0.2, STEEL_BARE);
-    p.post(-14.55, 1.74, 23.2, 0.04, 0.2, STEEL_BARE);
-    p.post(-15.0, 0.8, 23.2, 0.5, 0.05, ACCENT);
-    p.chunk(-15.0, 1.4, 22.85, 0.07, STEEL_BARE);
-    map.createFitting("fittings-yard-compressor", F, p.elements, [
-      { minX: -15.8, maxX: -14.2, minZ: 22.75, maxZ: 23.65, top: 1.8 },
+    // A low wheeled base with a castor at each corner.
+    p.box(cx, 0.07, cz, 1.5, 0.08, 0.82, CHARCOAL);
+    p.box(cx, 0.15, cz - 0.38, 1.4, 0.05, 0.05, GUNMETAL);
+    p.box(cx, 0.15, cz + 0.38, 1.4, 0.05, 0.05, GUNMETAL);
+
+    for (const dx of [-0.66, 0.66]) {
+      for (const dz of [-0.36, 0.36]) {
+        p.bar(cx + dx, 0.035, cz + dz, 0.07, 0.07, BLACK, 0, 0, Math.PI / 2);
+      }
+    }
+
+    // Two pairs of crossed scissor arms, a pivot pin at each crossing.
+    for (const dz of [-0.33, 0.33]) {
+      p.bar(cx, 0.4, cz + dz, 0.98, 0.055, STEEL_LIGHT, 0, 0.52);
+      p.bar(cx, 0.4, cz + dz, 0.98, 0.055, STEEL_LIGHT, 0, -0.52);
+      p.bar(cx, 0.4, cz + dz, 0.09, 0.05, STEEL_BARE, 0, 0, Math.PI / 2);
+    }
+
+    // The cross tube between the pairs, and the hydraulic ram (one end dark
+    // with oil) angled up from the base to the arms.
+    p.bar(cx, 0.4, cz, 0.62, 0.045, CHARCOAL, Math.PI / 2);
+    p.bar(cx + 0.18, 0.28, cz, 0.5, 0.075, ACCENT, 0, 0.62);
+    p.bar(cx + 0.3, 0.38, cz, 0.22, 0.04, STEEL_BARE, 0, 0.62);
+
+    // The deck, raised and a little off level (one side has sagged).
+    p.box(cx, 0.66, cz, 1.5, 0.05, 0.86, STEEL_BARE, 0, 0.035);
+    p.box(cx, 0.69, cz - 0.4, 1.46, 0.05, 0.03, ACCENT, 0, 0.035);
+    p.box(cx, 0.69, cz + 0.4, 1.46, 0.05, 0.03, ACCENT, 0, 0.035);
+
+    // A push handle at one end.
+    p.post(cx + 0.7, 0.2, cz - 0.38, 0.62, 0.03, GUNMETAL);
+    p.post(cx + 0.7, 0.2, cz + 0.38, 0.62, 0.03, GUNMETAL);
+    p.bar(cx + 0.7, 0.84, cz, 0.78, 0.035, GUNMETAL, Math.PI / 2);
+
+    // A tilted stack of cartons left on the deck.
+    p.box(cx - 0.25, 0.72, cz, 0.62, 0.34, 0.5, CARDBOARD, 0.1, 0.035);
+    p.box(cx - 0.3, 1.06, cz + 0.03, 0.46, 0.26, 0.4, CARDBOARD_B, -0.2, 0.035);
+    p.box(cx - 0.25, 0.9, cz - 0.255, 0.5, 0.03, 0.01, TAPE, 0.1, 0.035);
+
+    // A snapped-off arm and a bent pin on the floor beside it, and the cut
+    // hydraulic hose.
+    p.bar(cx - 0.35, 0.03, cz + 0.62, 0.8, 0.055, STEEL_LIGHT, 0.5);
+    p.bar(cx + 0.25, 0.02, cz + 0.58, 0.14, 0.035, STEEL_BARE, -0.4);
+    p.cable(cx + 0.1, 0.03, cz + 0.52, 0.9, 0.03, BLACK, 0.25);
+    p.chunk(cx - 0.7, 0, cz + 0.72, 0.07, STEEL_BARE);
+    map.createFitting("fittings-yard-lifter", F, p.elements, [
+      { minX: -15.8, maxX: -14.2, minZ: 22.75, maxZ: 23.65, top: 1.2 },
     ]);
   }
 

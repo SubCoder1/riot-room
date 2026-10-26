@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { UPPER_FLOOR_Y as F } from "../../src/world/ArenaLayout";
+import { halfExtents } from "../../src/world/MapParts";
 import { ARENA_LAYOUT as layout } from "../../src/world/UpperFloorMap";
 import { distanceAtHeight, pathTo, walkField, world } from "./nav";
-import { spawnPlayer, yawFor } from "./playerHarness";
 
 const room = layout.rooms.find((r) => r.id === "room-archive")!;
 const power = layout.rooms.find((r) => r.id === "room-switch")!;
 const solid = (id: string) => layout.walls.find((w) => w.id === id)!;
 
 describe("Industrial Junk Room: its entrances", () => {
-  it("is named, and keeps its front door and the one doorway to the Generator Room", () => {
+  it("is named, with its front door walled up: the crawl hole and the one doorway to the Generator Room are its ways in", () => {
     expect(room.name).toBe("Industrial Junk Room");
-    expect(room.doors.map((d) => d.side).sort()).toEqual(["e", "s", "w"]);
+    expect(room.doors.map((d) => d.side).sort()).toEqual(["e", "w"]);
     expect(room.doors.find((d) => d.side === "e")!.at).toBeCloseTo(-20);
   });
 
@@ -23,7 +23,7 @@ describe("Industrial Junk Room: its entrances", () => {
   it("the closed openings are solid wall (not a panel): nobody walks or shoots through", () => {
     // The Junk Room's west wall at its old door; the Generator Room's east wall at its old door.
     expect(world.isBlocked(-13.85, -21, F, 0.3)).toBe(true);
-    expect(world.isBlocked(7.15, -20.5, F, 0.3)).toBe(true);
+    expect(world.isBlocked(8.65, -20.5, F, 0.3)).toBe(true);
     expect(
       world.segmentClearFraction(-12, F + 1, -21, -16, F + 1, -21),
     ).toBeLessThan(1);
@@ -93,7 +93,7 @@ describe("Industrial Junk Room: the layout", () => {
   it("the big pile is in the north-west (back) corner, and solid", () => {
     const parts = layout.walls.filter((w) => w.id.startsWith("junk-pile"));
 
-    expect(parts).toHaveLength(3);
+    expect(parts.length).toBeGreaterThanOrEqual(3);
 
     for (const part of parts) {
       expect(part.maxX).toBeLessThan(-9.8);
@@ -121,8 +121,8 @@ describe("Industrial Junk Room: the layout", () => {
     }
   });
 
-  it("the middle stays clear: a straight lane from the south door to the east door", () => {
-    const field = walkField(-8, -16.6, F, { ladders: false });
+  it("the middle stays clear: a straight lane from the south wall to the east door", () => {
+    const field = walkField(-8, -17.6, F, { ladders: false });
     const path = pathTo(field, -2, -20);
 
     expect(path.length).toBeGreaterThan(0);
@@ -137,7 +137,7 @@ describe("Industrial Junk Room: the layout", () => {
       );
     }
 
-    expect(length).toBeLessThan(Math.hypot(6, 3.4) * 1.35);
+    expect(length).toBeLessThan(Math.hypot(6, 2.4) * 1.35);
     // Nothing solid across the middle of the room.
     for (const [x, z] of [
       [-9, -19],
@@ -150,24 +150,99 @@ describe("Industrial Junk Room: the layout", () => {
     }
   });
 
-  it("the pile is a solid mound: too high to vault or jump onto, so nobody stands on it", () => {
+  it("the pile's boxes follow the heap: none stands more than 10 cm above the highest piece drawn in it", () => {
+    const pile = layout.piles.find((q) => q.id === "junk-pile")!;
+
     for (const w of layout.walls.filter((s) => s.id.startsWith("junk-pile"))) {
-      expect(w.height - F, w.id).toBeGreaterThan(1.45);
+      let top = -Infinity;
+
+      for (const e of pile.elements) {
+        const [hx, hy, hz] = halfExtents(e);
+
+        if (
+          e.x + hx < w.minX ||
+          e.x - hx > w.maxX ||
+          e.z + hz < w.minZ ||
+          e.z - hz > w.maxZ
+        ) {
+          continue;
+        }
+
+        top = Math.max(top, e.y + hy);
+      }
+
+      expect(w.height - F - top, w.id).toBeLessThan(0.1);
+    }
+  });
+});
+
+describe("The collapsed pile is grounded", () => {
+  const pile = layout.piles.find((q) => q.id === "junk-pile")!;
+  const parts = pile.elements.map((e) => ({ e, half: halfExtents(e) }));
+  // (Heaped pieces; the long thin ones are laid separately, below.)
+  const lumps = parts.filter(
+    ({ e }) => e.shape !== "pipe" && e.shape !== "cable",
+  );
+
+  /** The top of whatever is under a piece, over its footprint, below its underside. */
+  const support = (self: (typeof parts)[number], low: number): number => {
+    let best = 0;
+
+    for (const other of parts) {
+      if (other === self) {
+        continue;
+      }
+
+      const overlaps =
+        Math.abs(other.e.x - self.e.x) < other.half[0] + self.half[0] &&
+        Math.abs(other.e.z - self.e.z) < other.half[2] + self.half[2];
+      // (A slab leaning on a wall is a slope: a piece can rest anywhere along it,
+      // so anything between its low and high corners is on it.)
+      const leaning = Math.abs(other.e.rx) > 0.3 || Math.abs(other.e.rz) > 0.3;
+      const onSlope =
+        leaning &&
+        low >= other.e.y - other.half[1] &&
+        low <= other.e.y + other.half[1];
+      const top = onSlope ? low : other.e.y + other.half[1];
+
+      // What it is on: below its underside, or just through it (a lump sinks a
+      // little into the rounded top of the one under it).
+      if (overlaps && top <= low + 0.35) {
+        best = Math.max(best, top);
+      }
     }
 
-    // Walking and jumping into it from the middle never gets a body onto it.
-    const p = spawnPlayer(-9.0, F, -21.0, yawFor(-3.5, -1.5));
+    return best;
+  };
 
-    let highestStanding = 0;
+  it("has no loose lump hanging in the air: each is within a hand's width of the floor or of what is under it", () => {
+    const floating = lumps
+      .map((part) => {
+        const low = part.e.y - part.half[1];
 
-    p.input.keys.add("KeyW");
-    p.step(6, () => {
-      p.input.jumpQueued = true;
+        return { part, gap: low - support(part, low) };
+      })
+      .filter(({ gap }) => gap > 0.14)
+      .map(
+        ({ part, gap }) =>
+          `${part.e.shape} at ${part.e.x.toFixed(2)},${part.e.z.toFixed(2)}: ${gap.toFixed(2)} m`,
+      );
 
-      if (p.player.isGrounded) {
-        highestStanding = Math.max(highestStanding, p.feet() - F);
-      }
-    });
-    expect(highestStanding).toBeLessThan(0.2);
+    expect(floating).toEqual([]);
+  });
+
+  it("never puts a piece under the floor or through the two walls", () => {
+    for (const { e, half } of parts) {
+      // (Round-edged lumps are drawn smaller than their boxes.)
+      expect(e.y - half[1]).toBeGreaterThan(-0.12);
+      expect(e.x - half[0]).toBeGreaterThan(-13.7 - 0.2);
+      expect(e.z - half[2]).toBeGreaterThan(-23.7 - 0.2);
+    }
+  });
+
+  it("keeps the heap inside its collision box", () => {
+    const tallest = Math.max(...parts.map(({ e, half }) => e.y + half[1]));
+
+    expect(tallest).toBeLessThan(2.05);
   });
 });

@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { PileElement } from "./ArenaLayout";
 import { Pieces, rng } from "./FittingPieces";
 import { halfExtents, type MapBuilder } from "./MapParts";
+import { meshExtent } from "./PileMeshes";
 import {
   BLACK,
   CHARCOAL,
@@ -394,6 +395,8 @@ function buildRack(
   bays: number,
   fill: number,
   deckLoss = 0.1,
+  /** 0 for a sound rack; up to 1 for one that has failed: bent and shortened uprights, loose beams and decks. */
+  wreck = 0,
 ): void {
   const bay = length / bays;
 
@@ -401,14 +404,20 @@ function buildRack(
     const x = -length / 2 + k * bay;
 
     for (const z of [-depth / 2, depth / 2]) {
+      // A failed rack: some uprights snapped short, the rest bowed.
+      const snapped = wreck > 0 && random() < 0.5 * wreck;
+
       f.box(
         x,
         0,
         z,
         0.07,
-        height,
+        snapped ? height * between(random, 0.4, 0.75) : height,
         0.06,
         shade(UPRIGHT, between(random, 0.8, 1.1)),
+        wreck * between(random, -0.05, 0.05),
+        0,
+        wreck * between(random, -0.12, 0.12) * (snapped ? 2 : 1),
       );
       f.box(x, 0, z, 0.16, 0.012, 0.16, DARK[0]);
     }
@@ -416,6 +425,11 @@ function buildRack(
 
   for (const y of levels) {
     for (const z of [-depth / 2, depth / 2]) {
+      // A beam torn out of its uprights is simply gone.
+      if (wreck > 0 && random() < 0.3 * wreck) {
+        continue;
+      }
+
       f.box(
         0,
         y,
@@ -424,6 +438,9 @@ function buildRack(
         0.09,
         0.05,
         shade(BEAM, between(random, 0.75, 1.05)),
+        0,
+        wreck * between(random, -0.06, 0.06),
+        wreck * between(random, -0.1, 0.1),
       );
     }
 
@@ -435,17 +452,23 @@ function buildRack(
         continue;
       }
 
+      // A failed rack's decks have come away: dropped on one side, askew.
+      const loose = wreck > 0 && random() < 0.85 * wreck;
+      const drop = loose
+        ? between(random, 0.2, 0.55) * (random() < 0.5 ? -1 : 1)
+        : 0;
+
       f.box(
         x,
-        y + 0.09,
-        0,
+        y + 0.09 - (loose ? between(random, 0, 0.06) : 0),
+        loose ? between(random, -0.18, 0.18) : 0,
         bay - 0.05,
         0.025,
         depth - 0.05,
         shade(DECK, between(random, 0.8, 1.2)),
-        0,
-        0,
-        roll > 0.85 ? between(random, 0.04, 0.09) : 0,
+        loose ? drop : roll > 0.85 ? between(random, 0.04, 0.09) : 0,
+        loose ? between(random, -0.3, 0.3) : 0,
+        loose ? between(random, -0.1, 0.1) : 0,
       );
 
       if (random() < fill) {
@@ -603,101 +626,420 @@ function heapHeight(heaps: readonly Heap[], x: number, z: number): number {
   return best;
 }
 
-/** One broken-concrete slab with rebar sticking out of it. */
-function slab(
-  p: Pieces,
-  random: () => number,
-  x: number,
-  y: number,
-  z: number,
-): void {
-  const w = between(random, 0.6, 1.1);
-  const d = between(random, 0.4, 0.7);
-  const c = pick(random, CONCRETE);
+/**
+ * Slabs standing on the floor with their top edge against the walls the pile
+ * is in the corner of: each is held by the wall and the floor, nothing else.
+ * They are set first and registered on the ground map, so the rest of the
+ * pile goes round and over them.
+ */
+function leanSlabs(p: Pieces, random: () => number, ground: Ground): void {
+  const lean = (
+    wall: "west" | "north",
+    along: number,
+    width: number,
+    length: number,
+  ): void => {
+    const t = between(random, 0.2, 0.3);
+    const a = between(random, 0.5, 0.75);
+    const rise = (width / 2) * Math.sin(a) + (t / 2) * Math.cos(a);
+    const out = (width / 2) * Math.cos(a) + (t / 2) * Math.sin(a) + 0.03;
+    const colour = pick(random, CONCRETE);
 
-  p.box(
-    x,
-    y,
-    z,
-    w,
-    between(random, 0.1, 0.16),
-    d,
-    c,
-    between(random, 0, 3),
-    between(random, -0.3, 0.3),
-    between(random, -0.35, 0.35),
-  );
+    const put = (e: PileElement): void => {
+      p.elements.push(e);
+      ground.occupy(e);
+    };
 
-  for (let k = 0; k < 3; k++) {
-    p.bar(
-      x + between(random, -w / 3, w / 3),
-      y + 0.12,
-      z + between(random, -d / 3, d / 3),
-      between(random, 0.5, 0.9),
-      0.02,
-      pick(random, RUSTY),
-      between(random, 0, 3),
-      between(random, -0.6, 0.6),
-      between(random, -0.5, 0.5),
-    );
-  }
+    if (wall === "west") {
+      // Its high end toward the wall (the -x end up): a turn about z.
+      put({
+        shape: "slab",
+        x: X0 + out,
+        y: rise,
+        z: along,
+        sx: width,
+        sy: t,
+        sz: length,
+        rx: 0,
+        ry: 0,
+        rz: -a,
+        color: colour,
+      });
+    } else {
+      put({
+        shape: "slab",
+        x: along,
+        y: rise,
+        z: Z0 + out,
+        sx: length,
+        sy: t,
+        sz: width,
+        rx: a,
+        ry: 0,
+        rz: 0,
+        color: colour,
+      });
+    }
+  };
+
+  lean("west", -22.9, between(random, 1.2, 1.5), between(random, 0.9, 1.2));
+  lean("west", -21.9, between(random, 1.0, 1.3), between(random, 0.7, 1.0));
+  lean("north", -12.4, between(random, 1.1, 1.4), between(random, 0.9, 1.2));
 }
 
 /**
- * Lets the pile settle: each lump, lowest first, drops until it rests on the
- * highest lump under it (or the floor), so nothing hangs in the air and the
- * heavy pieces end up at the base. Long thin pieces (rebar, pipes, cables)
- * are left as they lean.
+ * What a pile is made of so far, as a height map, so every new piece is
+ * lowered onto it by its real shape: the underside of the turned box over each
+ * map cell it covers, not its centre or its origin. A piece comes to rest on
+ * the highest thing under any part of it (the floor, a slab, a rock), and
+ * then raises the map under itself for the next piece.
+ *
+ * Long thin pieces (girders, pipes, rods, boards) are laid across: both ends
+ * are set to the height of what is under them, and the whole piece is lifted
+ * just enough to clear anything between, so each rests on something at each
+ * end instead of hanging from where its middle happens to be.
  */
-function settleHeap(elements: PileElement[]): void {
-  const lumps = elements
-    .filter((e) => e.shape !== "pipe" && e.shape !== "cable")
-    .sort((a, b) => a.y - b.y);
-  const placed: Array<{
-    x: number;
-    z: number;
-    r: number;
-    top: number;
-  }> = [];
+interface LayPlan {
+  x: number;
+  z: number;
+  yaw: number;
+  length: number;
+  reach: number;
+  samples: number;
+  dx: number;
+  dz: number;
+  /** The heights of its two ends (the line it lies along). */
+  a: number;
+  b: number;
+  /** How far it hangs above what is under its ends. */
+  lift: number;
+  /** Its centre height, and its slope. */
+  y: number;
+  pitch: number;
+  r: number;
+}
 
-  for (const e of lumps) {
-    const [hx, hy, hz] = halfExtents(e);
-    const r = Math.min(Math.max(hx, hz) * 0.8, 0.45);
-    let support = 0;
+/** How badly a plan leaves a piece hanging or standing on end (lower is better). */
+function layCost(plan: LayPlan): number {
+  return (
+    plan.lift +
+    0.4 * Math.abs(plan.b - plan.a) +
+    // Low is better: loose steel and cable lie near the floor, not on the top.
+    1.2 * plan.y +
+    Math.max(Math.abs(plan.pitch) - 0.12, 0) * 12
+  );
+}
 
-    for (const q of placed) {
-      if (Math.hypot(q.x - e.x, q.z - e.z) < q.r + r) {
-        support = Math.max(support, q.top);
-      }
-    }
+class Ground {
+  private static readonly CELL = 0.05;
 
-    // Rests a little into what is under it (pieces are not flat-faced).
-    const rest = support + hy - Math.min(0.06, hy * 0.5);
+  private readonly minX: number;
+  private readonly minZ: number;
+  private readonly nx: number;
+  private readonly nz: number;
+  private readonly height: Float32Array;
+  /** The walls the pile is in the corner of: nothing pokes through them. */
+  private readonly wallX: number;
+  private readonly wallZ: number;
 
-    if (e.y > rest + 0.03) {
-      e.y = rest;
-    }
-
-    placed.push({ x: e.x, z: e.z, r, top: e.y + hy });
+  constructor(
+    minX: number,
+    maxX: number,
+    minZ: number,
+    maxZ: number,
+    wallX: number,
+    wallZ: number,
+  ) {
+    this.minX = minX;
+    this.minZ = minZ;
+    this.nx = Math.ceil((maxX - minX) / Ground.CELL);
+    this.nz = Math.ceil((maxZ - minZ) / Ground.CELL);
+    this.height = new Float32Array(this.nx * this.nz);
+    this.wallX = wallX;
+    this.wallZ = wallZ;
   }
 
-  // The long pieces lean on the settled lumps: any that now hangs well above
-  // what is under its middle is let down onto it.
-  for (const e of elements) {
-    if (e.shape !== "pipe" && e.shape !== "cable") {
-      continue;
+  /** The height of the pile at a point (0 on the bare floor). */
+  public at(x: number, z: number): number {
+    const i = Math.floor((x - this.minX) / Ground.CELL);
+    const k = Math.floor((z - this.minZ) / Ground.CELL);
+
+    if (i < 0 || k < 0 || i >= this.nx || k >= this.nz) {
+      return 0;
     }
 
-    let support = 0;
+    return this.height[k * this.nx + i];
+  }
 
-    for (const q of placed) {
-      if (Math.hypot(q.x - e.x, q.z - e.z) < q.r + 0.3) {
-        support = Math.max(support, q.top);
+  /** The slope of the pile's surface at a point: how it rises per metre in x and in z. */
+  public slope(x: number, z: number, d: number): [number, number] {
+    return [
+      (this.at(x + d, z) - this.at(x - d, z)) / (2 * d),
+      (this.at(x, z + d) - this.at(x, z - d)) / (2 * d),
+    ];
+  }
+
+  /** The highest the pile gets within `radius` of a point. */
+  public highest(x: number, z: number, radius: number): number {
+    let best = 0;
+
+    for (let dx = -radius; dx <= radius + 1e-9; dx += Ground.CELL) {
+      for (let dz = -radius; dz <= radius + 1e-9; dz += Ground.CELL) {
+        best = Math.max(best, this.at(x + dx, z + dz));
       }
     }
 
-    if (e.y > support + 0.35) {
-      e.y = support + 0.2;
+    return best;
+  }
+
+  /** The turned box's rows (world x, y, z) and its half sizes. */
+  private static frame(
+    e: PileElement,
+    shrink: number,
+  ): { m: number[][]; h: number[] } {
+    const ca = Math.cos(e.rx);
+    const sa = Math.sin(e.rx);
+    const cb = Math.cos(e.ry);
+    const sb = Math.sin(e.ry);
+    const cc = Math.cos(e.rz);
+    const sc = Math.sin(e.rz);
+
+    return {
+      m: [
+        [cb * cc, -cb * sc, sb],
+        [ca * sc + sa * sb * cc, ca * cc - sa * sb * sc, -sa * cb],
+        [sa * sc - ca * sb * cc, sa * cc + ca * sb * sc, ca * cb],
+      ],
+      h: [(e.sx / 2) * shrink, (e.sy / 2) * shrink, (e.sz / 2) * shrink],
+    };
+  }
+
+  /**
+   * Where the box (centre at height 0) is, vertically, over the column at
+   * (dx, dz) from its centre: [underside, top], or null if the column misses.
+   */
+  private static span(
+    m: number[][],
+    h: number[],
+    dx: number,
+    dz: number,
+  ): [number, number] | null {
+    const top = 100;
+    let tMin = -Infinity;
+    let tMax = Infinity;
+
+    for (let i = 0; i < 3; i++) {
+      // The vertical ray, in the box's own axes.
+      const o = m[0][i] * dx + m[1][i] * top + m[2][i] * dz;
+      const d = -m[1][i];
+
+      if (Math.abs(d) < 1e-9) {
+        if (Math.abs(o) > h[i]) {
+          return null;
+        }
+
+        continue;
+      }
+
+      const t1 = (-h[i] - o) / d;
+      const t2 = (h[i] - o) / d;
+
+      tMin = Math.max(tMin, Math.min(t1, t2));
+      tMax = Math.min(tMax, Math.max(t1, t2));
+    }
+
+    return tMin > tMax ? null : [top - tMax, top - tMin];
+  }
+
+  /** The columns a box covers: [cell x, cell z, under, over] for each. */
+  private columns(
+    e: PileElement,
+    shrink: number,
+  ): Array<[number, number, number, number]> {
+    const { m, h } = Ground.frame(e, shrink);
+    const ax =
+      Math.abs(m[0][0]) * h[0] +
+      Math.abs(m[0][1]) * h[1] +
+      Math.abs(m[0][2]) * h[2];
+    const az =
+      Math.abs(m[2][0]) * h[0] +
+      Math.abs(m[2][1]) * h[1] +
+      Math.abs(m[2][2]) * h[2];
+    const out: Array<[number, number, number, number]> = [];
+    const step = Ground.CELL;
+
+    for (let dx = -ax; dx <= ax + 1e-9; dx += step) {
+      for (let dz = -az; dz <= az + 1e-9; dz += step) {
+        const s = Ground.span(m, h, dx, dz);
+
+        if (s) {
+          out.push([e.x + dx, e.z + dz, s[0], s[1]]);
+        }
+      }
+    }
+
+    return out;
+  }
+
+  private raise(x: number, z: number, to: number): void {
+    const i = Math.floor((x - this.minX) / Ground.CELL);
+    const k = Math.floor((z - this.minZ) / Ground.CELL);
+
+    if (i >= 0 && k >= 0 && i < this.nx && k < this.nz) {
+      const at = k * this.nx + i;
+
+      this.height[at] = Math.max(this.height[at], to);
+    }
+  }
+
+  /** Keeps the piece inside the two walls (shifting it in, never turning it). */
+  private inside(e: PileElement, shrink: number): void {
+    const { m, h } = Ground.frame(e, shrink);
+    const ax =
+      Math.abs(m[0][0]) * h[0] +
+      Math.abs(m[0][1]) * h[1] +
+      Math.abs(m[0][2]) * h[2];
+    const az =
+      Math.abs(m[2][0]) * h[0] +
+      Math.abs(m[2][1]) * h[1] +
+      Math.abs(m[2][2]) * h[2];
+
+    e.x = Math.max(e.x, this.wallX + ax + 0.02);
+    e.z = Math.max(e.z, this.wallZ + az + 0.02);
+  }
+
+  /**
+   * How high the centre of a lump would come to rest at its place: on the
+   * highest thing under any part of it. Nothing is changed.
+   */
+  public restingHeight(e: PileElement, shrink = 1): number {
+    this.inside(e, shrink);
+
+    const heights: number[] = [];
+
+    for (const [x, z, under] of this.columns(e, shrink)) {
+      heights.push(this.at(x, z) - under);
+    }
+
+    if (heights.length === 0) {
+      return this.at(e.x, e.z) + (e.sy / 2) * shrink;
+    }
+
+    heights.sort((a, b) => a - b);
+
+    const highest = heights[heights.length - 1];
+
+    // A big, heavy piece does not balance on its one highest point: it settles
+    // onto the support under most of it, pressing a little into the high spots
+    // (never more than a hand's depth), so no dark gap is left under a slab.
+    const share = Math.max(Math.max(e.sx, e.sz) * shrink - 0.5, 0);
+    const settle = Math.min(share * 0.12, 0.14);
+    const bulk = heights[Math.floor(0.8 * (heights.length - 1))];
+
+    return Math.max(bulk, highest - settle);
+  }
+
+  /**
+   * Lowers a lump onto the pile and raises the map under it. `sink` is how far
+   * it settles into what it rests on (rubble is not flat-faced: a hair of
+   * overlap is contact, a gap is a piece in the air).
+   */
+  public rest(e: PileElement, shrink = 1, sink = 0): void {
+    e.y = this.restingHeight(e, shrink) - sink;
+
+    for (const [x, z, , over] of this.columns(e, shrink)) {
+      this.raise(x, z, e.y + over);
+    }
+  }
+
+  /** Records a piece that was set by hand (a leaning slab) so the rest go round it. */
+  public occupy(e: PileElement): void {
+    for (const [x, z, , over] of this.columns(e, 1)) {
+      this.raise(x, z, e.y + over);
+    }
+  }
+
+  /**
+   * Works out how a long piece would lie, its length along `yaw`, centred at
+   * (x, z): each end set on what is under it, then lifted just enough to
+   * clear anything between. `lift` is how far that left it hanging above the
+   * support at its ends (0 is a piece that rests at both). Nothing is changed.
+   */
+  public plan(
+    x: number,
+    z: number,
+    yaw: number,
+    length: number,
+    thick: number,
+    width: number,
+  ): LayPlan {
+    // Along local +x after the turn: (cos yaw, -sin yaw).
+    const dx = Math.cos(yaw);
+    const dz = -Math.sin(yaw);
+    const reach = width / 2 + 0.02;
+    const samples = Math.max(6, Math.ceil(length / 0.1));
+    const profile: number[] = [];
+
+    // Kept inside the walls: slid along if an end is out.
+    const cx = Math.max(x, this.wallX + Math.abs(dx) * length * 0.5 + reach);
+    const cz = Math.max(z, this.wallZ + Math.abs(dz) * length * 0.5 + reach);
+
+    for (let s = 0; s <= samples; s++) {
+      const t = s / samples - 0.5;
+
+      profile.push(
+        this.highest(cx + dx * length * t, cz + dz * length * t, reach),
+      );
+    }
+
+    const r = thick / 2;
+    const a0 = profile[0] + r;
+    const b0 = profile[samples] + r;
+    let lift = 0;
+
+    for (let s = 0; s <= samples; s++) {
+      const line = a0 + ((b0 - a0) * s) / samples;
+
+      lift = Math.max(lift, profile[s] + r - line);
+    }
+
+    return {
+      x: cx,
+      z: cz,
+      yaw,
+      length,
+      reach,
+      samples,
+      dx,
+      dz,
+      a: a0 + lift,
+      b: b0 + lift,
+      lift,
+      y: (a0 + b0) / 2 + lift,
+      pitch: Math.atan2(b0 - a0, length),
+      r,
+    };
+  }
+
+  /** Lays the piece a plan describes: raises the map under it. */
+  public commit(plan: LayPlan): void {
+    for (let s = 0; s <= plan.samples; s++) {
+      const t = s / plan.samples - 0.5;
+
+      this.stamp(
+        plan.x + plan.dx * plan.length * t,
+        plan.z + plan.dz * plan.length * t,
+        plan.reach,
+        plan.a + ((plan.b - plan.a) * s) / plan.samples + plan.r,
+      );
+    }
+  }
+
+  private stamp(x: number, z: number, radius: number, to: number): void {
+    for (let dx = -radius; dx <= radius + 1e-9; dx += Ground.CELL) {
+      for (let dz = -radius; dz <= radius + 1e-9; dz += Ground.CELL) {
+        this.raise(x + dx, z + dz, to);
+      }
     }
   }
 }
@@ -723,8 +1065,12 @@ function heapPieces(
       const x = between(random, area.minX, area.maxX);
       const z = between(random, area.minZ, area.maxZ);
       const h = heapHeight(heaps, x, z);
+      // Clear of the two drums standing by the pile's edge.
+      const nearDrum =
+        Math.hypot(x + 9.5, z + 23.25) < 0.75 ||
+        Math.hypot(x + 8.4, z + 23.4) < 0.75;
 
-      if (h > 0.05 && random() * 1.15 < h + 0.1) {
+      if (!nearDrum && h > 0.05 && random() * 1.15 < h + 0.1) {
         return { x, z, h };
       }
     }
@@ -732,233 +1078,496 @@ function heapPieces(
     return { x: area.minX + 0.4, z: area.minZ + 0.4, h: 0.3 };
   };
 
-  // Broken concrete: chunks of every size, the biggest low down, some slabs.
-  for (let k = 0; k < 110; k++) {
-    const { x, z, h } = spot();
-    const size = between(random, 0.28, 0.85);
-    const buried = random() * 0.35;
-
-    p.elements.push({
-      shape: "chunk",
+  // The pile is built from the floor up: every piece is lowered onto what is
+  // already there by its real, turned shape (see Ground), largest first.
+  const ground = new Ground(
+    area.minX - 0.6,
+    area.maxX + 0.6,
+    area.minZ - 0.6,
+    area.maxZ + 0.6,
+    X0,
+    Z0,
+  );
+  const lump = (
+    shape: "rock" | "slab" | "chunk" | "brick" | "plank",
+    x: number,
+    z: number,
+    sx: number,
+    sy: number,
+    sz: number,
+    tilt: number,
+    color: number,
+    shrink = 1,
+    yaw = between(random, 0, 6.28),
+    /** Other places to try: it settles where it comes to rest lowest (heavy things go to the floor and gaps). */
+    tries = 0,
+    source: () => number = random,
+  ): void => {
+    const e: PileElement = {
+      shape,
       x,
-      y: Math.max(size * 0.25, h * between(random, 0.5, 1.05) - buried),
+      y: 0,
       z,
-      sx: size,
-      sy: size * between(random, 0.5, 0.8),
-      sz: size * between(random, 0.6, 1),
-      rx: between(random, -0.5, 0.5),
-      ry: between(random, 0, 6.28),
-      rz: between(random, -0.5, 0.5),
-      color: pick(random, CONCRETE),
-    });
+      sx,
+      sy,
+      sz,
+      rx: between(source, -tilt, tilt),
+      ry: yaw,
+      rz: between(source, -tilt, tilt),
+      color,
+    };
+    // (The small tilt it was given, kept as the way it sits on the surface.)
+    const lean = { rx: e.rx, rz: e.rz };
+
+    let lowest = ground.restingHeight(e, shrink);
+    const home = { x: e.x, z: e.z };
+
+    for (let n = 0; n < tries; n++) {
+      const at = spot();
+
+      e.x = at.x;
+      e.z = at.z;
+
+      const y = ground.restingHeight(e, shrink);
+
+      if (y < lowest) {
+        lowest = y;
+        home.x = e.x;
+        home.z = e.z;
+      }
+    }
+
+    e.x = home.x;
+    e.z = home.z;
+
+    // It lies along the surface under it, not flat in the air over a slope: the
+    // pile's slope there tips it (a brick on a leaning slab lies on the slab),
+    // and the small turn it was given is a fraction of that.
+    const d = Math.min(Math.max(Math.max(sx, sz) * 0.3, 0.08), 0.4);
+    const [gx, gz] = ground.slope(e.x, e.z, d);
+    const steep = Math.hypot(gx, gz);
+    // (A big piece only leans a little: a slab stood up on a slope would tower.)
+    const limit = Math.max(sx, sz) > 0.5 ? 0.2 : 0.35;
+    const k = steep > limit ? limit / steep : 1;
+    const normal = new THREE.Vector3(-gx * k, 1, -gz * k).normalize();
+    const turn = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      normal,
+    );
+
+    turn
+      .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)))
+      .multiply(
+        new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(lean.rx * 0.35, 0, lean.rz * 0.35),
+        ),
+      );
+
+    const euler = new THREE.Euler().setFromQuaternion(turn, "XYZ");
+
+    e.rx = euler.x;
+    e.ry = euler.y;
+    e.rz = euler.z;
+    // Placed by what is drawn, not the box round it: a rounded rock or a
+    // chipped slab is smaller than its box, so the box's underside is not
+    // where its surface touches. The box is shrunk to the real height first
+    // (so what lies on it rests on its true top), and the piece is then set
+    // so its lowest drawn point is on the support.
+    const real = meshExtent(e);
+    let fit = shrink;
+
+    if (real) {
+      const box = halfExtents(e)[1];
+
+      fit = Math.min(shrink, Math.max((real.high - real.low) / (2 * box), 0.5));
+    }
+
+    ground.rest(e, fit, 0.012);
+
+    if (real) {
+      const boxLow = -halfExtents(e)[1] * fit;
+
+      // The gap between the box's underside and the mesh's (and a hair of
+      // embedding so no light shows under it).
+      e.y -= Math.max(real.low - boxLow, 0) + 0.008;
+    }
+
+    p.elements.push(e);
+  };
+
+  // ---- Slabs leaning on the two walls (held by the wall and the floor).
+  leanSlabs(p, random, ground);
+
+  // ---- The structure: a few big fractured slabs lying on the floor, side by
+  // side and overlapping at the edges, then a second layer that comes to rest
+  // across the gaps between them (so there are dark pockets underneath).
+  const base: Array<{ x: number; z: number }> = [];
+
+  for (let k = 0; k < 6; k++) {
+    const { x, z } = spot();
+    const t = between(random, 0.2, 0.36);
+
+    base.push({ x, z });
+    lump(
+      "slab",
+      x,
+      z,
+      between(random, 1.0, 1.6),
+      t,
+      between(random, 0.8, 1.2),
+      0.03,
+      pick(random, CONCRETE),
+      1,
+      between(random, 0, 6.28),
+      14,
+    );
   }
+
+  for (let k = 0; k < 3; k++) {
+    // Across the join of two of the first layer.
+    const a = base[k % base.length];
+    const b = base[(k + 2) % base.length];
+
+    lump(
+      "slab",
+      (a.x + b.x) / 2,
+      (a.z + b.z) / 2,
+      between(random, 0.8, 1.3),
+      between(random, 0.16, 0.3),
+      between(random, 0.55, 0.9),
+      0.1,
+      pick(random, CONCRETE),
+    );
+  }
+
+  // ---- Broken masonry between them: the larger lumps first, then smaller
+  // fragments in the gaps. Each is its own shade.
+  for (let k = 0; k < 12; k++) {
+    const { x, z } = spot();
+    const size = between(random, 0.35, 0.7);
+
+    lump(
+      "rock",
+      x,
+      z,
+      size,
+      size * between(random, 0.55, 0.8),
+      size * between(random, 0.6, 1),
+      0.4,
+      pick(random, CONCRETE),
+      0.85,
+      between(random, 0, 6.28),
+      8,
+    );
+  }
+
+  for (let k = 0; k < 40; k++) {
+    const { x, z } = spot();
+    const size = between(random, 0.1, 0.26);
+
+    lump(
+      random() < 0.5 ? "rock" : "chunk",
+      x,
+      z,
+      size,
+      size * between(random, 0.5, 0.8),
+      size * between(random, 0.6, 1),
+      0.4,
+      pick(random, CONCRETE),
+      0.85,
+      between(random, 0, 6.28),
+      6,
+    );
+  }
+
+  // ---- Bricks: broken runs of a few still together (a piece of wall), and
+  // single loose ones. Muted and dusty: fired clay under plaster dust.
+  const BRICKS = [0x6a4a40, 0x765242, 0x5c4038, 0x6b605a, 0x7c5e4c, 0x4f4640];
 
   for (let k = 0; k < 11; k++) {
-    const { x, z, h } = spot();
+    const { x, z } = spot();
+    const yaw = between(random, 0, 6.28);
+    const run = 3 + Math.floor(random() * 3);
 
-    slab(p, random, x, h * between(random, 0.3, 0.9), z);
-  }
-
-  // Bricks, loose and in broken clusters; plaster fragments among them.
-  for (let k = 0; k < 210; k++) {
-    const { x, z, h } = spot();
-
-    p.elements.push({
-      shape: "brick",
-      x,
-      y: h * between(random, 0.15, 1.0) + 0.04,
-      z,
-      sx: 0.22,
-      sy: 0.07,
-      sz: 0.105,
-      rx: between(random, -0.6, 0.6),
-      ry: between(random, 0, 6.28),
-      rz: between(random, -0.6, 0.6),
-      color: pick(random, BRICK),
-    });
-  }
-
-  for (let k = 0; k < 18; k++) {
-    const { x, z, h } = spot();
-
-    p.elements.push({
-      shape: "chunk",
-      x,
-      y: h * between(random, 0.3, 1) + 0.05,
-      z,
-      sx: between(random, 0.14, 0.26),
-      sy: 0.07,
-      sz: between(random, 0.12, 0.2),
-      rx: between(random, -0.3, 0.3),
-      ry: between(random, 0, 6.28),
-      rz: between(random, -0.3, 0.3),
-      color: shade(PLASTER, between(random, 0.8, 1.1)),
-    });
-  }
-
-  // Rebar and bent steel bars, short pipes and scrap strips, all at angles.
-  for (let k = 0; k < 26; k++) {
-    const { x, z, h } = spot();
-
-    p.bar(
-      x,
-      h * between(random, 0.4, 1) + 0.08,
-      z,
-      between(random, 0.9, 2.0),
-      0.022,
-      pick(random, RUSTY),
-      between(random, 0, 6.28),
-      between(random, -0.7, 0.7),
-      between(random, -0.6, 0.6),
-    );
-  }
-
-  for (let k = 0; k < 7; k++) {
-    const { x, z, h } = spot();
-
-    p.bar(
-      x,
-      h * between(random, 0.4, 1) + 0.1,
-      z,
-      between(random, 0.6, 1.3),
-      between(random, 0.05, 0.1),
-      pick(random, [PIPE, DARK[0], RUSTY[2], STEEL_BARE]),
-      between(random, 0, 6.28),
-      between(random, -0.5, 0.5),
-      between(random, -0.4, 0.4),
-    );
-  }
-
-  // Bent sheet metal: two panels joined at a bend.
-  for (let k = 0; k < 5; k++) {
-    const { x, z, h } = spot();
-    const y = h * between(random, 0.4, 1);
-    const color = pick(random, [...RUSTY, ...DARK]);
-    const ry = between(random, 0, 6.28);
-
-    p.box(x, y, z, 0.95, 0.015, 0.55, color, ry, between(random, 0.1, 0.4));
-    p.box(
-      x + Math.cos(ry) * 0.45,
-      y + 0.1,
-      z - Math.sin(ry) * 0.45,
-      0.7,
-      0.015,
-      0.5,
-      shade(color, 0.85),
-      ry + 0.3,
-      between(random, -0.7, -0.3),
-    );
-  }
-
-  // Broken planks and boards, splintered crate pieces.
-  for (let k = 0; k < 22; k++) {
-    const { x, z, h } = spot();
-    const c = pick(random, WOOD);
-
-    p.box(
-      x,
-      h * between(random, 0.35, 1),
-      z,
-      between(random, 0.5, 1.8),
-      0.035,
-      between(random, 0.08, 0.2),
-      c,
-      between(random, 0, 6.28),
-      between(random, -0.5, 0.5),
-      between(random, -0.2, 0.2),
-    );
-  }
-
-  // Cable bundles and conduit sticking out of the heap.
-  for (let k = 0; k < 13; k++) {
-    const { x, z, h } = spot();
-    const y = h * between(random, 0.4, 1) + 0.05;
-
-    for (let s = 0; s < 3; s++) {
-      p.cable(
-        x + s * 0.03,
-        y + s * 0.03,
-        z,
-        between(random, 0.7, 1.4),
-        between(random, 0.035, 0.055),
-        BLACK,
-        between(random, 0, 6.28),
-        between(random, -0.5, 0.5),
-        between(random, -0.4, 0.4),
+    for (let b = 0; b < run; b++) {
+      lump(
+        "brick",
+        x + Math.cos(yaw) * b * 0.215,
+        z - Math.sin(yaw) * b * 0.215,
+        0.22,
+        0.07,
+        0.105,
+        0.06,
+        pick(random, BRICKS),
+        1,
+        yaw + between(random, -0.1, 0.1),
       );
     }
   }
 
-  // Machine parts and brackets, a couple of damaged containers, some tools.
-  for (let k = 0; k < 5; k++) {
-    const { x, z, h } = spot();
-    const y = h * between(random, 0.5, 1);
+  for (let k = 0; k < 22; k++) {
+    const { x, z } = spot();
 
-    p.cableUp(
+    lump(
+      "brick",
       x,
-      y,
       z,
-      between(random, 0.2, 0.34),
-      0.24,
-      pick(random, [DRUM_BLUE, DARK[1], RUSTY[2]]),
-    );
-    p.cableUp(x, y + 0.3, z, 0.03, 0.12, STEEL_BARE);
-    p.box(x + 0.18, y, z, 0.1, 0.16, 0.18, DARK[2], between(random, 0, 3));
-    p.box(
-      x - 0.2,
-      y,
-      z + 0.05,
-      0.18,
-      0.04,
-      0.05,
-      RUSTY[0],
-      between(random, 0, 3),
-      0,
-      0.3,
-    );
-  }
-
-  for (const c of [DRUM_RED, DARK[3]]) {
-    const { x, z, h } = spot();
-    const y = h * 0.7;
-
-    p.box(x, y, z, 0.5, 0.03, 0.4, c, 0, 0.4, 0.15);
-    p.box(x, y + 0.03, z - 0.19, 0.5, 0.24, 0.02, c, 0, 0.4, 0.15);
-    p.box(x + 0.24, y + 0.03, z, 0.02, 0.2, 0.4, c, 0, 0.4, 0.5);
-  }
-
-  for (let k = 0; k < 4; k++) {
-    const { x, z, h } = spot();
-    const y = h * 0.9 + 0.05;
-    const ry = between(random, 0, 6.28);
-
-    // A hammer: a handle and a head.
-    p.bar(x, y, z, 0.4, 0.03, TIMBER_DARK, ry);
-    p.box(
-      x + Math.cos(ry) * 0.2,
-      y - 0.03,
-      z - Math.sin(ry) * 0.2,
+      0.22,
       0.07,
-      0.06,
-      0.1,
-      DARK[0],
-      ry,
+      0.105,
+      0.5,
+      pick(random, BRICKS),
+      1,
+      between(random, 0, 6.28),
+      4,
     );
   }
-}
 
-/** A cable spool on its side: two flanges, a core, wire wound on it and a loose end. */
-function spool(p: Pieces, x: number, z: number, d: number, tall: number): void {
-  p.cableUp(x, 0, z, 0.05, d, TIMBER_B);
-  p.cableUp(x, tall - 0.05, z, 0.05, d, TIMBER_B);
-  p.cableUp(x, 0.05, z, tall - 0.1, d * 0.4, TIMBER_DARK);
-  p.cableUp(x, 0.07, z, tall - 0.14, d * 0.7, BLACK);
+  for (let k = 0; k < 10; k++) {
+    const { x, z } = spot();
 
-  for (const y of [0.0, tall - 0.05]) {
-    p.bar(x, y + 0.025, z, d * 0.9, 0.02, shade(TIMBER_B, 0.8), 0.9);
+    lump(
+      "chunk",
+      x,
+      z,
+      between(random, 0.12, 0.22),
+      0.06,
+      between(random, 0.1, 0.18),
+      0.3,
+      shade(PLASTER, between(random, 0.8, 1.1)),
+      0.9,
+    );
   }
 
-  p.cable(x - d / 2 - 0.4, 0.04, z + 0.1, 0.9, 0.04, BLACK, 0.2);
+  // ---- Gaps: where the floor lies in a pit between taller rubble, a stone or
+  // two have rolled in, so the pieces around do not float over dark voids.
+  // (Its own random stream: what is laid after does not depend on it.)
+  const filler = rng(777);
+  let filled = 0;
+
+  for (let n = 0; n < 160 && filled < 24; n++) {
+    const x = between(filler, area.minX, area.maxX);
+    const z = between(filler, area.minZ, area.maxZ);
+    const nearDrum =
+      Math.hypot(x + 9.5, z + 23.25) < 0.75 ||
+      Math.hypot(x + 8.4, z + 23.4) < 0.75;
+
+    if (nearDrum || ground.at(x, z) > 0.15) {
+      continue;
+    }
+
+    // A pit: the rubble round it is much higher than it.
+    if (ground.highest(x, z, 0.45) - ground.at(x, z) < 0.3) {
+      continue;
+    }
+
+    const size = between(filler, 0.14, 0.3);
+
+    lump(
+      filler() < 0.7 ? "rock" : "brick",
+      x,
+      z,
+      size,
+      size * between(filler, 0.5, 0.8),
+      size * between(filler, 0.6, 1),
+      0.3,
+      pick(filler, CONCRETE),
+      0.85,
+      between(filler, 0, 6.28),
+      0,
+      filler,
+    );
+    filled++;
+  }
+
+  // ---- Steel, laid across the rubble with each end resting on something.
+
+  /** The best of several tries at laying a piece somewhere in the pile. */
+  const bestPlan = (
+    length: number,
+    thick: number,
+    width: number,
+    start?: { x: number; z: number; yaws: number[] },
+  ): LayPlan => {
+    let best: LayPlan | null = null;
+    const tries = start ? start.yaws.length : 40;
+
+    for (let n = 0; n < tries; n++) {
+      const at = start ?? spot();
+      const yaw = start ? start.yaws[n] : between(random, 0, 6.28);
+      const plan = ground.plan(at.x, at.z, yaw, length, thick, width);
+
+      if (!best || layCost(plan) < layCost(best)) {
+        best = plan;
+      }
+    }
+
+    return best as LayPlan;
+  };
+
+  // A girder: an I-section (web and two flanges), bent where it took the load.
+  const girder = (plan: LayPlan, colour: number): void => {
+    ground.commit(plan);
+
+    const lift = (u: number): [number, number, number] => [
+      -u * Math.sin(plan.pitch) * Math.cos(plan.yaw),
+      u * Math.cos(plan.pitch),
+      u * Math.sin(plan.pitch) * Math.sin(plan.yaw),
+    ];
+
+    for (const [u, height, width] of [
+      [0, 0.16, 0.025],
+      [0.095, 0.025, 0.09],
+      [-0.095, 0.025, 0.09],
+    ] as const) {
+      const [ox, oy, oz] = lift(u);
+
+      p.elements.push({
+        shape: "plank",
+        x: plan.x + ox,
+        y: plan.y + oy,
+        z: plan.z + oz,
+        sx: plan.length,
+        sy: height,
+        sz: width,
+        rx: 0,
+        ry: plan.yaw,
+        rz: plan.pitch,
+        color: colour,
+      });
+    }
+  };
+
+  const GUNMETAL_STEEL = [0x30353a, 0x2b2f33, 0x383d42];
+
+  for (let k = 0; k < 2; k++) {
+    const length = between(random, 1.3, 1.9);
+    const colour = pick(random, GUNMETAL_STEEL);
+    const first = bestPlan(length, 0.21, 0.09);
+    const second = length * 0.5;
+
+    girder(first, colour);
+
+    // Bent where it took the load: turned whichever way rests best. Each try
+    // is centred where the first length ends, along its own turn.
+    const endX = first.x + first.dx * (length / 2);
+    const endZ = first.z + first.dz * (length / 2);
+    let tail: LayPlan | null = null;
+
+    for (const turn of [0.35, -0.35, 0.55, -0.55, 0.75, -0.75]) {
+      const yaw = first.yaw + turn;
+      const plan = ground.plan(
+        endX + Math.cos(yaw) * (second / 2),
+        endZ - Math.sin(yaw) * (second / 2),
+        yaw,
+        second,
+        0.21,
+        0.09,
+      );
+
+      if (!tail || layCost(plan) < layCost(tail)) {
+        tail = plan;
+      }
+    }
+
+    girder(tail as LayPlan, colour);
+  }
+
+  // A rod, pipe or board lying across the rubble, resting at each end.
+  const lie = (
+    shape: "pipe" | "cable" | "plank",
+    length: number,
+    thick: number,
+    width: number,
+    color: number,
+    at?: { x: number; z: number; yaws: number[] },
+  ): LayPlan => {
+    const plan = bestPlan(length, thick, width, at);
+
+    // A rod that cannot lie down on what is under it (it would stand out at
+    // an angle, hanging off one high point) is left out: loose rods are on
+    // the floor or lying flat across rubble, never sticking up into the air.
+    if (Math.abs(plan.pitch) > 0.2 || plan.lift > 0.12) {
+      return plan;
+    }
+
+    ground.commit(plan);
+    p.elements.push({
+      shape,
+      x: plan.x,
+      y: plan.y,
+      z: plan.z,
+      sx: length,
+      sy: thick,
+      sz: width,
+      rx: 0,
+      ry: plan.yaw,
+      rz: plan.pitch,
+      color,
+    });
+
+    return plan;
+  };
+
+  for (let k = 0; k < 3; k++) {
+    const d = between(random, 0.06, 0.09);
+
+    lie(
+      "pipe",
+      between(random, 1.0, 1.8),
+      d,
+      d,
+      pick(random, [PIPE, ...GUNMETAL_STEEL]),
+    );
+  }
+
+  // Rebar: bars lying across the slabs, some bent (a second length turned
+  // from the first one's end); mostly dark, a few with surface rust.
+  for (let k = 0; k < 6; k++) {
+    const length = between(random, 0.5, 0.9);
+    const colour =
+      random() < 0.3 ? pick(random, RUSTY) : pick(random, GUNMETAL_STEEL);
+    const first = lie("pipe", length, 0.022, 0.022, colour);
+
+    if (random() < 0.6) {
+      const second = between(random, 0.3, 0.5);
+      const endX = first.x + first.dx * (length / 2);
+      const endZ = first.z + first.dz * (length / 2);
+      const bend = first.yaw + between(random, 0.4, 0.8);
+
+      lie("pipe", second, 0.022, 0.022, colour, {
+        x: endX + Math.cos(bend) * (second / 2),
+        z: endZ - Math.sin(bend) * (second / 2),
+        yaws: [bend, bend + 0.3, bend - 0.3],
+      });
+    }
+  }
+
+  // ---- Wood: broken boards, dusty and aged, some short and splintered.
+  const AGED = [0x5c4b38, 0x6a5a45, 0x4f4030, 0x756450];
+
+  for (let k = 0; k < 8; k++) {
+    lie(
+      "plank",
+      between(random, 0.4, 1.3),
+      0.035,
+      between(random, 0.08, 0.18),
+      pick(random, AGED),
+    );
+  }
+
+  // Cable ends lying out of the heap.
+  for (let k = 0; k < 3; k++) {
+    const first = lie("cable", between(random, 0.7, 1.4), 0.045, 0.045, BLACK);
+
+    for (let n = 1; n < 3; n++) {
+      lie("cable", between(random, 0.7, 1.4), 0.045, 0.045, BLACK, {
+        x: first.x + n * 0.05,
+        z: first.z + n * 0.03,
+        yaws: [first.yaw + n * 0.04],
+      });
+    }
+  }
 }
 
 /** The ceiling's beams, tray, pipe and lamps, and the walls' conduit and stains. */
@@ -1175,11 +1784,19 @@ export const POWER_BULB = { x: 3.2, z: -20.5, y: 2.95 } as const;
 /** The Break room's bulb (see Occupation). */
 export const BREAK_BULB = { x: 27.2, z: 7.3, y: 2.95 } as const;
 
+/** The Barracks' bulb (see Occupation). */
+export const BARRACKS_BULB = { x: -24.4, z: -10.0, y: 2.1 } as const;
+
+/** The Yard's bulb (see Occupation). */
+export const YARD_BULB = { x: -14.8, z: 22.0, y: 2.4 } as const;
+
 /** Every hanging bulb with a glowing glass (see `createJunkBulbGlow`). */
 const GLOWING_BULBS: ReadonlyArray<{ x: number; z: number; y: number }> = [
   ...JUNK_BULBS,
   POWER_BULB,
   BREAK_BULB,
+  BARRACKS_BULB,
+  YARD_BULB,
 ];
 
 /**
@@ -1360,7 +1977,6 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       maxZ: -21.5,
       top: 2.0,
       visual: 1.7,
-      exact: true,
     },
     {
       minX: -11.5,
@@ -1369,7 +1985,6 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       maxZ: -22.2,
       top: 1.5,
       visual: 1.15,
-      exact: true,
     },
     {
       minX: X0,
@@ -1378,14 +1993,13 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       maxZ: -21.0,
       top: 1.5,
       visual: 1.1,
-      exact: true,
     },
   ];
   {
     const p = new Pieces();
 
-    heapPieces(p, random, heaps);
-    settleHeap(p.elements);
+    // (Its own random stream: what is laid out after it does not depend on it.)
+    heapPieces(p, rng(8128), heaps);
     map.createFitting("junk-pile", F, p.elements, heaps);
   }
 
@@ -1409,7 +2023,18 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
       );
     const f = new Frame(p, m);
 
-    buildRack(f, random, 2.8, 2.2, 0.8, [0.15, 0.75, 1.35, 1.95], 3, 0.3, 0.55);
+    buildRack(
+      f,
+      rng(4242),
+      2.8,
+      2.2,
+      0.8,
+      [0.15, 0.75, 1.35, 1.95],
+      3,
+      0.3,
+      0.55,
+      1,
+    );
     // The frame's lowest side rests on the floor at y = D/2 = 0.4 (its depth);
     // lift everything so the deck of uprights sits on it.
     for (const e of p.elements) {
@@ -1490,14 +2115,6 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
   }
 
   // ----------------------------------------------- the spool, south-east
-  {
-    const p = new Pieces();
-
-    spool(p, -2.35, -17.15, 1.05, 0.55);
-    map.createFitting("spool-junk", F, p.elements, [
-      { minX: -2.9, maxX: -1.8, minZ: -17.7, maxZ: -16.6, top: 0.55 },
-    ]);
-  }
 
   // ------------- loose scraps round the edges, cables spilled from the pile
   {
@@ -1568,6 +2185,126 @@ export function furnishJunkRoom(map: MapBuilder, floorY: number): void {
     // Wire and a rusty plate along the west wall, bricks under the rack.
     p.box(-11.3, 0, -16.7, 0.7, 0.012, 0.4, RUST, 0.5);
     map.createFitting("scraps-junk", F, p.elements, []);
+  }
+
+  // --------------------------- cement bags and the tools of the trade
+  {
+    const p = new Pieces();
+    const BAG = [0x8f8878, 0x9a927f, 0x7d786a, 0x867f6c];
+
+    // A stack against the south wall, east end: three layers, shrinking.
+    for (const [x, z] of [
+      [-4.3, -16.6],
+      [-3.5, -16.6],
+      [-2.7, -16.6],
+      [-4.3, -17.15],
+      [-3.5, -17.15],
+    ] as const) {
+      p.bag(x, 0, z, between(random, -0.06, 0.06), pick(random, BAG));
+    }
+
+    for (const [x, z] of [
+      [-4.0, -16.6],
+      [-3.1, -16.6],
+      [-3.7, -17.15],
+    ] as const) {
+      p.bag(x, 0.2, z, between(random, -0.1, 0.1), pick(random, BAG));
+    }
+
+    p.bag(-3.6, 0.4, -16.65, 0.08, pick(random, BAG));
+
+    // Two that slid off, one split open and spilling grey powder.
+    p.bag(-4.9, 0, -17.9, 0.5, pick(random, BAG));
+    p.bag(-6.2, 0, -17.4, 2.2, pick(random, BAG));
+    p.box(-6.0, 0, -17.55, 0.7, 0.01, 0.45, 0x7a766d, 0.4);
+    p.chunk(-6.0, 0, -17.5, 0.12, 0x6f6c64, 1.1);
+
+    // Tools left lying about the south side and along the pile's edge.
+    const WOODEN = 0x6a5238;
+    const STEEL = 0x4b4f54;
+    const YELLOW = 0xa8821c;
+    const along = (x: number, z: number, ry: number, d: number) =>
+      [x + Math.cos(ry) * d, z - Math.sin(ry) * d] as const;
+
+    // Sledgehammer: a long haft and a heavy head.
+    {
+      const [hx, hz] = along(-8.4, -16.75, 0.2, 0.42);
+
+      p.bar(-8.4, 0.025, -16.75, 0.9, 0.035, WOODEN, 0.2);
+      p.box(hx, 0, hz, 0.1, 0.1, 0.2, STEEL, 0.2);
+    }
+
+    // Shovel: haft and a flat blade.
+    {
+      const [bx, bz] = along(-7.2, -16.85, -0.15, 0.62);
+
+      p.bar(-7.2, 0.025, -16.85, 1.1, 0.03, WOODEN, -0.15);
+      p.box(bx, 0, bz, 0.26, 0.015, 0.22, RUSTY[0], -0.15);
+    }
+
+    // Pickaxe: haft with a crossbar head.
+    {
+      const [hx, hz] = along(-12.7, -17.4, 0.7, 0.4);
+
+      p.bar(-12.7, 0.025, -17.4, 0.9, 0.032, WOODEN, 0.7);
+      p.bar(hx, 0.04, hz, 0.55, 0.04, STEEL, 0.7 + Math.PI / 2);
+    }
+
+    // Crowbar and a pair of spanners.
+    p.bar(-9.4, 0.015, -17.5, 0.8, 0.025, STEEL, 0.4);
+    p.bar(-9.0, 0.01, -17.1, 0.3, 0.02, STEEL, 1.1);
+    p.bar(-8.7, 0.01, -17.3, 0.26, 0.02, STEEL, 2.4);
+
+    // A toolbox with its lid open and a few things beside it.
+    p.box(-6.9, 0, -16.55, 0.46, 0.2, 0.22, 0x7a2a22, 0.1);
+    p.box(
+      -6.9,
+      0.2,
+      -16.62,
+      0.46,
+      0.015,
+      0.2,
+      shade(0x7a2a22, 0.8),
+      0.1,
+      0,
+      0.9,
+    );
+    p.box(-7.2, 0, -17.35, 0.22, 0.1, 0.16, STEEL, 0.5);
+
+    // A dented bucket and a hard hat by the pile, a paint can by the rack.
+    p.cableUp(-9.9, 0, -22.2, 0.3, 0.3, 0x5a5f63);
+    p.cableUp(-9.9, 0.3, -22.2, 0.02, 0.32, 0x2a2c2f);
+    p.cableUp(-9.1, 0, -21.5, 0.16, 0.32, YELLOW);
+    p.cableUp(-9.1, 0.16, -21.5, 0.04, 0.4, shade(YELLOW, 0.8));
+    p.cableUp(-4.4, 0, -21.9, 0.2, 0.18, 0x6a2c24);
+    p.cableUp(-4.0, 0, -21.5, 0.2, 0.18, 0x3a4a5e);
+
+    // A wheelbarrow by the south wall: an open steel tub with its sides, a
+    // wheel at the front, two legs at the back and a pair of handles.
+    {
+      const cx = -9.3;
+      const cz = -16.65;
+      const TUB = 0x3d4650;
+
+      p.box(cx, 0.2, cz, 0.7, 0.04, 0.46, shade(TUB, 0.8));
+      p.box(cx, 0.24, cz - 0.23, 0.7, 0.2, 0.03, TUB);
+      p.box(cx, 0.24, cz + 0.23, 0.7, 0.2, 0.03, TUB);
+      p.box(cx - 0.35, 0.24, cz, 0.03, 0.2, 0.46, TUB);
+      p.box(cx + 0.35, 0.24, cz, 0.03, 0.2, 0.46, TUB);
+      p.cable(cx + 0.5, 0.17, cz, 0.07, 0.34, 0x16171a, Math.PI / 2);
+
+      for (const side of [-1, 1]) {
+        p.post(cx - 0.3, 0, cz + side * 0.2, 0.2, 0.035, STEEL);
+        p.bar(cx - 0.7, 0.3, cz + side * 0.18, 0.8, 0.03, WOODEN);
+      }
+    }
+
+    map.createFitting("junk-supplies", F, p.elements, [
+      { minX: -4.75, maxX: -3.1, minZ: -17.45, maxZ: -16.3, top: 0.62 },
+      { minX: -3.1, maxX: -2.3, minZ: -16.9, maxZ: -16.3, top: 0.22 },
+      // The wheelbarrow tub: a solid object, not a thing to walk through.
+      { minX: -9.7, maxX: -8.75, minZ: -16.9, maxZ: -16.4, top: 0.44 },
+    ]);
   }
 
   overhead(map, F);

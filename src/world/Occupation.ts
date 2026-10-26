@@ -163,7 +163,11 @@ function scrawl(
   }
 }
 
-/** A bare bulb on a cord from the ceiling, in a wire guard, `drop` metres below the 3.8 m ceiling. */
+/**
+ * A bare bulb on a cord from the ceiling, `drop` metres below the 3.8 m
+ * ceiling: the socket and, for a wire-guarded one, its guard. The glowing
+ * glass itself is drawn by `createJunkBulbGlow`.
+ */
 function bulb(
   p: Pieces,
   x: number,
@@ -176,10 +180,7 @@ function bulb(
   p.cableUp(x, y, z, drop, 0.016, 0x1d1f23);
   p.post(x, y - 0.12, z, 0.12, 0.07, 0xe8dcb0);
 
-  if (shade) {
-    p.post(x, y - 0.02, z, 0.02, 0.34, 0x3a3f46);
-    p.post(x, y - 0.1, z, 0.08, 0.24, 0x3a3f46);
-  } else {
+  if (!shade) {
     for (const a of [0, 1.0, 2.0]) {
       p.bar(x, y - 0.06, z, 0.16, 0.012, STEEL_BARE, a);
     }
@@ -430,7 +431,7 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
   }
 
   // ========================================================== YARD / STORAGE
-  // A half-framed partition, a work lamp over the compressor, offcuts.
+  // A half-framed partition, a bulb over the lift cart, offcuts.
   {
     const p = new Pieces();
 

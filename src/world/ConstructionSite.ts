@@ -29,7 +29,6 @@ const BRICK_JOINT = 0x2a1d18;
 const BLOCK = 0x6e737b;
 const BLOCK_DARK = 0x5b6068;
 const SACK = [0x8e8c84, 0x7a786f, 0x86847a];
-const SACK_PRINT = 0x3c5a78;
 const TIMBER = 0x7a5c3c;
 const TIMBER_B = 0x6a5035;
 const TIMBER_DARK = 0x4e3a28;
@@ -130,53 +129,6 @@ function blockStack(
 
   // A strap round the stack.
   p.box(cx, 0.125, cz, w - 0.02, layers * 0.2, 0.02, STEEL_BARE);
-}
-
-/** A stack of cement sacks: pillows laid in layers, a few split, with a printed band. */
-function sackStack(
-  p: Pieces,
-  random: () => number,
-  x0: number,
-  z0: number,
-  layers: number,
-): void {
-  pallet(p, x0 + 0.4, z0 + 0.58, 0.8, 1.15, 0);
-
-  for (let k = 0; k < layers; k++) {
-    for (let j = 0; j < 3; j++) {
-      const x = x0 + 0.4 + (random() - 0.5) * 0.04;
-      const z = z0 + 0.2 + j * 0.38;
-      const ry = (random() - 0.5) * 0.08 + (k % 2 ? 0.05 : -0.04);
-      const tone = SACK[Math.floor(random() * SACK.length)];
-
-      // The body, a lighter top edge and a printed band on the face.
-      p.box(x, 0.125 + k * 0.125, z, 0.78, 0.115, 0.36, tone, ry);
-      p.box(x, 0.125 + k * 0.125 + 0.1, z, 0.74, 0.02, 0.32, 0xa8a69c, ry);
-      p.box(
-        x - 0.1,
-        0.125 + k * 0.125 + 0.03,
-        z - 0.182,
-        0.34,
-        0.05,
-        0.004,
-        SACK_PRINT,
-        ry,
-      );
-    }
-  }
-
-  // One slumped sack on top, split, with the powder spilled below.
-  p.box(
-    x0 + 0.4,
-    0.125 + layers * 0.125,
-    z0 + 0.58,
-    0.7,
-    0.07,
-    0.34,
-    SACK[0],
-    0.3,
-  );
-  p.box(x0 + 0.95, 0, z0 + 0.5, 0.4, 0.008, 0.3, 0x9a9890, 0.3);
 }
 
 /** Formwork timber: bearers and layers of new and used boards, stickers between, one pile askew. */
@@ -781,15 +733,8 @@ export function furnishConstructionSite(map: MapBuilder, floorY: number): void {
 
   // ====================================================== MATERIAL STORAGE
   // The loading dock (x 7 to 22, z -24 to -12).
-  {
-    // Cement sacks, north-west corner, 0.45 m off the wall (the supply lead runs along its foot).
-    const p = new Pieces();
-
-    sackStack(p, random, 7.5, -23.55, 6);
-    map.createFitting("site-sacks", F, p.elements, [
-      { minX: 7.5, maxX: 8.3, minZ: -23.55, maxZ: -22.4, top: 0.9 },
-    ]);
-  }
+  // (The cement sacks that stood in the dock's north-west corner are gone: the
+  // Power Room's east wall now stands where they were.)
 
   {
     // Two packs of bricks, one half used, against the west face of the low ledge.
@@ -1034,18 +979,6 @@ export function furnishConstructionSite(map: MapBuilder, floorY: number): void {
       0.3,
       0x1a2230,
       0.42,
-    ],
-    [
-      "decal-site-sacks-dust",
-      "dust",
-      8.3,
-      -22.6,
-      F,
-      2.2,
-      1.6,
-      0.0,
-      0x9a9890,
-      0.4,
     ],
     [
       "decal-site-bricks-dust",
