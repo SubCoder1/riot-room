@@ -358,31 +358,31 @@ describe("Enemy awareness", () => {
 describe("Drawing the smoke and explosions leaks nothing", () => {
   const camera = new THREE.PerspectiveCamera();
 
-  it("a cloud gets a bounded number of sprites and gives them all back", () => {
+  it("every cloud's parts are built up front, hidden; a cloud only lays them out and gives them back", () => {
     const smoke = new SmokeSystem(null, OPEN);
     const view = new SmokeCloudView(smoke);
 
     camera.position.set(0, 1.6, -12);
 
-    // The view's two hidden warm-up sprites are always there.
-    const warm = view.group.children.length;
+    // A cloud is one puff mesh, a flash and six bodies, for every cloud there
+    // can be: all built now and hidden, so a grenade landing makes nothing.
+    const total = view.group.children.length;
 
-    expect(warm).toBe(2);
+    expect(total).toBe(C.SMOKE_MAX_CLOUDS * (1 + 1 + 6));
+    expect(view.group.children.some((c) => c.visible)).toBe(false);
 
     smoke.emit("thrower", at(0, 0, 0));
     view.update(camera, 0);
 
-    // A cloud adds its puffs, one flash and a hiding body for each of its lumps.
-    expect(view.group.children).toHaveLength(
-      warm + C.SMOKE_PARTICLE_COUNT + 1 + 6,
-    );
+    expect(view.group.children).toHaveLength(total);
+    expect(view.group.children.some((c) => c.visible)).toBe(true);
     expect(view.count).toBe(1);
 
     smoke.clear();
     view.update(camera, 1);
 
-    // And takes them all away again.
-    expect(view.group.children).toHaveLength(warm);
+    expect(view.group.children).toHaveLength(total);
+    expect(view.group.children.some((c) => c.visible)).toBe(false);
     expect(view.count).toBe(0);
 
     view.dispose();
@@ -397,14 +397,24 @@ describe("Drawing the smoke and explosions leaks nothing", () => {
     cloud.age = C.SMOKE_EXPAND_TIME + 1;
     view.update(camera, 0);
 
+    // The puffs are one instanced mesh a cloud: its drawn count and the
+    // strongest opacity among them (per-instance data).
+    const puffs = (): THREE.Mesh =>
+      view.group.children.find(
+        (c) => c instanceof THREE.Mesh && c.name === "smoke-slot" && c.visible,
+      ) as THREE.Mesh;
     const visible = (): number =>
-      view.group.children.filter((c) => c.visible).length;
-    const opacity = (): number =>
-      Math.max(
-        ...view.group.children
-          .filter((c) => c instanceof THREE.Sprite)
-          .map((c) => (c as THREE.Sprite).material.opacity),
-      );
+      (puffs().geometry as THREE.InstancedBufferGeometry).instanceCount;
+    const opacity = (): number => {
+      const look = puffs().geometry.getAttribute("aLook");
+      let best = 0;
+
+      for (let i = 0; i < visible(); i++) {
+        best = Math.max(best, look.getY(i));
+      }
+
+      return best;
+    };
     const full = opacity();
 
     expect(visible()).toBeGreaterThan(10);
@@ -471,7 +481,7 @@ describe("Smoke hides what is inside it", () => {
     view.update(camera, 0);
 
     for (const child of view.group.children) {
-      if (child.name !== "smoke-warm") {
+      {
         expect(child.renderOrder).toBeGreaterThan(5);
       }
     }
@@ -492,7 +502,10 @@ describe("Smoke hides what is inside it", () => {
     view.update(camera, 3);
 
     const cores = view.group.children.filter(
-      (child) => child instanceof THREE.Mesh,
+      (child) =>
+        child instanceof THREE.Mesh &&
+        child.visible &&
+        !(child.geometry instanceof THREE.InstancedBufferGeometry),
     ) as THREE.Mesh[];
     const material = cores[0].material as THREE.ShaderMaterial;
 
@@ -511,15 +524,22 @@ describe("Smoke hides what is inside it", () => {
 
     expect(xs.size).toBeGreaterThanOrEqual(4);
 
-    for (const child of view.group.children) {
-      if (child instanceof THREE.Sprite && child.name !== "smoke-warm") {
-        const c = child.material.color;
+    // Never near-white: the puffs are mid to dark grey (read from the mesh's
+    // per-puff colours).
+    const puffs = view.group.children.find(
+      (c) =>
+        c instanceof THREE.Mesh &&
+        c.visible &&
+        c.geometry instanceof THREE.InstancedBufferGeometry,
+    ) as THREE.Mesh;
+    const tint = puffs.geometry.getAttribute("aColor");
+    const drawn = (puffs.geometry as THREE.InstancedBufferGeometry)
+      .instanceCount;
 
-        // Never near-white: the puffs are mid to dark grey.
-        if (child.material.blending !== THREE.AdditiveBlending) {
-          expect(Math.max(c.r, c.g, c.b)).toBeLessThan(0.7);
-        }
-      }
+    for (let i = 0; i < drawn; i++) {
+      expect(Math.max(tint.getX(i), tint.getY(i), tint.getZ(i))).toBeLessThan(
+        0.7,
+      );
     }
 
     view.dispose();

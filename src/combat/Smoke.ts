@@ -79,6 +79,9 @@ export function smokeThickness(age: number): number {
   return clamp01(age / DENSITY_RAMP);
 }
 
+/** A line to the cloud's heart this much free (0 to 1) is open; less means a wall is in the way. */
+const CLEAR_ENOUGH = 0.97;
+
 /** How many samples are taken along a sight line through one cloud. */
 const SAMPLES = 10;
 
@@ -177,6 +180,15 @@ export class SmokeSystem {
       const distance = point.distanceTo(cloud.position) / radius;
 
       if (distance >= 1) {
+        continue;
+      }
+
+      // Smoke does not pass a wall: a point the cloud's heart cannot see is
+      // not in the smoke, however near it is (the far side of a wall).
+      if (
+        this.world &&
+        this.world.clearFraction(cloud.position, point) < CLEAR_ENOUGH
+      ) {
         continue;
       }
 

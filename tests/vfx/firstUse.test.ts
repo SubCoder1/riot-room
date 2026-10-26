@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { FireZoneView } from "../../src/vfx/FireZoneView";
+import { SMOKE_CONFIG } from "../../src/combat/SmokeConfig";
 import { SmokeCloudView } from "../../src/vfx/SmokeCloudView";
 import { SmokeSystem } from "../../src/combat/Smoke";
 
@@ -27,18 +28,28 @@ describe("First use does not stall the frame", () => {
     expect(coloured.length).toBe(Math.floor((meshes.length * 2) / 3));
   });
 
-  it("the smoke view keeps one hidden sprite of each kind a cloud uses", () => {
+  it("the smoke view builds every cloud it can need ahead of time, hidden", () => {
     const view = new SmokeCloudView(new SmokeSystem());
-    const warm = view.group.children.filter((c) => c.name === "smoke-warm");
+    const parts = view.group.children.filter((c) => c.name === "smoke-slot");
+    const sprites = parts.filter((c) => c instanceof THREE.Sprite);
 
-    expect(warm).toHaveLength(2);
-    expect(warm.every((c) => !c.visible)).toBe(true);
-    // One normal, one additive, as a cloud's puffs and its flash are.
-    const blends = warm.map(
+    // A cloud is its puffs, a flash and its bodies, for each cloud there can be.
+    expect(parts.length).toBe(SMOKE_CONFIG.SMOKE_MAX_CLOUDS * 8);
+    // ...and each cloud's puffs are one draw, not one per puff.
+    expect(
+      parts.filter(
+        (c) =>
+          c instanceof THREE.Mesh &&
+          c.geometry instanceof THREE.InstancedBufferGeometry,
+      ),
+    ).toHaveLength(SMOKE_CONFIG.SMOKE_MAX_CLOUDS);
+    expect(parts.every((c) => !c.visible)).toBe(true);
+    // An additive flash, as a cloud's is (the puffs blend normally).
+    const blends = sprites.map(
       (c) => (c as THREE.Sprite).material.blending as THREE.Blending,
     );
 
     expect(blends).toContain(THREE.AdditiveBlending);
-    expect(blends).toContain(THREE.NormalBlending);
+    view.dispose();
   });
 });
