@@ -65,6 +65,9 @@ export class Renderer {
 
     this.renderer.setSize(width, height, false);
 
+    // (Local clipping: the electric puddle is cut by planes round a vent grate.)
+    this.renderer.localClippingEnabled = true;
+
     this.renderer.shadowMap.enabled = true;
 
     this.renderer.shadowMap.type = THREE.PCFShadowMap;

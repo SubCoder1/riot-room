@@ -24,7 +24,11 @@ export type AttackId =
  * damage-number code as melee.
  */
 export type DamageSourceId =
-  AttackId | "grenade-blast" | "molotov-fire" | "shutter-crush";
+  | AttackId
+  | "grenade-blast"
+  | "molotov-fire"
+  | "shutter-crush"
+  | "electric-shock";
 
 export type AttackCategory = "light" | "heavy" | "aerial";
 

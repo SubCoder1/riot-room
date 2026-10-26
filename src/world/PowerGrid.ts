@@ -1,5 +1,4 @@
 import { ROOF_HIGH } from "./ArenaLayout";
-import { FUEL_CAPACITY } from "./GeneratorFuel";
 import { Pieces } from "./FittingPieces";
 import { POWER_BULB } from "./JunkRoom";
 import type { MapBuilder } from "./MapParts";
@@ -434,31 +433,20 @@ const SUPPORTS: Support[] = [
     color: 0xffe3b8,
   },
   {
-    id: "support-north-3",
-    x: 5.5,
-    z: -17,
-    nx: 0,
-    nz: 1,
-    height: 4.3,
-    kind: "single",
-    tilt: 0.28,
-    cage: true,
-    platform: 0,
-    color: 0xffdca8,
-  },
-  {
     id: "support-dock-1",
     x: 14.2,
     z: -24,
     nx: 0,
     nz: 1,
     height: 5.9,
-    kind: "twin",
+    kind: "single",
     tilt: 0.44,
     cage: true,
     platform: 0,
     shadow: true,
     color: 0xffe3b8,
+    // One head carries the dock now: a little stronger than either twin was.
+    power: 90,
   },
   {
     id: "support-south-1",
@@ -1091,8 +1079,6 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     x: main.cap.x,
     y: main.cap.y,
     z: main.cap.z,
-    capacity: FUEL_CAPACITY,
-    startFuel: 20,
     circuit: "interior",
     panel: main.panel,
     indicator: main.indicator,
@@ -1121,11 +1107,7 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
   // the floodlights and work lamps, each fixed along the wall's foot. One heavy
   // trunk goes from the board through the door to the generator's first socket.
   const DB: XZ = [4.5, -16.55];
-  const [n1s, n2s, n3s] = [
-    sup("support-north-1"),
-    sup("support-north-2"),
-    sup("support-north-3"),
-  ];
+  const [n1s, n2s] = [sup("support-north-1"), sup("support-north-2")];
 
   {
     const p = new Pieces();
@@ -1146,14 +1128,9 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     // socket, so the cable visibly enters the generator.
     plug(p, s1, [-1, 0], 0.065, 0);
     ramp(p, 3.0, -17.15, Math.PI / 2);
-    distributionBoard(p, DB[0], DB[1] - 0.3);
+    distributionBoard(p, DB[0], DB[1] - 0.29);
 
     // Each lead runs straight along the wall's foot, clipped, to the board.
-    const lead3: XZ[] = [foot(n3s), [5.0, -16.62], [DB[0] + 0.2, DB[1] - 0.04]];
-
-    run(p, lead3, 0.04, 0, 10);
-    clips(p, lead3, 0.5, 0.04);
-
     // The archive wall's lead: along the wall to the corner, round it to the
     // switchroom wall, across the door on a ramp.
     const lead2: XZ[] = [
@@ -1197,7 +1174,17 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     jerrycan(p, 6.5, -16.88, -0.2);
     p.box(6.35, 0, -16.86, 0.7, 0.02, 0.28, GUNMETAL);
 
-    map.createFitting("fittings-grid-north", F, p.elements, []);
+    // (The board is solid, its back flat to the wall: nobody walks through it.)
+    map.createFitting("fittings-grid-north", F, p.elements, [
+      {
+        minX: DB[0] - 0.43,
+        maxX: DB[0] + 0.43,
+        minZ: DB[1] - 0.45,
+        maxZ: DB[1] - 0.14,
+        top: 1.34,
+        exact: true,
+      },
+    ]);
 
     // The dock mast's lead goes straight to the generator's second socket,
     // along the north wall's foot, down the power room's east wall, through the
@@ -1250,8 +1237,6 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     x: roofGen.cap.x,
     y: roofGen.cap.y,
     z: roofGen.cap.z,
-    capacity: FUEL_CAPACITY / 2,
-    startFuel: 10,
     circuit: "exterior",
     panel: roofGen.panel,
     indicator: roofGen.indicator,
@@ -1599,13 +1584,25 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
   // cabinet's top and to the main cabinet's, two cables each, sagging.
   const drops: Array<[number, number, number, number, number]> = [
     // [x on the bundle, x at the equipment, z at the equipment, top of it, spread]
-    [5.8, 6.25, -22.8, 1.25, 0.06],
-    [6.2, 6.0, -22.4, 1.25, -0.06],
+    // (The generator's top is a metre up here: its two leads end on terminals
+    // fixed to it, not in the air over it.)
+    [5.8, 6.2, -23.0, 1.02, 0.06],
+    [6.2, 6.3, -22.7, 1.02, -0.06],
     [1.1, 1.0, -23.2, 2.03, 0.05],
     [1.5, 1.4, -23.1, 2.03, -0.05],
     [2.3, 2.2, -23.2, 2.03, 0.05],
     [3.0, 3.3, -23.3, 2.17, 0.05],
   ];
+
+  // A terminal block where each lead meets the generator's top.
+  for (const [tx, tz] of [
+    [6.2, -23.0],
+    [6.3, -22.7],
+  ] as const) {
+    p.box(tx, 1.0, tz, 0.14, 0.06, 0.14, GUNMETAL);
+    p.post(tx - 0.03, 1.06, tz, 0.04, 0.025, STEEL_BARE);
+    p.post(tx + 0.03, 1.06, tz, 0.04, 0.025, STEEL_BARE);
+  }
 
   drops.forEach(([bx, ex, ez, top, spread], n) => {
     const color = n % 2 ? CABLES[1] : SIGNAL;
@@ -2298,32 +2295,6 @@ export function furnishDeckService(map: MapBuilder, floorY: number): void {
   run(p, mains, 0.065, 0, 0);
   plug(p, sock, [0, 1], 0.065, 0);
 
-  // The wall halogen over the bridge (see NightLights): its lead runs along the
-  // wall's foot from the board to a junction box under it, and a steel conduit
-  // climbs the wall's face to the lamp's bracket 5.6 m up.
-  const lampX = 31.0;
-  const lampFoot: XZ = [lampX, -4.9];
-  const lead: XZ[] = [
-    [boardX + 0.22, -4.62],
-    [27.2, -4.78],
-    [28.0, -4.84],
-    [29.6, -4.88],
-    lampFoot,
-  ];
-
-  run(p, lead, 0.036, 0, 10);
-  clips(p, lead.slice(1), 0.6, 0.036);
-  junction(p, lampFoot[0], lampFoot[1] - 0.03, true);
-  // (Bare galvanised steel, so it shows against the dark wall.)
-  p.post(lampX, 0.3, -4.95, 5.0, 0.08, STEEL_BARE);
-
-  for (const y of [0.9, 1.9, 2.9, 3.9, 4.8]) {
-    p.box(lampX, y, -4.95, 0.14, 0.07, 0.1, GUNMETAL);
-  }
-
-  // The short flex from the conduit's top to the lamp.
-  p.cableUp(lampX, 5.25, -4.93, 0.3, 0.03, 0x24272c);
-
   // A reel with its lead taken to the board, beside it.
   reel(p, 27.5, -4.15, 0.3, 13);
   run(
@@ -2357,6 +2328,63 @@ export function furnishDeckService(map: MapBuilder, floorY: number): void {
   map.createFitting("deck-fuel", F, q.elements, [
     { minX: 24.6, maxX: 25.2, minZ: -4.7, maxZ: -3.5, top: 1.0 },
   ]);
+
+  // A drum with a fire in it, on the deck under the bridge: scorched steel,
+  // vent holes punched round its foot, a few charred sticks across the mouth
+  // (the flames and their glow are drawn by BarrelFire).
+  const fx = 27.1;
+  // (This area is built five metres south of where it stands: world z -0.5.)
+  const fz = 4.5;
+  const f = new Pieces();
+
+  f.post(fx, 0, fz, 0.88, 0.58, 0x3b312a);
+  f.post(fx, 0.2, fz, 0.04, 0.6, 0x241f1b);
+  f.post(fx, 0.6, fz, 0.04, 0.6, 0x241f1b);
+  f.post(fx, 0.8, fz, 0.06, 0.52, 0x120e0b);
+
+  for (const a of [0.3, 1.4, 2.5, 3.6, 4.7, 5.8]) {
+    f.box(
+      fx + Math.cos(a) * 0.29,
+      0.06,
+      fz + Math.sin(a) * 0.29,
+      0.05,
+      0.07,
+      0.05,
+      0x0d0a08,
+      -a,
+    );
+  }
+
+  f.bar(fx, 0.9, fz, 0.5, 0.05, 0x1a1411, 0.5, 0, 0.1);
+  f.bar(fx, 0.93, fz, 0.46, 0.05, 0x1a1411, -0.8, 0, -0.1);
+  f.bar(fx, 0.96, fz, 0.4, 0.045, 0x1a1411, 1.9, 0, 0.05);
+  // Some scrap timber stacked beside it for the next while.
+  f.box(fx + 0.62, 0, fz + 0.1, 0.9, 0.05, 0.12, 0x6a5238, 0.5);
+  f.box(fx + 0.6, 0.05, fz + 0.12, 0.8, 0.05, 0.1, 0x5c4630, 0.42);
+  // (A jump gets onto it, but it is no ledge to vault: a drum is not a wall.)
+  map.createFitting("deck-fire-drum", F, f.elements, [
+    {
+      minX: fx - 0.29,
+      maxX: fx + 0.29,
+      minZ: fz - 0.29,
+      maxZ: fz + 0.29,
+      top: 0.9,
+      role: "ledge",
+    },
+  ]);
+  map.addFireDrum({ id: "fire-drum-bridge", x: fx, y: F + 0.82, z: fz });
+  map.addDecal({
+    id: "decal-site-fire-soot",
+    kind: "stain",
+    x: fx,
+    z: fz,
+    y: F,
+    width: 1.8,
+    depth: 1.8,
+    rotation: 0.4,
+    color: 0x0d0c0b,
+    alpha: 0.5,
+  });
 
   // Oil under the generator and the drums.
   map.addDecal({
