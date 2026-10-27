@@ -202,14 +202,24 @@ canvas {
   stroke-width: 1;
 }
 
+.ww-rim {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2;
+  stroke-linecap: butt;
+}
+
+.ww-rim.is-selected {
+  stroke: rgba(255, 255, 255, 0.55);
+}
+
 .ww-icon {
   fill: none;
   stroke: #aeb7c9;
   stroke-width: 1.45;
   stroke-linecap: round;
   stroke-linejoin: round;
-  /* Icons are drawn on a 32 x 32 grid; this makes them a bit larger. */
-  transform: scale(1.3);
+  /* Placed, sized and stroked from the icon's own bounds (see WeaponWheelView). */
 }
 
 .ww-slot.is-selected .ww-icon {
@@ -471,4 +481,64 @@ canvas {
   .player-health__segment {
     transition: none;
   }
+}
+
+/* ------------------------------------------------------------------
+   Loading screen: on screen from the first paint until the game is
+   playable. Its bar counts finished start-up stages.
+   ------------------------------------------------------------------ */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #05070a;
+  color: #cfd8e3;
+  font-family: var(--font-ui);
+  transition: opacity 0.45s ease;
+}
+
+.loading-screen.done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-title {
+  font-size: 56px;
+  letter-spacing: 0.14em;
+  color: #e8edf3;
+}
+
+.loading-bar {
+  width: min(360px, 70vw);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.loading-fill {
+  height: 100%;
+  width: 0;
+  background: #c9a227;
+  transition: width 0.4s ease;
+}
+
+.loading-label {
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  min-height: 24px;
+}
+
+.loading-clock {
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  opacity: 0.45;
+}
+
+.loading-screen.failed .loading-label {
+  color: #e0705a;
 }

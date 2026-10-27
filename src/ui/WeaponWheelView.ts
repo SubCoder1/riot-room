@@ -17,9 +17,18 @@ import { ICONS, svg } from "./WeaponIcons";
 
 const OUTER = 140;
 const INNER = 50;
-const ICON_RADIUS = 96;
-/** How far a top slot is moved outward so its icon is near the rim (see below). */
-const TOP_SLOT_LIFT = 17;
+/** Every slot's block (icon, name, quantity) is centred on its sector's midpoint. */
+const SLOT_RADIUS = (INNER + OUTER) / 2;
+/** Inside a slot's block, measured from the block's centre: icon, name, quantity. */
+const ICON_Y = -20;
+const NAME_Y = 14;
+const QTY_Y = 30;
+/** Every icon is scaled so its longer side is this many units, drawn at one stroke weight. */
+const ICON_SIZE = 30;
+const ICON_STROKE = 1.9;
+/** The widest the name in the hub may be (the hub is 2 * INNER across). */
+const HUB_TEXT_WIDTH = 2 * INNER - 18;
+const HUB_NAME_SIZE = 22;
 
 /** A point at `radius`, `degrees` clockwise from straight up. */
 function polar(radius: number, degrees: number): [number, number] {
@@ -46,6 +55,9 @@ interface SlotView {
   sector: SVGElement;
   group: SVGElement | null;
   quantity: SVGElement | null;
+  icon: SVGElement | null;
+  /** A short arc on the hub's rim, lit while this slot is selected. */
+  rim: SVGElement;
   lastQuantity: string;
 }
 
@@ -98,11 +110,25 @@ export class WeaponWheelView {
       );
 
       sector.dataset.type = definition.type;
+
+      const [rx0, ry0] = polar(INNER, definition.angle - half);
+      const [rx1, ry1] = polar(INNER, definition.angle + half);
+      const rim = svg(
+        "path",
+        {
+          d: `M${rx0.toFixed(2)},${ry0.toFixed(2)} A${INNER},${INNER} 0 0 1 ${rx1.toFixed(2)},${ry1.toFixed(2)}`,
+          class: "ww-rim",
+        },
+        canvas,
+      );
+
       this.slots.push({
         definition,
         sector,
         group: null,
         quantity: null,
+        icon: null,
+        rim,
         lastQuantity: "",
       });
     }
@@ -127,16 +153,11 @@ export class WeaponWheelView {
 
     svg("circle", { r: String(INNER), class: "ww-hub" }, canvas);
 
-    // Icon, name and quantity for each slot.
+    // Icon, name and quantity for each slot: one block, centred on the
+    // midpoint of the slot's sector (the same radius and the same inner layout
+    // for every slot, so nothing is placed by hand).
     for (const slot of this.slots) {
-      const [x, baseY] = polar(ICON_RADIUS, slot.definition.angle);
-      // The name and quantity hang below the icon. For a slot at the top that
-      // is toward the middle of the wheel, so lift it outward until its icon
-      // sits as near the rim as the bottom slot's label does.
-      const y =
-        Math.cos((slot.definition.angle * Math.PI) / 180) > 0.5
-          ? baseY - TOP_SLOT_LIFT
-          : baseY;
+      const [x, y] = polar(SLOT_RADIUS, slot.definition.angle);
       const group = svg(
         "g",
         {
@@ -145,6 +166,7 @@ export class WeaponWheelView {
         },
         canvas,
       );
+
       slot.group = group;
 
       if (slot.definition.reserved) {
@@ -153,18 +175,27 @@ export class WeaponWheelView {
 
       const icon = svg("g", { class: "ww-icon" }, group);
 
+      slot.icon = icon;
       icon.dataset.icon = slot.definition.icon;
 
       for (const [tag, attrs] of ICONS[slot.definition.icon]) {
         svg(tag, attrs, icon);
       }
 
-      const name = svg("text", { x: "0.85", y: "31", class: "ww-name" }, group);
+      const name = svg(
+        "text",
+        { x: "0.85", y: String(NAME_Y), class: "ww-name" },
+        group,
+      );
 
       name.textContent = slot.definition.name.toUpperCase();
 
       if (slot.definition.counted) {
-        slot.quantity = svg("text", { y: "45", class: "ww-qty" }, group);
+        slot.quantity = svg(
+          "text",
+          { y: String(QTY_Y), class: "ww-qty" },
+          group,
+        );
       }
     }
 
@@ -180,7 +211,71 @@ export class WeaponWheelView {
     );
 
     parent.appendChild(this.root);
+    this.layoutIcons();
     this.render();
+  }
+
+  /**
+   * Centres each icon on its block's icon position and gives all of them the
+   * same size and stroke weight, from the icon's own bounding box (icons are
+   * drawn around different centres and at different sizes on their grid).
+   */
+  private layoutIcons(): void {
+    for (const slot of this.slots) {
+      const icon = slot.icon;
+
+      if (!icon) {
+        continue;
+      }
+
+      let scale = 1.3;
+      let cx = 0;
+      let cy = 0;
+
+      try {
+        const box = (icon as unknown as SVGGraphicsElement).getBBox();
+        const longest = Math.max(box.width, box.height);
+
+        if (longest > 0) {
+          scale = Math.min(2, Math.max(0.9, ICON_SIZE / longest));
+          cx = box.x + box.width / 2;
+          cy = box.y + box.height / 2;
+        }
+      } catch {
+        // No layout to measure (a test, no DOM): the plain 1.3 scale.
+      }
+
+      icon.setAttribute(
+        "transform",
+        `translate(0,${ICON_Y}) scale(${scale.toFixed(3)}) translate(${(-cx).toFixed(3)},${(-cy).toFixed(3)})`,
+      );
+      icon.style.strokeWidth = (ICON_STROKE / scale).toFixed(3);
+    }
+  }
+
+  /** Shrinks the hub's name until it fits inside the hub with room to spare. */
+  private fitCenterName(): void {
+    let size = HUB_NAME_SIZE;
+
+    this.centerName.style.fontSize = `${size}px`;
+
+    try {
+      const width = (
+        this.centerName as unknown as SVGTextContentElement
+      ).getComputedTextLength();
+
+      if (width > HUB_TEXT_WIDTH) {
+        size = Math.max(12, (HUB_NAME_SIZE * HUB_TEXT_WIDTH) / width);
+      }
+    } catch {
+      const length = this.centerName.textContent?.length ?? 0;
+
+      if (length > 7) {
+        size = Math.max(12, (HUB_NAME_SIZE * 7) / length);
+      }
+    }
+
+    this.centerName.style.fontSize = `${size.toFixed(2)}px`;
   }
 
   /** Brings the drawing up to date. Call every frame; unchanged parts cost nothing. */
@@ -216,6 +311,7 @@ export class WeaponWheelView {
       this.slots.forEach((slot, k) => {
         slot.sector.classList.toggle("is-selected", k === highlight);
         slot.group?.classList.toggle("is-selected", k === highlight);
+        slot.rim.classList.toggle("is-selected", k === highlight);
       });
     }
 
@@ -229,8 +325,9 @@ export class WeaponWheelView {
       this.lastCenter = center;
       this.centerName.textContent = current.name.toUpperCase();
       // With a quantity underneath the pair is centred; alone, the name is.
-      this.centerName.setAttribute("y", have === null ? "8" : "-2");
+      this.centerName.setAttribute("y", have === null ? "8" : "-3");
       this.centerQuantity.textContent = have === null ? "" : `×${have}`;
+      this.fitCenterName();
     }
   }
 

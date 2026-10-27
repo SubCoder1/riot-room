@@ -11,6 +11,7 @@ import { Renderer } from "../rendering/Renderer";
 import { InputManager } from "../input/InputManager";
 import { Player } from "../player/Player";
 import { Arena } from "../world/Arena";
+import { DYNAMIC_DECAY, dynamicDecayAt } from "../world/LightRegions";
 import { ArenaCollision } from "../world/ArenaCollision";
 import {
   ARMORY,
@@ -132,6 +133,9 @@ const HATCH_OPEN_ANGLE = 1.75;
 
 /** How far a block of vent grating swings up on its hinge when it opens (radians). */
 const VENT_PANEL_OPEN = 1.85;
+
+/** Told when a start-up stage begins: its label and how many stages are done. */
+export type StageReporter = (label: string, done: number) => void;
 
 type ShadowLight = THREE.DirectionalLight | THREE.SpotLight | THREE.PointLight;
 
@@ -359,14 +363,24 @@ export class Game {
    * It is always in the scene (at no strength when nothing burns), so lighting
    * it never changes the number of lights and never stalls a frame.
    */
-  private readonly flameLight = new THREE.PointLight(0xff9a3c, 0, 8, 2);
+  private readonly flameLight = new THREE.PointLight(
+    0xff9a3c,
+    0,
+    8,
+    DYNAMIC_DECAY,
+  );
   private readonly flamePosition = new THREE.Vector3();
   /**
    * The flash of a grenade going off: one warm light kept in the scene at no
    * strength, moved to each blast and let die away in under a second (so a
    * blast never adds a light or stalls a frame).
    */
-  private readonly blastLight = new THREE.PointLight(0xffb066, 0, 18, 2);
+  private readonly blastLight = new THREE.PointLight(
+    0xffb066,
+    0,
+    18,
+    DYNAMIC_DECAY,
+  );
   private blastAge = Number.POSITIVE_INFINITY;
   /**
    * The glow of fires burning after a Molotov is thrown: a few warm lights kept
@@ -375,7 +389,7 @@ export class Game {
    */
   private readonly fireLights = Array.from(
     { length: 4 },
-    () => new THREE.PointLight(0xff8a30, 0, 10, 2),
+    () => new THREE.PointLight(0xff8a30, 0, 10, DYNAMIC_DECAY),
   );
   private readonly fireGlow: Array<{
     position: THREE.Vector3;
@@ -473,7 +487,29 @@ export class Game {
   // CONSTRUCTOR
   // ============================================================
 
-  constructor(container: HTMLElement) {
+  /**
+   * Settles once the game can be played: the characters are in and every
+   * shader is built, so the first frame shown does not stall. The loop only
+   * starts then.
+   */
+  public readonly ready: Promise<void>;
+
+  /**
+   * `onStage` is told when each start-up stage begins (its label and how many
+   * stages are already done), so a loading screen can show real progress.
+   */
+  constructor(container: HTMLElement, onStage?: StageReporter) {
+    performance.mark("rr:game-start");
+
+    // The character model (the one big download) travels while the world is
+    // built below. Three's file cache holds it for the loaders that ask for it
+    // later (a request already on its way is joined, not repeated).
+    THREE.Cache.enabled = true;
+    void new THREE.FileLoader()
+      .setResponseType("arraybuffer")
+      .loadAsync(CHARACTER_ASSET_PATH)
+      .catch(() => undefined);
+
     // ----------------------------------------------------------
     // Renderer
     // ----------------------------------------------------------
@@ -566,6 +602,7 @@ export class Game {
           this.explosionPoint.set(event.x, event.y, event.z),
         );
         this.blastLight.position.set(event.x, event.y + 0.8, event.z);
+        this.blastLight.decay = dynamicDecayAt(event.x, event.y + 0.8, event.z);
         this.blastAge = 0;
       }
     });
@@ -730,21 +767,45 @@ export class Game {
     this.renderer.scene.add(this.throwPreview.group);
     this.renderer.scene.add(this.arenaDebug.group);
 
-    void this.dummy.load();
-
     // ----------------------------------------------------------
-    // Load character
-    // ----------------------------------------------------------
-
-    void this.loadCharacter();
-
-    // ----------------------------------------------------------
-    // Start game loop
+    // Load characters, build the shaders, then start the game loop
     // ----------------------------------------------------------
 
     this.animate = this.animate.bind(this);
+    this.ready = this.startUp(
+      onStage ?? (() => undefined),
+      Promise.all([this.dummy.load(), this.loadCharacter()]),
+    );
+  }
 
+  /**
+   * The start-up after the world is built. The characters download while the
+   * shaders compile would otherwise wait, so both are started at once. The
+   * shaders are compiled in parallel by the graphics driver without holding
+   * up the page (a first draw compiles them one after another and freezes the
+   * page for tens of seconds).
+   */
+  private async startUp(
+    report: StageReporter,
+    loading: Promise<unknown>,
+  ): Promise<void> {
+    // (User Timing marks: `performance.getEntriesByType("mark")` shows where
+    // the start-up time goes.)
+    performance.mark("rr:world-built");
+    report("Loading characters", 1);
+    await loading;
+    performance.mark("rr:characters-loaded");
+    // Done with the prefetch cache (each file is now in the loaded scene).
+    THREE.Cache.clear();
+    THREE.Cache.enabled = false;
+
+    report("Compiling shaders", 2);
+    await this.warmUp();
+    performance.mark("rr:ready");
+
+    this.lastFrameTime = performance.now();
     requestAnimationFrame(this.animate);
+    requestAnimationFrame(() => performance.mark("rr:first-frame"));
   }
 
   // ============================================================
@@ -996,7 +1057,6 @@ export class Game {
     // Render
     // ----------------------------------------------------------
 
-    this.warmUp();
     this.arena.update(dt);
     this.updateFlameLight();
     this.updateFireLights();
@@ -1471,33 +1531,17 @@ export class Game {
     );
   }
 
-  /** Frames since the characters were both loaded (the warm-up waits a few). */
-  private warmUpFrames = 0;
-  private warmedUp = false;
-
   /**
    * Everything that first appears mid-game (a throwable taken out, a throw, a
    * blast, a fire, smoke, the lights they cast) would be compiled and sent to
    * the graphics card the first time it is drawn, a stutter right when you
-   * act. So once, a few frames after the characters are in, the held items are
-   * built, every hidden object is made visible and uncullable for one draw
-   * (programs compiled, geometry and textures uploaded) and put back. That
-   * draw is overwritten by the frame about to be rendered, so it is never seen.
+   * act. So once, when the characters are in and before the loop starts, the held
+   * items are built, every hidden object is made visible and uncullable and
+   * its programs are compiled (in parallel, without freezing the page), then
+   * drawn once (geometry and textures uploaded) and put back. Nothing is shown
+   * on screen until the loop starts, so that draw is never seen.
    */
-  private warmUp(): void {
-    if (this.warmedUp) {
-      return;
-    }
-
-    if (!this.character.isLoaded || !this.dummy.character.isLoaded) {
-      return;
-    }
-
-    if (++this.warmUpFrames < 3) {
-      return;
-    }
-
-    this.warmedUp = true;
+  private async warmUp(): Promise<void> {
     this.character.prepareHeldItems();
     this.dummy.character.prepareHeldItems();
 
@@ -1530,8 +1574,11 @@ export class Game {
     });
 
     this.renderer.camera.updateMatrixWorld(true);
-    this.renderer.renderer.compile(scene, this.renderer.camera);
+    performance.mark("rr:warmup-compile-start");
+    await this.renderer.renderer.compileAsync(scene, this.renderer.camera);
+    performance.mark("rr:shaders-compiled");
     this.renderer.renderer.render(scene, this.renderer.camera);
+    performance.mark("rr:warmup-render-done");
 
     for (const [light, auto] of shadowed) {
       light.shadow.autoUpdate = auto;
@@ -1541,6 +1588,7 @@ export class Game {
     this.fireView.previewFuel(true);
     this.renderer.renderer.render(scene, this.renderer.camera);
     this.fireView.previewFuel(false);
+    performance.mark("rr:warmup-fuel-done");
 
     for (const [object, visible, culled] of saved) {
       object.visible = visible;
@@ -2370,6 +2418,11 @@ export class Game {
     // Held out a little from the flame, so the hands near it are warmed, not blown out.
     this.flameLight.position.copy(this.flamePosition);
     this.flameLight.position.y += 0.35;
+    this.flameLight.decay = dynamicDecayAt(
+      this.flameLight.position.x,
+      this.flameLight.position.y,
+      this.flameLight.position.z,
+    );
     this.flameLight.intensity = 0.5 * flicker;
     // The rain shows in it too, as it does in the lamps' light.
     this.arena.setHeldLight(this.flameLight.position, 0.5 * flicker);
@@ -2437,6 +2490,11 @@ export class Game {
 
       light.position.copy(fire.zone.position);
       light.position.y += 0.4 + 0.5 * fire.strength;
+      light.decay = dynamicDecayAt(
+        light.position.x,
+        light.position.y,
+        light.position.z,
+      );
       light.distance = 3 + radius * 3.2;
       // (Eased toward its value: a light handed from one fire to another, or
       // a fire put out, never steps.)
@@ -2479,7 +2537,7 @@ export class Game {
       }
     }
 
-    // The aim line and landing ring (local only), from the same numbers the
+    // The aim line (local only), from the same numbers the
     // throw uses.
     if (this.throwStance.isAiming && this.computeThrow()) {
       traceThrowPath(
