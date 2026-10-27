@@ -50,8 +50,12 @@ const PIN_TO = 0.62;
 /** Where in the put-away the item vanishes (the hand is at the pocket). */
 const UNEQUIP_ITEM_GONE_AT = 0.6;
 
-/** What the hand holds: every throwable shares every state and the throw. */
-export type HeldKind = "grenade" | "molotov" | "smoke";
+/**
+ * What the hand holds: every throwable shares every state and the throw. The
+ * dynamite shares the equip and put-away only: it is carried (a mission item),
+ * so it never aims or throws.
+ */
+export type HeldKind = "grenade" | "molotov" | "smoke" | "dynamite";
 
 export interface ThrowInput {
   /** A throwable (GRENADE, MOLOTOV or SMOKE) is the selected slot. */
@@ -205,6 +209,8 @@ export class ThrowStance {
         case "THROW_EQUIPPED":
           if (!wants) {
             this.enter("THROW_UNEQUIPPING");
+          } else if (this.held === "dynamite") {
+            // Carried, not thrown: nothing to aim and nothing to throw.
           } else if (input.aimHeld && !input.armBusy) {
             this.enter("THROW_AIMING");
           } else if (input.throwPressed && !input.armBusy) {
@@ -341,10 +347,7 @@ export class ThrowStance {
 
     switch (this.state) {
       case "THROW_EQUIPPING":
-        return (
-          progress >=
-          (this.held === "grenade" ? EQUIP_ITEM_AT : EQUIP_MOLOTOV_AT)
-        );
+        return progress >= (this.quickEquip ? EQUIP_ITEM_AT : EQUIP_MOLOTOV_AT);
       case "THROW_EQUIPPED":
       case "THROW_AIMING":
         return true;
@@ -384,12 +387,15 @@ export class ThrowStance {
     return this.held === "grenade" ? THROW_TIMING.grenadePin : 0;
   }
 
+  /** The grenade and the dynamite come straight out of the pocket (nothing to prepare). */
+  private get quickEquip(): boolean {
+    return this.held === "grenade" || this.held === "dynamite";
+  }
+
   private get equipTime(): number {
     // A Molotov (lit) and a smoke grenade (pin pulled) are prepared with the
     // other hand on the way up, so they take the longer equip.
-    return this.held === "grenade"
-      ? THROW_TIMING.equip
-      : THROW_TIMING.equipMolotov;
+    return this.quickEquip ? THROW_TIMING.equip : THROW_TIMING.equipMolotov;
   }
 
   private get progress(): number {
@@ -426,7 +432,7 @@ export class ThrowStance {
         break;
 
       case "THROW_EQUIPPING":
-        if (this.held !== "grenade") {
+        if (!this.quickEquip) {
           // Out of the pocket, up to be lit (or its pin pulled), then ready to throw.
           key =
             progress < LIGHT_FROM

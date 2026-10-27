@@ -668,3 +668,61 @@ describe("ThrowStance: a grenade's pin is pulled only when the throw is made", (
     expect(stance.pose.weight).toBeLessThan(0.05);
   });
 });
+
+describe("ThrowStance with the dynamite (carried, never thrown)", () => {
+  const dynamite: Partial<ThrowInput> = { kind: "dynamite", count: 1 };
+  let stance: ThrowStance;
+
+  const run = (seconds: number, input: Partial<ThrowInput> = {}): void => {
+    for (let t = 0; t < seconds; t += DT) {
+      stance.update(DT, { ...base, ...dynamite, ...input });
+    }
+  };
+
+  beforeEach(() => {
+    stance = new ThrowStance();
+  });
+
+  it("is raised into the hand like a grenade (the short equip) and held there", () => {
+    run(0.05);
+    expect(stance.state).toBe("THROW_EQUIPPING");
+    expect(stance.heldKind).toBe("dynamite");
+
+    run(THROW_TIMING.equip + 0.1);
+    expect(stance.state).toBe("THROW_EQUIPPED");
+    expect(stance.itemVisible).toBe(true);
+    expect(stance.pose.ready).toBeGreaterThan(0.9);
+    // Nothing to light or pull.
+    expect(stance.lit).toBe(false);
+    expect(stance.lighting).toBe(false);
+    expect(stance.pinPull).toBe(0);
+  });
+
+  it("never aims or throws, whatever is pressed", () => {
+    run(THROW_TIMING.equip + 0.1);
+    run(1, { aimHeld: true });
+    expect(stance.state).toBe("THROW_EQUIPPED");
+    expect(stance.isAiming).toBe(false);
+
+    run(1, { throwPressed: true });
+    expect(stance.state).toBe("THROW_EQUIPPED");
+    expect(stance.consumeRelease()).toBe(false);
+    expect(stance.consumedClick).toBe(false);
+  });
+
+  it("is lowered smoothly when something else is chosen, and the item goes", () => {
+    run(THROW_TIMING.equip + 0.1);
+    run(0.05, { selected: false, count: 0 });
+    expect(stance.state).toBe("THROW_UNEQUIPPING");
+
+    run(THROW_TIMING.unequip + 0.1, { selected: false, count: 0 });
+    expect(stance.state).toBe("NORMAL");
+    expect(stance.itemVisible).toBe(false);
+  });
+
+  it("is not raised when there is none (not picked up, or used)", () => {
+    run(1, { count: 0 });
+    expect(stance.state).toBe("NORMAL");
+    expect(stance.itemVisible).toBe(false);
+  });
+});

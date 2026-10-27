@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { HeldKind, ThrowPose } from "../inventory/ThrowStance";
+import { createDynamite } from "../vfx/DynamiteMesh";
 import {
   BOTTLE_SCALE,
   createBottle,
@@ -21,6 +22,13 @@ import {
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+/** How the dynamite bundle is turned in the hand, relative to the player's facing. */
+const DYNAMITE_CARRY = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(0, Math.PI / 2 + 1.0, 0.12),
+);
+/** A held bundle is drawn a little smaller than it lies on the table. */
+const HELD_DYNAMITE = 0.68;
+
 /**
  * Key positions of the throwing hand, in metres, relative to the shoulder (and
  * the hip for the pocket). F is the way the player looks (flat), R their right,
@@ -36,8 +44,6 @@ interface Frame {
 
 /** A grenade is drawn a little smaller in the hand than in flight. */
 const HELD_GRENADE = 0.78;
-/** First person: looking up past this (radians, about 24 degrees) hides the held item. */
-const HIDE_ITEM_PITCH = 0.42;
 /** The held item sits this far beyond the wrist bone, along the forearm. */
 const HELD_OFFSET = 0.09;
 
@@ -56,6 +62,7 @@ export class ThrowArm {
   private grenade: THREE.Group | null = null;
   private canister: THREE.Group | null = null;
   private bottle: THREE.Group | null = null;
+  private dynamite: THREE.Group | null = null;
   private bottleParts: BottleParts | null = null;
   private grenadeParts: GrenadeParts | null = null;
   /** A small flame at the left hand's fingers: the lighter that lights the rag. */
@@ -122,7 +129,13 @@ export class ThrowArm {
 
     const holder = this.ensureHolder();
 
-    if (!holder || !this.grenade || !this.canister || !this.bottle) {
+    if (
+      !holder ||
+      !this.grenade ||
+      !this.canister ||
+      !this.bottle ||
+      !this.dynamite
+    ) {
       return;
     }
 
@@ -132,8 +145,16 @@ export class ThrowArm {
     this.grenade.visible = kind === "grenade";
     this.canister.visible = kind === "smoke";
     this.bottle.visible = kind === "molotov";
+    this.dynamite.visible = kind === "dynamite";
 
     this.heldKind = kind;
+
+    if (kind === "dynamite") {
+      this.wasLit = false;
+      this.carryDynamite(holder, this.dynamite);
+
+      return;
+    }
 
     if (kind === "smoke" || kind === "grenade") {
       // Like the bottle, the grenade stays upright in the world whatever the
@@ -221,17 +242,6 @@ export class ThrowArm {
     forward: THREE.Vector3,
     aim: THREE.Vector3,
   ): void {
-    // First person, looking well up: the item in the hand would sit right in
-    // front of the lens, a huge dark shape across the view. Aiming high shows
-    // the sky and the crosshair, not the grenade, so it is not drawn.
-    if (this.firstPerson && this.holder) {
-      const pitch = Math.asin(Math.min(1, Math.max(-1, aim.y)));
-
-      if (pitch > HIDE_ITEM_PITCH) {
-        this.holder.visible = false;
-      }
-    }
-
     if (pose.weight < 0.002) {
       return;
     }
@@ -401,12 +411,23 @@ export class ThrowArm {
     this.root.updateMatrixWorld(true);
   }
 
+  private readonly lookUp = new THREE.Vector3();
+
   private keyPosition(
     pose: ThrowPose,
     frame: Frame,
     out: THREE.Vector3,
   ): THREE.Vector3 {
-    const { shoulder, hips, forward, right, aim } = frame;
+    const { shoulder, hips, right, aim } = frame;
+
+    // In first person the hand is held where the view is: ahead and below the
+    // line of sight, tipping up and down with it exactly as the left hand and
+    // the body do (a flat forward left the right hand hanging in place while
+    // the view looked up or down). Seen from outside it keeps the flat frame.
+    const forward = this.firstPerson ? aim : frame.forward;
+    const up = this.firstPerson
+      ? this.lookUp.crossVectors(right, aim).normalize()
+      : UP;
 
     out.set(0, 0, 0);
 
@@ -415,14 +436,14 @@ export class ThrowArm {
       .copy(hips)
       .addScaledVector(right, 0.2)
       .addScaledVector(UP, -0.02)
-      .addScaledVector(forward, 0.04);
+      .addScaledVector(frame.forward, 0.04);
     out.addScaledVector(this.key, pose.pocket);
 
     // Lighting a Molotov: up near the chest, in front of the body.
     this.key
       .copy(shoulder)
       .addScaledVector(forward, this.firstPerson ? 0.5 : 0.34)
-      .addScaledVector(UP, this.firstPerson ? -0.14 : 0)
+      .addScaledVector(up, this.firstPerson ? -0.14 : 0)
       .addScaledVector(right, this.firstPerson ? 0.02 : -0.1);
     out.addScaledVector(this.key, pose.light);
 
@@ -430,7 +451,7 @@ export class ThrowArm {
     this.key
       .copy(shoulder)
       .addScaledVector(forward, 0.42)
-      .addScaledVector(UP, -0.06)
+      .addScaledVector(up, -0.06)
       .addScaledVector(right, -0.02);
     out.addScaledVector(this.key, pose.ready);
 
@@ -440,14 +461,14 @@ export class ThrowArm {
     this.key
       .copy(shoulder)
       .addScaledVector(forward, this.firstPerson ? 0.55 : -0.05)
-      .addScaledVector(UP, this.firstPerson ? -0.02 : 0.12)
+      .addScaledVector(up, this.firstPerson ? -0.02 : 0.12)
       .addScaledVector(right, this.firstPerson ? 0.1 : 0.26);
     out.addScaledVector(this.key, pose.aim);
 
     // Wind-up: all the way back.
     this.key
       .copy(shoulder)
-      .addScaledVector(forward, -0.3)
+      .addScaledVector(frame.forward, -0.3)
       .addScaledVector(UP, 0.18)
       .addScaledVector(right, 0.25);
     out.addScaledVector(this.key, pose.windup);
@@ -494,6 +515,28 @@ export class ThrowArm {
     pin.position.lerpVectors(home, this.pinTarget, pull * pull);
     pin.position.y += 0.02 * Math.sin(Math.min(pull, 1) * Math.PI);
   }
+
+  /**
+   * The dynamite bundle lies across the palm, its length turned across the
+   * player's view (to the left), whatever the hand does: the hand's own turn is
+   * undone, and the player's facing and a fixed carry angle are put in.
+   */
+  private carryDynamite(holder: THREE.Group, item: THREE.Group): void {
+    const hand = holder.parent;
+
+    if (!hand) {
+      return;
+    }
+
+    hand.getWorldQuaternion(this.handQuat).invert();
+    this.root.getWorldQuaternion(this.carryFacing);
+    item.quaternion
+      .copy(this.handQuat)
+      .multiply(this.carryFacing)
+      .multiply(DYNAMITE_CARRY);
+  }
+
+  private readonly carryFacing = new THREE.Quaternion();
 
   /** Counter-rotates `item` so it stays upright in the world, whatever the hand does. */
   private keepUpright(holder: THREE.Group, item: THREE.Group): void {
@@ -613,7 +656,11 @@ export class ThrowArm {
     // A little smaller in the hand than in flight, so it never fills the view.
     this.bottle.scale.setScalar(BOTTLE_SCALE * 0.7);
 
-    holder.add(this.grenade, this.canister, this.bottle);
+    this.dynamite = createDynamite();
+    this.dynamite.scale.setScalar(HELD_DYNAMITE);
+    this.dynamite.visible = false;
+
+    holder.add(this.grenade, this.canister, this.bottle, this.dynamite);
 
     // Parent it to the hand: it follows every animation. The offset is worked
     // out once, in the hand's own space, from a point just past the wrist.
@@ -654,6 +701,15 @@ export class ThrowArm {
       disposeBottleParts(this.bottleParts);
     }
 
+    this.dynamite?.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+
+      if (mesh.isMesh) {
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
+    });
+    this.dynamite = null;
     this.holder = null;
     this.grenade = null;
     this.canister = null;

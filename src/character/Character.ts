@@ -34,6 +34,12 @@ export type CharacterMovementState =
 /** How far (degrees) up or down the body tilts toward the crosshair while punching. */
 const PUNCH_AIM_LIMIT_DEGREES = 40;
 
+/** First person: the most the look's pitch tips the neck and head (radians). */
+const FIRST_PERSON_HEAD_PITCH = 0.2;
+
+/** First person: the torso of the shirt shows from this far ahead of the eye (m). */
+const EYE_CLIP_AHEAD = 0.12;
+
 export class Character {
   public readonly group: THREE.Group;
   public readonly animator: CharacterAnimator;
@@ -1855,9 +1861,22 @@ export class Character {
       bone.parent.getWorldQuaternion(parentQuat);
       bone.getWorldQuaternion(worldQuat);
 
+      // In first person the eye sits at the face, which the camera frames
+      // from the head's own pitch (limited to 0.3 rad: see Game.limitHeadPitch).
+      // Tipping the neck and head right back with a steep look swings the
+      // collar of the shirt up the side of the view; they follow the look only
+      // as far as the camera's frame does.
+      const lookPitch =
+        this.upperBodyFollowsLook && (name === "Neck" || name === "Head")
+          ? THREE.MathUtils.clamp(
+              pitch,
+              -FIRST_PERSON_HEAD_PITCH,
+              FIRST_PERSON_HEAD_PITCH,
+            )
+          : pitch;
       const delta = new THREE.Quaternion().setFromAxisAngle(
         axis,
-        pitch * weight,
+        lookPitch * weight,
       );
 
       bone.quaternion.copy(
@@ -2074,7 +2093,119 @@ export class Character {
   public prepareHeldItems(): void {
     if (this.isLoaded) {
       this.throwArm.prepare();
+      this.prepareCollarClip();
     }
+  }
+
+  /** The cut across the view, as (normal, constant): see `clipBodyBehindEye`. */
+  private readonly collarPlane = new THREE.Vector4(0, 1, 0, 1e6);
+  private collarReady = false;
+
+  /**
+   * The shirt hangs from the neck, so with the camera at the face its collar
+   * and chest swing into the corner of the view when looking up. The shirt
+   * gets a material of its own (the clones of the model share one) that skips
+   * the pixels of the torso part of the shirt (those weighted to the spine,
+   * neck and head bones, never the sleeves) lying behind a plane across the
+   * view. It is set open here so the shader is built in the warm-up and nothing
+   * is cut until `clipBodyBehindEye` is called.
+   */
+  private prepareCollarClip(): void {
+    if (this.collarReady) {
+      return;
+    }
+
+    const plane = this.collarPlane;
+
+    this.group.traverse((object) => {
+      const mesh = object as THREE.SkinnedMesh;
+
+      if (
+        !mesh.isSkinnedMesh ||
+        mesh.name !== "attach-top-mesh" ||
+        Array.isArray(mesh.material)
+      ) {
+        return;
+      }
+
+      const geometry = mesh.geometry;
+
+      // Per vertex: how much of it follows the torso bones (made once).
+      if (!geometry.getAttribute("aTorso")) {
+        const torso = new Set(
+          mesh.skeleton.bones
+            .map((bone, k) => [bone.name, k] as const)
+            .filter(([name]) =>
+              ["Spine", "Spine1", "Spine2", "Neck", "Head"].includes(name),
+            )
+            .map(([, k]) => k),
+        );
+        const indices = geometry.getAttribute("skinIndex");
+        const weights = geometry.getAttribute("skinWeight");
+        const share = new Float32Array(indices.count);
+
+        for (let v = 0; v < indices.count; v++) {
+          for (let c = 0; c < 4; c++) {
+            if (torso.has(indices.getComponent(v, c))) {
+              share[v] += weights.getComponent(v, c);
+            }
+          }
+        }
+
+        geometry.setAttribute("aTorso", new THREE.BufferAttribute(share, 1));
+      }
+
+      const material = mesh.material.clone();
+
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.uEyePlane = { value: plane };
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nattribute float aTorso;\nvarying float vTorso;\nvarying vec3 vTorsoWorld;",
+          )
+          .replace(
+            "#include <project_vertex>",
+            "#include <project_vertex>\nvTorso = aTorso;\nvTorsoWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nuniform vec4 uEyePlane;\nvarying float vTorso;\nvarying vec3 vTorsoWorld;",
+          )
+          .replace(
+            "#include <clipping_planes_fragment>",
+            "#include <clipping_planes_fragment>\nif (vTorso > 0.5 && dot(uEyePlane.xyz, vTorsoWorld) + uEyePlane.w < 0.0) discard;",
+          );
+      };
+      material.customProgramCacheKey = () => "torso-clip";
+      mesh.material = material;
+    });
+    this.collarReady = true;
+  }
+
+  /**
+   * First person: the torso part of the shirt is cut away from just ahead of
+   * the eye back, so none of the collar or chest is seen; the sleeves out in
+   * front are whole. `eye` is the camera, `yaw` the look direction's heading.
+   * Null puts it back.
+   */
+  public clipBodyBehindEye(eye: THREE.Vector3 | null, yaw: number): void {
+    if (!eye) {
+      this.collarPlane.set(0, 1, 0, 1e6);
+
+      return;
+    }
+
+    const nx = -Math.sin(yaw);
+    const nz = -Math.cos(yaw);
+
+    this.collarPlane.set(
+      nx,
+      0,
+      nz,
+      -(nx * eye.x + nz * eye.z) - EYE_CLIP_AHEAD,
+    );
   }
 
   private throwPose: ThrowPose | null = null;

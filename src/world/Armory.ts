@@ -840,12 +840,14 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
 
   // The dynamite: one bundle on the maintenance table's near edge, taken for
   // the mission (it is not a throwable, and stays gone until the next round).
+  // It lies in the free corner by the table's west end, clear of the pistol
+  // and the tray (see tableClutter).
   map.addPickup({
     id: "armory-dynamite-1",
     type: "DYNAMITE",
-    x: -27.1,
+    x: -27.36,
     y: F + 0.91,
-    z: 9.02,
+    z: 9.04,
     amount: 1,
     respawn: 1e9,
   });

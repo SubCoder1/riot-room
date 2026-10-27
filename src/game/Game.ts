@@ -131,7 +131,11 @@ const THROWABLE_TYPE: Record<HeldKind, UtilityType> = {
   grenade: "GRENADE",
   molotov: "MOLOTOV",
   smoke: "SMOKE",
+  dynamite: "DYNAMITE",
 };
+
+/** A pickup is taken only when the view's middle is this close to it (cosine of about 25 degrees). */
+const PICKUP_LOOK_DOT = 0.9;
 
 /** How far an opened hatch panel swings up on its hinge (radians). */
 const HATCH_OPEN_ANGLE = 1.75;
@@ -1196,7 +1200,7 @@ export class Game {
     this.weaponWheelView.render();
   }
 
-  /** The selected slot as something to throw, or null (fists, the dynamite). */
+  /** The selected slot as something in the hand, or null (fists). The dynamite is carried, never thrown. */
   private selectedThrowable(): HeldKind | null {
     const selected = this.utilities.selected;
 
@@ -1206,7 +1210,9 @@ export class Game {
         ? "molotov"
         : selected === "SMOKE"
           ? "smoke"
-          : null;
+          : selected === "DYNAMITE"
+            ? "dynamite"
+            : null;
   }
 
   /** Guard is the F key, and is off while a throwable is being aimed or thrown. */
@@ -1942,7 +1948,13 @@ export class Game {
       }
 
       mesh.position.set(pickup.x, pickup.y + lift, pickup.z);
-      mesh.rotation.set(0, pickup.x * 3.1, 0);
+      // (The dynamite lies square to the table's edge; the rest are turned by
+      // where they are, so no two lie the same way.)
+      mesh.rotation.set(
+        0,
+        pickup.type === "DYNAMITE" ? 0.12 : pickup.x * 3.1,
+        0,
+      );
       mesh.name = pickup.id;
       this.arena.group.add(mesh);
       this.pickupState.set(pickup.id, { mesh, readyAt: 0 });
@@ -1961,14 +1973,29 @@ export class Game {
     }
   }
 
-  /** The nearest pickup that is there and within reach, if any. */
+  private readonly pickupAim = new THREE.Vector3();
+  private readonly pickupToward = new THREE.Vector3();
+
+  /** The nearest pickup that is there, within reach and looked at, if any. */
   private pickupInReach(): (typeof ARENA_LAYOUT.pickups)[number] | null {
     const feetY = this.player.position.y - this.player.eyeHeight;
+    const eye = this.renderer.camera.position;
+    const forward = this.renderer.camera.getWorldDirection(this.pickupAim);
     let best: (typeof ARENA_LAYOUT.pickups)[number] | null = null;
     let bestDistance = 1.5;
 
     for (const pickup of ARENA_LAYOUT.pickups) {
       if ((this.pickupState.get(pickup.id)?.readyAt ?? 0) > 0) {
+        continue;
+      }
+
+      // It is taken only when looked at (within about 25 degrees of the
+      // middle of the view), not merely stood beside.
+      this.pickupToward
+        .set(pickup.x - eye.x, pickup.y + 0.05 - eye.y, pickup.z - eye.z)
+        .normalize();
+
+      if (forward.dot(this.pickupToward) < PICKUP_LOOK_DOT) {
         continue;
       }
 
@@ -2697,7 +2724,8 @@ export class Game {
 
       // Spent when it actually leaves the hand, never when aiming starts, and
       // never below zero: an empty inventory does not throw.
-      if (this.utilities.remove(type)) {
+      // (The dynamite is carried, never thrown: the stance never releases it.)
+      if (kind !== "dynamite" && this.utilities.remove(type)) {
         this.projectiles.throwProjectile(
           kind,
           this.playerCombatant.id,
@@ -2717,7 +2745,11 @@ export class Game {
 
     // The aim line (local only), from the same numbers the
     // throw uses.
-    if (this.throwStance.isAiming && this.computeThrow()) {
+    if (
+      this.throwStance.isAiming &&
+      this.throwStance.heldKind !== "dynamite" &&
+      this.computeThrow()
+    ) {
       traceThrowPath(
         this.throwOrigin,
         this.throwDirection,
@@ -3583,12 +3615,18 @@ export class Game {
     this.updatePresentation();
 
     if (this.isThirdPerson) {
+      this.character.clipBodyBehindEye(null, 0);
       this.updateThirdPersonCamera();
 
       return;
     }
 
     this.updateFirstPersonCamera();
+    // (The collar and shoulder never show in the corner of the view.)
+    this.character.clipBodyBehindEye(
+      this.renderer.camera.position,
+      this.player.yaw,
+    );
   }
 
   // ============================================================
