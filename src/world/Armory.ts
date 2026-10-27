@@ -39,6 +39,7 @@ import {
   tableClutter,
 } from "./ArmoryStash";
 import { furnishArmoryVent } from "./ArmoryVent";
+import { RUST, WORN_TIMBER, furnishArmoryWear } from "./ArmoryWear";
 import { shelving } from "./StorageRoom";
 
 /**
@@ -116,6 +117,8 @@ function bay(
   for (const u of [0.04, len - 0.04]) {
     for (const v of [0.04, depth - 0.04]) {
       f.box(u, 0, v, 0.05, TALL, 0.05, CHARCOAL);
+      // Rust gathered at each foot where the floor stays damp.
+      f.box(u, 0, v, 0.058, 0.09, 0.058, RUST);
     }
   }
 
@@ -394,7 +397,7 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
 
     // The bench: a steel carcass, a thick top, a lower shelf; pegboard above it.
     f.box(2.35, 0.0, 0.35, 2.1, 0.9, 0.7, GUNMETAL);
-    f.box(2.35, 0.9, 0.36, 2.14, 0.05, 0.72, TIMBER_B);
+    f.box(2.35, 0.9, 0.36, 2.14, 0.05, 0.72, WORN_TIMBER);
     f.box(2.35, 0.6, 0.36, 2.0, 0.025, 0.66, STEEL);
     f.box(2.35, 1.02, 0.025, 2.0, 0.95, 0.03, 0x2f343b);
 
@@ -576,7 +579,10 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
     const cz = (z0 + z1) / 2;
 
     // A steel frame table, a worn timber top, a shelf below, steel-capped corners.
-    p.box(cx, 0.86, cz, 2.5, 0.05, 1.2, TIMBER_B);
+    p.box(cx, 0.86, cz, 2.5, 0.05, 1.2, WORN_TIMBER);
+    // Oil and burn marks worked into the top.
+    p.box(cx - 0.45, 0.91, cz + 0.12, 0.55, 0.004, 0.36, 0x1a1611, 0.3);
+    p.box(cx + 0.5, 0.91, cz - 0.25, 0.3, 0.004, 0.22, 0x221b14, -0.5);
     p.box(cx, 0.855, cz, 2.52, 0.012, 1.22, STEEL);
     p.box(cx, 0.76, cz, 2.3, 0.1, 1.0, GUNMETAL);
 
@@ -835,6 +841,9 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
   // The tube lighting under the beams, and its lamps.
   furnishTubeFixtures(map, F);
   furnishTubeLights(map);
+
+  // Damp, grime, soot, rust marks and a little litter.
+  furnishArmoryWear(map, F);
 
   // A worn safety line in front of the three bays, and dust on the floor.
   map.addDecal({

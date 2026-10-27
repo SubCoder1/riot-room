@@ -481,6 +481,8 @@ export interface ArenaLayout {
   posters: PosterDefinition[];
   /** Police tape strung across approaches (drawn only, never solid). */
   tapes?: TapeDefinition[];
+  /** Spray paint on walls (drawn only). */
+  graffiti?: GraffitiDefinition[];
   /** Steel drums with a fire burning in them (the fire and its glow are drawn only). */
   fireDrums?: FireDrumDefinition[];
   /** A puddle with a live current through it, until the power is cut. */
@@ -566,6 +568,40 @@ export interface TapeDefinition {
   id: string;
   runs: TapeRun[];
   viewer: [number, number, number];
+}
+
+/** Spray paint on a wall: painted onto a plane a hair off the wall (see WallGraffiti). */
+export interface GraffitiDefinition {
+  id: string;
+  /** Centre of the piece, and the wall's normal (x, z) pointing into the room. */
+  x: number;
+  y: number;
+  z: number;
+  nx: number;
+  nz: number;
+  width: number;
+  height: number;
+  kind:
+    | "tag"
+    | "hand"
+    | "cross"
+    | "warning"
+    | "crown"
+    | "tally"
+    | "target"
+    | "skull"
+    | "claws"
+    | "rules"
+    | "damp"
+    | "streaks"
+    | "soot";
+  /** The lettering (uppercase letters and digits it knows). */
+  text?: string;
+  /** Groups of five, for a tally. */
+  count?: number;
+  /** How worn the paint is (0 fresh to 1 nearly gone). */
+  fade?: number;
+  seed: number;
 }
 
 /** A site plan hung on a wall: drawn from the layout when the arena is built. */

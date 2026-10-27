@@ -52,7 +52,9 @@ export const TUBE_FIXTURES: readonly TubeFixture[] = [
 const TUBE_COLOR = 0xd9e6ee;
 
 export const TUBE_LIGHTS: readonly LightDefinition[] = [
-  tubeLamp("tube-armory-1", -30.2, 8.65, { x: -31.4, y: 5.7, z: 8.65 }, 0.78),
+  // (Aimed straight down like the others: its beam used to point at the west
+  // wall and 80% of it went on through.)
+  tubeLamp("tube-armory-1", -30.2, 8.65, { x: -30.2, y: 4, z: 8.65 }, 0.62),
   tubeLamp("tube-armory-2", -27.1, 8.65, { x: -27.1, y: 4, z: 8.65 }, 0.62),
   tubeLamp("tube-armory-3", -24.0, 8.65, { x: -24.0, y: 4, z: 8.65 }, 0.62),
   tubeLamp("tube-armory-4", -21.1, 8.65, { x: -23.6, y: 4, z: 8.65 }, 0.62),

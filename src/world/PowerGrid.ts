@@ -431,6 +431,8 @@ const SUPPORTS: Support[] = [
     platform: -1,
     shadow: true,
     color: 0xffe3b8,
+    // Turned down: its twin heads lit the whole walkway too hard.
+    power: 36,
   },
   {
     id: "support-dock-1",

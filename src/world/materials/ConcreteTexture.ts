@@ -47,6 +47,20 @@ export function tileableNoise(
   const out = new Float32Array(size * size);
   const fade = (t: number): number => t * t * (3 - 2 * t);
 
+  // What depends on the column only, worked out once and not for every row.
+  const column0 = new Int32Array(size);
+  const column1 = new Int32Array(size);
+  const columnFade = new Float64Array(size);
+
+  for (let x = 0; x < size; x++) {
+    const gx = (x / size) * freq;
+    const ix = Math.floor(gx);
+
+    column0[x] = ix % freq;
+    column1[x] = (ix + 1) % freq;
+    columnFade[x] = fade(gx - ix);
+  }
+
   for (let y = 0; y < size; y++) {
     const gy = (y / size) * freq;
     const iy = Math.floor(gy);
@@ -55,11 +69,9 @@ export function tileableNoise(
     const row1 = ((iy + 1) % freq) * freq;
 
     for (let x = 0; x < size; x++) {
-      const gx = (x / size) * freq;
-      const ix = Math.floor(gx);
-      const fx = fade(gx - ix);
-      const x0 = ix % freq;
-      const x1 = (ix + 1) % freq;
+      const fx = columnFade[x];
+      const x0 = column0[x];
+      const x1 = column1[x];
       const top = lattice[row0 + x0] * (1 - fx) + lattice[row0 + x1] * fx;
       const bottom = lattice[row1 + x0] * (1 - fx) + lattice[row1 + x1] * fx;
 

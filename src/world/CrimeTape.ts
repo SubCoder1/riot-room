@@ -174,11 +174,11 @@ export function createCrimeTape(
   const material = new THREE.MeshStandardMaterial({
     name: "CrimeTape",
     map,
-    color: map ? 0xffffff : 0xd8b21c,
+    color: map ? 0xb4b4b4 : 0xd8b21c,
     roughness: 0.75,
     metalness: 0,
-    // Bright enough to read in the dark, nothing more.
-    emissive: new THREE.Color(0x3a2e05),
+    // Just enough to read in the dark: a muted yellow, not a glowing one.
+    emissive: new THREE.Color(0x120d02),
     emissiveMap: map,
     side: THREE.FrontSide,
   });

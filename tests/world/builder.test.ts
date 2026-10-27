@@ -323,11 +323,14 @@ describe("Arena meshes", () => {
       (m) =>
         Math.abs(m.position.x - (wall.minX + wall.maxX) / 2) < 1e-6 &&
         Math.abs(m.position.z - (wall.minZ + wall.maxZ) / 2) < 1e-6 &&
-        Math.abs(m.position.y - ((wall.base ?? 0) + wall.height) / 2) < 1e-6,
+        Math.abs(m.position.y - ((wall.base ?? 0) + wall.height) / 2) < 0.02,
     )!;
 
     expect(mesh).toBeDefined();
-    expect(mesh.scale.y).toBeCloseTo(wall.height - (wall.base ?? 0));
+    // The top is exact; the underside reaches a hair into the floor, to close the seam.
+    expect(mesh.position.y + mesh.scale.y / 2).toBeCloseTo(wall.height);
+    expect(mesh.scale.y).toBeGreaterThanOrEqual(wall.height - (wall.base ?? 0));
+    expect(mesh.scale.y).toBeLessThan(wall.height - (wall.base ?? 0) + 0.02);
   });
 
   it("a ladder is drawn from the ground to a metre above its top", () => {

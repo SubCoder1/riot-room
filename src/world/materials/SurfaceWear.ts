@@ -297,8 +297,10 @@ const treadPlate = (): string => /* glsl */ `
 `;
 
 /** Colour: runs after the material's own colour (map, vertex colours). */
-const color = (kind: WearKind, exposure: number, deck: boolean): string => {
-  const e = exposure.toFixed(3);
+const color = (kind: WearKind, deck: boolean): string => {
+  // How strongly the wear shows is this material's own uniform, not a number
+  // in the shader text, so materials that differ only in it share a program.
+  const e = "wearExposure";
   const edge = /* glsl */ `
     float wxEdge = vWxEdge;
     float wxBase = vWxBase;
@@ -406,10 +408,12 @@ export function weather<T extends THREE.MeshStandardMaterial>(
   const mixed = kind === "mixed";
   const before = material.onBeforeCompile;
   const beforeKey = material.customProgramCacheKey;
-  const key = `${beforeKey.call(material)}|wear:${kind}:${exposure}:${local ? 1 : 0}:${deck ? 1 : 0}`;
+  const key = `${beforeKey.call(material)}|wear:${kind}:${local ? 1 : 0}:${deck ? 1 : 0}`;
 
   material.onBeforeCompile = (shader, renderer) => {
     before.call(material, shader, renderer);
+
+    shader.uniforms.wearExposure = { value: Number(exposure.toFixed(3)) };
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -425,11 +429,11 @@ export function weather<T extends THREE.MeshStandardMaterial>(
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${COMMON(mixed)}\n${NOISE}`,
+        `#include <common>\nuniform float wearExposure;\n${COMMON(mixed)}\n${NOISE}`,
       )
       .replace(
         "#include <color_fragment>",
-        `#include <color_fragment>\n${color(kind, exposure, deck)}`,
+        `#include <color_fragment>\n${color(kind, deck)}`,
       )
       .replace(
         "#include <normal_fragment_maps>",

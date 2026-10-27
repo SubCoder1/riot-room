@@ -209,11 +209,23 @@ function blockMesh(
   height: number,
   material: THREE.Material,
   base = 0,
+  grow = 0,
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(unitBox, material);
 
-  mesh.scale.set(maxX - minX, height - base, maxZ - minZ);
-  mesh.position.set((minX + maxX) / 2, (height + base) / 2, (minZ + maxZ) / 2);
+  // `grow` pushes the sides and the underside out by that much (never the top,
+  // so nothing stands higher): drawn walls, roofs and floors then overlap where
+  // they meet, and no hairline crack opens at a seam to show a lit surface behind.
+  mesh.scale.set(
+    maxX - minX + grow * 2,
+    height - base + grow,
+    maxZ - minZ + grow * 2,
+  );
+  mesh.position.set(
+    (minX + maxX) / 2,
+    (height + base - grow) / 2,
+    (minZ + maxZ) / 2,
+  );
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -522,6 +534,9 @@ export function createOuterWalls(layout: ArenaLayout): THREE.Group {
   return group;
 }
 
+/** How far a drawn wall, roof or floor reaches into its neighbours (m). */
+const SEAM_OVERLAP = 0.012;
+
 /** A floor slab, wall, railing or ledge: coloured by its role. */
 export function createPlatform(
   solid: BoxSolid,
@@ -571,6 +586,10 @@ export function createPlatform(
                     industrialMaterials.floorVariantFor(solid.id),
                   ),
     solid.base ?? solid.bottom ?? 0,
+    !solid.glass &&
+      (solid.role === "wall" || solid.role === "roof" || solid.role === "floor")
+      ? SEAM_OVERLAP
+      : 0,
   );
 
   // Glass is seen through: it casts no shadow and is drawn after what is behind it.

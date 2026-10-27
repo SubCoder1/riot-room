@@ -152,7 +152,7 @@ export function createBrickTextures(
       color[i * 4 + 2] = Math.round(Math.min(b, 1) * 255);
       color[i * 4 + 3] = 255;
 
-      const byte = Math.round(Math.min(Math.max(roughness, 0.8), 0.95) * 255);
+      const byte = Math.round(Math.min(Math.max(roughness, 0.9), 0.98) * 255);
 
       rough[i * 4] = byte;
       rough[i * 4 + 1] = byte;
@@ -168,7 +168,7 @@ export function createBrickTextures(
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const strength = 5;
+      const strength = 3.2;
       const nx = -(at(x + 1, y) - at(x - 1, y)) * strength;
       const ny = -(at(x, y + 1) - at(x, y - 1)) * strength;
       const length = Math.hypot(nx, ny, 1);

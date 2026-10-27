@@ -1479,14 +1479,9 @@ function createUpperFloor(): ArenaLayout {
   // 1.7 m (a wall stays a wall: too high to vault, nothing opens through it),
   // and every pile's collision is the outline of its pieces.
   //
-  // A corner of the Barracks' south wall has come down onto the west walkway.
-  map.breakSolid(
-    "room-barracks-wall-s-1",
-    [1, 1, 1, 1, 1, 1, 0.82, 0.7, 0.7],
-    // (No lower than 2.6 m: the footlocker stands by it, and a jump from the
-    // footlocker would otherwise reach the top and leave the room.)
-    2.6,
-  );
+  // (The Barracks' south wall stays whole: broken down at its east end it left
+  // a slit under the roof that smoke and light went out through. The bricks
+  // that lie by it are only what has crumbled off.)
   map.createPile("bricks", "bricks-barracks-fall", -23.2, -2.2, F, {
     minZ: -3.0,
   });
@@ -1499,8 +1494,7 @@ function createUpperFloor(): ArenaLayout {
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.6, 0.6, 1],
     2.3,
   );
-  // The Hall's north wall.
-  map.breakSolid("room-hall-wall-n-2", [1, 0.78, 0.92, 0.55, 0.8]);
+  // (The Hall's north wall stays whole too: broken, it let smoke and light through under the roof.)
   // The screen wall on the west terrace has partly collapsed.
   map.breakSolid("nook-west-1", [1, 1, 0.66, 0.66, 0.8, 1]);
   map.createPile("bricks", "bricks-nook-west", -26.3, 3.8, F, {

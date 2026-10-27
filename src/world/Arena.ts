@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { buildArena } from "./ArenaBuilder";
 import { ArenaCollision } from "./ArenaCollision";
 import { createCrimeTape } from "./CrimeTape";
+import { buildLightRegions, installLightRegions } from "./LightRegions";
+import { createGraffiti } from "./WallGraffiti";
 import { doorPassage } from "./DoorPassage";
 import { createFacilityPoster } from "./FacilityPoster";
 import { ARENA_HALF_X, ARENA_HALF_Z, type ArenaLayout } from "./ArenaLayout";
@@ -380,6 +382,15 @@ export class Arena {
       }
     }
 
+    // Spray paint on the walls.
+    for (const piece of this.layout.graffiti ?? []) {
+      const mesh = createGraffiti(piece);
+
+      if (mesh) {
+        this.group.add(mesh);
+      }
+    }
+
     // Police tape across the approach to the collapsed vault entrance.
     for (const tape of this.layout.tapes ?? []) {
       this.group.add(createCrimeTape(tape.runs, tape.viewer));
@@ -397,6 +408,12 @@ export class Arena {
     // Task lights and pendants over work areas: short range, no shadows.
     const lights = nightLights(this.layout);
 
+    // A lamp with no shadow may only light its own room (and the way out of
+    // its doors), or, outdoors, what is outside the rooms near it.
+    const regions = buildLightRegions(this.layout, lights);
+
+    installLightRegions(regions.glsl);
+
     for (const light of lights) {
       if (light.target) {
         // A floodlight: a cone aimed at its target, with a soft edge.
@@ -406,7 +423,7 @@ export class Arena {
           light.distance,
           light.angle ?? 0.8,
           0.65,
-          2,
+          regions.decays.get(light.id) ?? 2,
         );
 
         spot.name = light.id;
@@ -474,7 +491,7 @@ export class Arena {
         practical(light.color),
         light.intensity,
         light.distance,
-        2,
+        regions.decays.get(light.id) ?? 2,
       );
 
       lamp.name = light.id;

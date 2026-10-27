@@ -347,6 +347,62 @@ function stairDressing(
     0x2a2e34,
   );
 
+  // ------------------ the open side of the solid flight: what holds it up
+  // The steps are solid from the floor, so the side is one large stepped face.
+  // Break it into structure: a narrow concrete kerb along the floor with a dark
+  // seam above it, a pilaster rib every 1.4 m standing on a footing plate, and a
+  // steel stringer under the nosing line. (Drawn only, a few cm proud of the
+  // face: collision and the clear width are untouched.)
+  {
+    const out = f.open < f.wall ? -1 : 1;
+    const zFace = f.open + out * 0.03;
+    const KERB = 0x4a4d52;
+    const RIB = 0x3a3d42;
+
+    p.box(
+      (xAt(f, 0) + xAt(f, run)) / 2,
+      0,
+      f.open + out * 0.025,
+      run,
+      0.1,
+      0.05,
+      KERB,
+    );
+    p.box(
+      (xAt(f, 0) + xAt(f, run)) / 2,
+      0.1,
+      f.open + out * 0.012,
+      run,
+      0.015,
+      0.024,
+      BLACK,
+    );
+
+    const ribs = Math.max(2, Math.round(run / 1.4));
+
+    for (let k = 0; k <= ribs; k++) {
+      const t = 0.12 + (k * (run - 0.24)) / ribs;
+      const x = xAt(f, t);
+      const top = treadTop(f, t) - 0.16;
+
+      if (top > 0.3) {
+        p.box(x, 0.1, zFace, 0.16, top - 0.1, 0.06, RIB);
+        p.box(x, 0, zFace, 0.3, 0.06, 0.1, STEEL);
+      }
+    }
+
+    slope(
+      p,
+      xAt(f, 0.05),
+      lineY(f, 0.05) - 0.14,
+      xAt(f, run - 0.05),
+      lineY(f, run - 0.05) - 0.14,
+      f.open + out * 0.05,
+      0.12,
+      GUNMETAL,
+    );
+  }
+
   map.createFitting(`fittings-${stairs.id}-dressing`, 0, p.elements, []);
 
   // The handrail is solid on the open edge: one block per step, standing on

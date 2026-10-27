@@ -348,9 +348,14 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     p.box(-28.2, 0, 9.9, 0.46, 0.2, 0.2, 0x8a2a24, 0.2);
     p.box(-28.2, 0.2, 9.9, 0.4, 0.02, 0.18, STEEL_BARE, 0.2);
     p.box(-28.45, 0.2, 9.95, 0.1, 0.04, 0.2, STEEL, 0.2);
-    // A clamp lamp on the table's corner (the light is above it).
-    p.post(-25.2, 0.9, 8.1, 0.6, 0.025, STEEL_BARE);
-    p.box(-25.2, 1.5, 8.3, 0.1, 0.1, 0.26, GUNMETAL, 0, 0, 0.6);
+    // A clamp lamp on the table's corner (the light is above it). Every part
+    // overlaps the next: the clamp grips the table and the post, the arm starts
+    // inside the post's top, and the hood hangs from the arm's end.
+    p.box(-25.2, 0.9, 8.1, 0.08, 0.06, 0.08, GUNMETAL);
+    p.post(-25.2, 0.9, 8.1, 0.62, 0.025, STEEL_BARE);
+    p.box(-25.2, 1.47, 8.25, 0.03, 0.03, 0.34, STEEL_BARE);
+    p.post(-25.2, 1.36, 8.4, 0.12, 0.02, STEEL_BARE);
+    p.box(-25.2, 1.22, 8.4, 0.12, 0.16, 0.12, GUNMETAL);
     // Paint on the west bays and the cage.
     crudeX(p, "x", 1, -31.7, 9.2, 2.35, 0.3, PAINT_RED);
     tally(p, "x", 1, -31.7, 7.0, 2.35, 2);
@@ -544,20 +549,28 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
   {
     const p = new Pieces();
 
-    // A work lamp clamped to the scaffold's deck rail, on a short arm.
-    p.box(-26.6, 3.2, -2.35, 0.3, 0.2, 0.2, GUNMETAL);
-    p.box(-26.6, 3.2, -2.5, 0.04, 0.04, 0.2, STEEL_BARE);
+    // The work lamp stands on its own steel pole in the terrace's west corner,
+    // tight against the Barracks' wall, and looks back along the alley.
+    const x = -31.3;
+    const z = -2.45;
+
+    p.box(x, 0, z, 0.3, 0.03, 0.3, GUNMETAL);
+    p.cableUp(x, 0.03, z, 3.2, 0.07, GUNMETAL);
+    p.box(x, 3.15, z, 0.14, 0.05, 0.14, STEEL_BARE);
+    p.box(x + 0.12, 3.2, z + 0.1, 0.04, 0.04, 0.22, STEEL_BARE);
     map.createFitting("occupation-terrace", F, p.elements, []);
     map.addLight({
       id: "light-site-scaffold",
-      x: -26.6,
+      x: x + 0.12,
       y: F + 3.3,
-      z: -1.95,
+      z: z + 0.25,
       color: 0xffcf94,
       intensity: 22,
       distance: 16,
-      target: { x: -26.0, y: F + 0.2, z: 0.5 },
-      angle: 0.9,
+      // Aimed away from the Barracks' wall (a light with no shadow would go
+      // straight through it): down the alley, in a narrower cone.
+      target: { x: -25.5, y: F + 0.2, z: 1.8 },
+      angle: 0.55,
     });
   }
 }

@@ -19,13 +19,13 @@ export const BRICK_LOOKS: Record<BrickVariant, BrickLook> = {
   dark: {
     name: "BrickDark",
     color: 0xffffff,
-    normalScale: 0.8,
+    normalScale: 0.55,
     offset: [0, 0],
   },
   worn: {
     name: "BrickWorn",
     color: 0xc9cbd0,
-    normalScale: 1,
+    normalScale: 0.7,
     offset: [0.75, 0.5],
   },
 };

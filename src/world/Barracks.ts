@@ -1,4 +1,5 @@
 import { Pieces, rng } from "./FittingPieces";
+import type { GraffitiDefinition } from "./ArenaLayout";
 import type { MapBuilder } from "./MapParts";
 import {
   CARDBOARD,
@@ -72,7 +73,7 @@ function duffel(
   z: number,
   ry: number,
 ): void {
-  p.bar(x, bottom + 0.11, z, 0.7, 0.22, DUFFEL, ry);
+  p.cable(x, bottom + 0.11, z, 0.7, 0.22, DUFFEL, ry);
   p.box(x, bottom, z, 0.04, 0.24, 0.16, 0x2f3828, ry);
   p.box(
     x + Math.cos(ry) * 0.22,
@@ -89,9 +90,16 @@ function duffel(
 
 type Bunk = "made" | "slept" | "stripped";
 
-/** A double bunk against the west wall, running along z, drawn in `state`. */
-function bunk(p: Pieces, random: () => number, z0: number, state: Bunk): void {
-  const f = new Frame(p, -31.7, z0, "+x");
+/** A double bunk against a side wall (west by default), running along z, drawn in `state`. */
+function bunk(
+  p: Pieces,
+  random: () => number,
+  z0: number,
+  state: Bunk,
+  wallX = -31.7,
+  face: "+x" | "-x" = "+x",
+): void {
+  const f = new Frame(p, wallX, z0, face);
   const len = 2.0;
   const wid = 0.9;
   const levels: Array<[number, "low" | "high"]> = [
@@ -215,12 +223,35 @@ function bunk(p: Pieces, random: () => number, z0: number, state: Bunk): void {
   // A number tag on the head post.
   f.box(0.03, 1.5, wid - 0.003, 0.06, 0.08, 0.005, LABEL);
 
+  // Rumpled bedding: uneven lumps and folds on each level, never the same twice.
+  for (const [y] of levels) {
+    for (let k = 0; k < 3; k++) {
+      const u = 0.5 + random() * (len - 1.0);
+      const v = 0.2 + random() * (wid - 0.4);
+      const lump = [WOOL_GREY, WOOL_GREEN, 0x3f3b36, 0x5a5448, 0x35383c][
+        Math.floor(random() * 5)
+      ];
+
+      p.box(
+        f.wx(u, v),
+        y + 0.13,
+        f.wz(u, v),
+        0.1 + random() * 0.18,
+        0.03 + random() * 0.05,
+        0.3 + random() * 0.4,
+        lump,
+        random() * Math.PI,
+      );
+    }
+  }
+
   // Belongings: boots and a bag under the lower bed, per state.
   if (state === "made") {
     boot(p, f.wx(1.5, 0.3), f.wz(1.5, 0.3), 0.3);
     boot(p, f.wx(1.4, 0.55), f.wz(1.4, 0.55), -0.2);
     f.box(0.9, 0.0, 0.4, 0.7, 0.2, 0.4, DUFFEL);
   } else if (state === "slept") {
+    duffel(p, f.wx(1.55, 0.42), 0, f.wz(1.55, 0.42), 0.15);
     boot(p, f.wx(0.5, wid + 0.25), f.wz(0.5, wid + 0.25), 1.2);
     boot(p, f.wx(0.8, wid + 0.4), f.wz(0.8, wid + 0.4), 2.2);
     f.box(1.0, 0.0, 0.42, 0.9, 0.22, 0.4, 0x5a4a38);
@@ -231,6 +262,206 @@ function bunk(p: Pieces, random: () => number, z0: number, state: Bunk): void {
     f.box(0.6, 0.3, 0.45, 0.54, 0.03, 0.54, TIMBER_B);
     boot(p, f.wx(1.6, 0.4), f.wz(1.6, 0.4), 0.8);
   }
+}
+
+// ------------------------------------------------------------- the hideout
+/** The thugs' marks, a mattress on the floor and a few bottles and cans. */
+function hideout(map: MapBuilder, F: number): void {
+  // Spray paint, painted onto the brick (see WallGraffiti): the gang's tag over
+  // the card table with older paint beneath it, a handwritten number beside it,
+  // a name crossed out in red, a warning, a crown and a tally.
+  type Extra = { text?: string; count?: number; fade?: number };
+  const pieces: Array<
+    [
+      string,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      GraffitiDefinition["kind"],
+      number,
+      Extra,
+    ]
+  > = [
+    [
+      "tag",
+      -24.3,
+      1.85,
+      -11.7,
+      0,
+      1,
+      3.0,
+      1.3,
+      "tag",
+      11,
+      { text: "KROW", fade: 0.55 },
+    ],
+    [
+      "crown-n",
+      -24.3,
+      2.85,
+      -11.7,
+      0,
+      1,
+      0.8,
+      0.5,
+      "crown",
+      71,
+      { fade: 0.45 },
+    ],
+    ["skull", -22.6, 1.2, -11.7, 0, 1, 0.75, 0.75, "skull", 83, { fade: 0.6 }],
+    [
+      "187",
+      -22.3,
+      2.1,
+      -11.7,
+      0,
+      1,
+      0.8,
+      0.4,
+      "hand",
+      23,
+      { text: "187", fade: 0.7 },
+    ],
+    ["claws", -26.4, 2.3, -11.7, 0, 1, 0.6, 0.8, "claws", 97, { fade: 0.6 }],
+    [
+      "target",
+      -30.4,
+      2.45,
+      -11.7,
+      0,
+      1,
+      0.95,
+      0.95,
+      "target",
+      101,
+      { fade: 0.5 },
+    ],
+    ["cops", -21.3, 2.35, -4.9, -1, 0, 1.7, 0.7, "cross", 37, { text: "COPS" }],
+    ["rules", -21.3, 2.3, -10.2, -1, 0, 1.3, 1.0, "rules", 113, { fade: 0.6 }],
+    [
+      "keepout",
+      -29.2,
+      1.25,
+      -3.3,
+      0,
+      -1,
+      2.2,
+      0.55,
+      "warning",
+      41,
+      { text: "KEEPOUT", fade: 0.85 },
+    ],
+    ["crown", -31.7, 2.3, -10.6, 1, 0, 1.1, 0.8, "crown", 53, { fade: 0.5 }],
+    [
+      "tally",
+      -31.7,
+      1.35,
+      -9.3,
+      1,
+      0,
+      0.8,
+      0.5,
+      "tally",
+      67,
+      { count: 2, fade: 0.7 },
+    ],
+  ];
+
+  for (const [
+    id,
+    x,
+    y,
+    z,
+    nx,
+    nz,
+    width,
+    height,
+    kind,
+    seed,
+    extra,
+  ] of pieces) {
+    map.addGraffiti({
+      id: `graffiti-barracks-${id}`,
+      x,
+      y: F + y,
+      z,
+      nx,
+      nz,
+      width,
+      height,
+      kind,
+      seed,
+      ...extra,
+    });
+  }
+
+  const p = new Pieces();
+
+  // On the planning table: papers, a flashlight, a dented mug.
+  p.box(-24.7, 0.74, -11.2, 0.3, 0.006, 0.22, 0xa8a48e, 0.3);
+  p.box(-24.5, 0.746, -11.15, 0.24, 0.004, 0.18, 0x8a8674, -0.2);
+  p.cable(-23.95, 0.775, -10.95, 0.17, 0.035, 0x23262a, 0.6);
+  p.cableUp(-24.2, 0.74, -10.7, 0.09, 0.075, 0x4a4f55);
+
+  // A hanging jacket on a hook by the north door, a pinned note and a crude map.
+  p.box(-27.3, 1.45, -11.62, 0.5, 0.65, 0.06, 0x2c3238);
+  p.box(-27.3, 2.08, -11.64, 0.12, 0.03, 0.05, STEEL_BARE);
+  p.box(-30.7, 1.55, -11.68, 0.32, 0.4, 0.008, PAPER, 0.05);
+  p.box(-30.3, 1.4, -11.68, 0.22, 0.28, 0.008, 0xa8a48e, -0.1);
+
+  // Conduit and a pipe under the ceiling, along the north wall and the west.
+  p.alongX(-31.6, -21.5, 3.2, -11.55, 0.07, 0x3a3f45);
+  p.alongX(-31.6, -21.5, 3.05, -11.55, 0.03, 0x1d2024);
+  p.alongZ(-31.55, 3.25, -11.6, -3.4, 0.06, 0x3a3f45);
+  // Two pipes across the ceiling, over the lockers and over the table.
+  p.alongZ(-26.0, 3.12, -11.6, -3.4, 0.08, 0x30353a);
+  p.alongZ(-23.4, 3.18, -11.6, -3.4, 0.05, 0x23262a);
+
+  map.createFitting("fittings-barracks-graffiti", F, p.elements, []);
+
+  // A thin stained mattress on the floor by the first bunk, a dark blanket and a flat pillow.
+  const q = new Pieces();
+
+  q.box(-30.15, 0, -10.6, 0.85, 0.09, 1.85, TICKING_WORN);
+  q.box(-30.3, 0.09, -10.45, 0.7, 0.04, 1.1, WOOL_GREY, 0.12);
+  q.box(-30.4, 0.09, -11.3, 0.4, 0.06, 0.3, SHEET_DIRTY, 0.2);
+  q.box(-30.0, 0.092, -9.9, 0.3, 0.003, 0.25, 0x2f3338, 0.5);
+
+  // Bottles and cans: two standing and one fallen by the card table, a few
+  // cans by the crate, a crushed one by the door.
+  q.cableUp(-24.95, 0, -9.85, 0.24, 0.065, 0x2f5a3f);
+  q.cableUp(-24.7, 0, -9.7, 0.2, 0.06, 0x5a3f22);
+  q.cable(-24.1, 0.03, -9.55, 0.24, 0.06, 0x2f5a3f, 0.9);
+  q.cableUp(-25.9, 0, -10.8, 0.12, 0.066, 0x8a8f94);
+  q.cable(-25.7, 0.033, -10.4, 0.12, 0.066, 0x7a7e82, 0.4);
+  q.cableUp(-22.6, 0, -7.3, 0.04, 0.066, 0x8a8f94);
+  // A battered steel trunk and two cardboard boxes by the east lockers.
+  q.box(-22.0, 0, -9.2, 0.7, 0.4, 0.4, 0x2f3438, 0.1);
+  q.box(-22.0, 0.4, -9.2, 0.74, 0.04, 0.44, 0x23262a, 0.1);
+  q.box(-22.4, 0, -10.6, 0.4, 0.3, 0.3, CARDBOARD, 0.3);
+  q.box(-22.35, 0.3, -10.6, 0.34, 0.2, 0.26, CARDBOARD, -0.2);
+  // A worn dark tarp on the floor between the beds and the table, ammunition
+  // boxes and a duffel at the foot of the last bunk, more cans, and boots by the lockers.
+  q.box(-26.0, 0, -6.4, 2.1, 0.01, 1.5, 0x25282b, 0.15);
+  q.box(-29.9, 0, -4.2, 0.45, 0.26, 0.28, 0x4a5236, 0.2);
+  q.box(-29.9, 0.26, -4.2, 0.46, 0.02, 0.29, 0x3a4128, 0.2);
+  q.box(-29.4, 0, -4.5, 0.4, 0.22, 0.26, 0x2f3438, -0.3);
+  q.cable(-26.6, 0.033, -6.9, 0.12, 0.066, 0x8a8f94, 1.9);
+  q.cableUp(-25.2, 0, -5.4, 0.12, 0.066, 0x7a7e82);
+  q.cable(-27.1, 0.033, -4.6, 0.12, 0.066, 0x7a7e82, 0.6);
+  q.cableUp(-23.6, 0, -8.2, 0.12, 0.066, 0x8a8f94);
+  // A restrained cluster by the lockers' south end: boxes, a bag, cans.
+  q.box(-28.1, 0, -4.5, 0.42, 0.3, 0.34, CARDBOARD, 0.25);
+  q.box(-28.05, 0.3, -4.5, 0.34, 0.22, 0.28, CARDBOARD, -0.3);
+  q.cable(-28.6, 0.033, -5.2, 0.12, 0.066, 0x7a7e82, 1.2);
+  q.cableUp(-28.4, 0, -5.45, 0.12, 0.066, 0x8a8f94);
+  boot(q, -26.2, -5.1, 0.7);
+  boot(q, -26.0, -5.35, 2.2);
+  map.createFitting("fittings-barracks-hideout", F, q.elements, []);
 }
 
 export function furnishBarracks(map: MapBuilder, floorY: number): void {
@@ -248,6 +479,16 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     bunk(p, random, z0, state);
     map.createFitting(id, F, p.elements, [
       { minX: -31.7, maxX: -30.8, minZ: z0, maxZ: z0 + 2.0, top: 1.75 },
+    ]);
+  }
+
+  // ------------------------- a fourth bunk on the east wall, south of the door
+  {
+    const p = new Pieces();
+
+    bunk(p, random, -5.9, "slept", -21.3, "-x");
+    map.createFitting("bunk-barracks-4", F, p.elements, [
+      { minX: -22.2, maxX: -21.3, minZ: -5.9, maxZ: -3.9, top: 1.75 },
     ]);
   }
 
@@ -274,6 +515,43 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     duffel(p, f.wx(2.1, 0.4), 1.93, f.wz(2.1, 0.4), 0.4);
     f.box(2.55, 1.93, 0.4, 0.2, 0.12, 0.1, GUNMETAL);
     f.box(2.55, 2.05, 0.4, 0.005, 0.1, 0.005, STEEL_BARE);
+    // Wear: rust patches, dents and chipped paint on the doors.
+    for (let k = 0; k < 9; k++) {
+      const u = 0.1 + random() * (z1 - z0 - 0.2);
+      const y = 0.25 + random() * 1.5;
+      const rust = k % 3 === 0;
+
+      f.box(
+        u,
+        y,
+        0.768,
+        rust ? 0.1 + random() * 0.12 : 0.07,
+        rust ? 0.08 + random() * 0.14 : 0.1,
+        0.003,
+        rust ? 0x5a3a28 : 0x23272b,
+      );
+    }
+
+    // Scratches: thin pale scores, up and across the doors.
+    for (let k = 0; k < 14; k++) {
+      const u = 0.1 + random() * (z1 - z0 - 0.2);
+      const y = 0.3 + random() * 1.5;
+      const across = k % 2 === 0;
+
+      f.box(
+        u,
+        y,
+        0.769,
+        across ? 0.12 + random() * 0.2 : 0.004,
+        across ? 0.004 : 0.12 + random() * 0.3,
+        0.002,
+        0x595e66,
+      );
+    }
+
+    // A small metal container at the end of the bank's top.
+    f.box(z1 - z0 - 0.25, 1.93, 0.4, 0.26, 0.17, 0.2, 0x2f3438);
+
     // A photograph and a note taped to one door.
     f.box(0.7, 1.1, 0.766, 0.1, 0.13, 0.004, PAPER);
     f.box(1.6, 1.35, 0.766, 0.07, 0.1, 0.004, 0xa8a48e);
@@ -318,7 +596,7 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     p.box(cx + 0.3, 0.74, cz - 0.25, 0.1, 0.004, 0.14, 0xb9b49c, 0.6);
 
     for (let k = 0; k < 4; k++) {
-      p.post(
+      p.cableUp(
         cx + 0.1 + k * 0.05,
         0.74,
         cz - 0.1 + (k % 2) * 0.04,
@@ -328,9 +606,9 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
       );
     }
 
-    p.post(cx + 0.35, 0.74, cz + 0.3, 0.03, 0.16, STEEL_LIGHT);
-    p.post(cx - 0.35, 0.74, cz - 0.3, 0.1, 0.08, 0x3c5a78);
-    p.post(cx - 0.05, 0.74, cz - 0.38, 0.22, 0.07, 0x2f5a3f);
+    p.cableUp(cx + 0.35, 0.74, cz + 0.3, 0.03, 0.16, STEEL_LIGHT);
+    p.cableUp(cx - 0.35, 0.74, cz - 0.3, 0.1, 0.08, 0x3c5a78);
+    p.cableUp(cx - 0.05, 0.74, cz - 0.38, 0.22, 0.07, 0x2f5a3f);
     map.createFitting("table-barracks", F, p.elements, [
       { minX: x0, maxX: x1, minZ: z0, maxZ: z1, top: 0.75 },
     ]);
@@ -349,13 +627,13 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
       p.box(cx, 0.4, cz, 0.42, 0.025, 0.42, TIMBER_B);
       p.box(cx, 0.15, cz + 0.2, 0.3, 0.06, 0.006, TIMBER_DARK);
     } else if (kind === "stool") {
-      p.post(cx, 0.4, cz, 0.04, 0.34, 0x5a4a3c);
+      p.cableUp(cx, 0.4, cz, 0.04, 0.34, 0x5a4a3c);
 
       for (const a of [0, 1, 2]) {
-        p.bar(cx, 0.2, cz, 0.36, 0.03, STEEL, a * (Math.PI / 3));
+        p.cable(cx, 0.2, cz, 0.36, 0.03, STEEL, a * (Math.PI / 3));
       }
 
-      p.post(cx, 0, cz, 0.4, 0.035, STEEL);
+      p.cableUp(cx, 0, cz, 0.4, 0.035, STEEL);
     } else {
       p.box(cx, 0, cz, 0.45, 0.32, 0.25, 0x4a5236);
       p.box(cx, 0.32, cz, 0.46, 0.02, 0.26, 0x3a4128);
@@ -379,27 +657,11 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
 
     // Boots, a rolled towel, a flask and a folded shirt on it.
     boot(p, x0 + 0.5, cz, 0.1);
-    p.post(x0 + 0.62, 0.43, cz, 0.04, 0.001, BOOT);
-    p.bar(x0 + 1.3, 0.47, cz, 0.3, 0.1, 0xa8a48e);
-    p.post(x0 + 1.9, 0.43, cz, 0.22, 0.07, STEEL_LIGHT);
+    p.cableUp(x0 + 0.62, 0.43, cz, 0.04, 0.001, BOOT);
+    p.cable(x0 + 1.3, 0.47, cz, 0.3, 0.1, 0xa8a48e);
+    p.cableUp(x0 + 1.9, 0.43, cz, 0.22, 0.07, STEEL_LIGHT);
     p.box(x1 - 0.4, 0.43, cz, 0.32, 0.05, 0.28, 0x3a4048, 0.2);
     map.createFitting("bench-barracks", F, p.elements, []);
-
-    const q = new Pieces();
-
-    // A steel-banded footlocker in the south-east corner, lid slightly off.
-    q.box(-21.8, 0, -3.75, 0.9, 0.5, 0.8, 0x4a4036);
-
-    for (const dx of [-0.3, 0.3]) {
-      q.box(-21.8 + dx, 0, -3.75, 0.05, 0.52, 0.82, STEEL);
-    }
-
-    q.box(-21.8, 0.5, -3.75, 0.94, 0.04, 0.84, TIMBER_DARK, 0.08);
-    q.box(-21.8, 0.2, -3.34, 0.1, 0.1, 0.02, STEEL_BARE);
-    q.box(-21.55, 0.54, -3.8, 0.3, 0.015, 0.2, PAPER, 0.5);
-    map.createFitting("footlocker-barracks", F, q.elements, [
-      { minX: -22.25, maxX: -21.35, minZ: -4.15, maxZ: -3.35, top: 0.55 },
-    ]);
   }
 
   // ------------- things on the walls, overhead and loose on the floor (drawn)
@@ -414,8 +676,8 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     }
 
     p.box(-21.55, 1.44, -10.9, 0.2, 0.16, 0.24, 0x5a4a38);
-    p.post(-21.55, 1.44, -10.4, 0.1, 0.075, 0x3c5a78);
-    p.post(-21.55, 1.44, -10.25, 0.1, 0.075, 0xb9b49c);
+    p.cableUp(-21.55, 1.44, -10.4, 0.1, 0.075, 0x3c5a78);
+    p.cableUp(-21.55, 1.44, -10.25, 0.1, 0.075, 0xb9b49c);
     p.box(-21.55, 1.44, -9.8, 0.18, 0.2, 0.012, 0x6a6458, 0, 0, -0.1);
     p.box(-21.62, 1.44, -9.55, 0.2, 0.14, 0.3, CARDBOARD);
     // A washing line across the room above head height, with a few things hung on it.
@@ -434,7 +696,7 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     }
 
     for (const x of [-26.55, -21.45]) {
-      p.post(x, lineY - 0.04, -5.0, 0.08, 0.04, STEEL);
+      p.cableUp(x, lineY - 0.04, -5.0, 0.08, 0.04, STEEL);
     }
 
     // An extinguisher and a rota on the north wall by the door.
@@ -449,7 +711,7 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     boot(p, -22.1, -6.6, 0.4);
     boot(p, -22.0, -6.2, -0.3);
     p.box(-24.0, 0, -6.5, 0.28, 0.008, 0.2, 0xa8402a, 0.4);
-    p.post(-23.1, 0, -4.8, 0.08, 0.1, STEEL_BARE);
+    p.cableUp(-23.1, 0, -4.8, 0.08, 0.1, STEEL_BARE);
     duffel(p, -29.8, 0, -6.2, 0.2);
     map.createFitting("fittings-barracks-wall", F, p.elements, []);
   }
@@ -475,7 +737,34 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     width: 1.4,
     depth: 1.0,
     rotation: 0.5,
-    color: 0x2a2a26,
-    alpha: 0.3,
+    color: 0x1c1e20,
+    alpha: 0.42,
   });
+
+  map.addDecal({
+    id: "decal-room-barracks-damp-a",
+    kind: "stain",
+    x: -27.6,
+    z: -7.6,
+    y: F,
+    width: 1.8,
+    depth: 1.3,
+    rotation: 0.3,
+    color: 0x1c1f22,
+    alpha: 0.4,
+  });
+  map.addDecal({
+    id: "decal-room-barracks-damp-b",
+    kind: "stain",
+    x: -23.0,
+    z: -5.4,
+    y: F,
+    width: 1.3,
+    depth: 1.0,
+    rotation: 1.1,
+    color: 0x1c1f22,
+    alpha: 0.35,
+  });
+
+  hideout(map, F);
 }

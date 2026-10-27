@@ -33,6 +33,8 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     distance: 15,
     target: { x: -18.6, y: 4.0, z: 8 },
     angle: 0.9,
+    // Its beam stops at the Armory's wall: no light through it into the room.
+    castShadow: true,
   },
   {
     id: "halogen-wall-spawn",
@@ -116,10 +118,12 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     "bulb-power-a": { scale: 0.88, color: 0xffb870, reach: 1 },
     "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
     "bulb-break-a": { scale: 0.96, reach: 1 },
-    "light-room-barracks": { scale: 0.96, reach: 1 },
-    "light-room-yard": { scale: 1.04, reach: 1 },
+    "light-room-barracks": { scale: 1.6, color: 0xffbe85, reach: 1 },
+    "light-room-yard": { scale: 1.4, reach: 0.42 },
+    // The scaffold lamp lights the alley; its tail is cut where it reached into rooms.
+    "light-site-scaffold": { scale: 1, reach: 0.8 },
     "light-room-hall-b": { scale: 0.72, reach: 1 },
-    "workshop-light-bench": { scale: 2.2 },
+    "workshop-light-bench": { scale: 2.8, reach: 0.55 },
     "workshop-light-machines": { scale: 2.2 },
     "light-power-room-work": { scale: 1, reach: 1 },
   };

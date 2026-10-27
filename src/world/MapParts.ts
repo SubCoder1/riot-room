@@ -30,6 +30,7 @@ import {
   type ElectricPuddleDefinition,
   type FireDrumDefinition,
   type PowerCutoffDefinition,
+  type GraffitiDefinition,
   type TapeDefinition,
   type RiseDirection,
   type RoomDefinition,
@@ -188,6 +189,7 @@ function fitBoxToPieces<T extends FitBox>(
   box: T,
   baseY: number,
   elements: PileElement[],
+  cell = 0.1,
 ): T[] {
   const margin = 0.15;
   const low = baseY + (box.bottom ?? 0);
@@ -235,7 +237,7 @@ function fitBoxToPieces<T extends FitBox>(
     return [box];
   }
 
-  const CELL = 0.1;
+  const CELL = cell;
   const STEP = 0.05;
   const cols = Math.max(1, Math.ceil((box.maxX - box.minX) / CELL));
   const rows = Math.max(1, Math.ceil((box.maxZ - box.minZ) / CELL));
@@ -320,6 +322,12 @@ function fitBoxToPieces<T extends FitBox>(
     (q) => (q.maxX - q.minX) * (q.maxZ - q.minZ) >= 0.01,
   );
 
+  // Too ragged for this grid: try again on a coarser one (a rougher fit, but
+  // still far closer than one box round everything).
+  if ((big.length > 10 || kept.length > 40) && cell < 0.35) {
+    return fitBoxToPieces(box, baseY, elements, cell + 0.1);
+  }
+
   if (big.length === 0 || big.length > 10 || kept.length > 40) {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -357,13 +365,7 @@ function fitBoxToPieces<T extends FitBox>(
  * body must not fit between them, or must clearly fit), or they are solid
  * blocks however they are drawn.
  */
-const EXACT_FITTINGS = [
-  "bunk-barracks",
-  "armory-crates",
-  "armory-bay",
-  "site-work-area",
-  "fittings-yard-drums",
-];
+const EXACT_FITTINGS = ["bunk-barracks", "armory-bay"];
 
 /**
  * Closes the hair-thin gaps that fitting leaves between neighbouring boxes of
@@ -1723,6 +1725,11 @@ export class MapBuilder {
   /** A drum with a fire burning in it (its mouth at `y`). */
   public addFireDrum(drum: FireDrumDefinition): void {
     (this.layout.fireDrums ??= []).push(drum);
+  }
+
+  /** Spray paint on a wall. */
+  public addGraffiti(graffiti: GraffitiDefinition): void {
+    (this.layout.graffiti ??= []).push(graffiti);
   }
 
   /** Police tape strung round a place. */

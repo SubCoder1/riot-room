@@ -41,22 +41,31 @@ export function useWorldSpaceUv(
   material: THREE.MeshStandardMaterial,
   { tileMetres, rotation = 0, offset = [0, 0], macro }: WorldSpaceUvOptions,
 ): void {
-  const scale = (1 / tileMetres).toFixed(6);
-  const cos = Math.cos(rotation).toFixed(6);
-  const sin = Math.sin(rotation).toFixed(6);
-  const [shiftU, shiftV] = offset.map((v) => (v / tileMetres).toFixed(6));
-  const macroKey = macro
-    ? `:m${macro.frequency}:${macro.strength}:${macro.baseDirt ?? 0}`
-    : "";
-  const key = `worldUv:${scale}:${cos}:${sin}:${shiftU}:${shiftV}${macroKey}`;
+  // The numbers go to the shader as this material's own uniforms (rounded as
+  // they were when written into the text), not into the shader text, so
+  // materials that differ only in these share one compiled program: the
+  // program key says only which code is in the shader.
+  const round = (value: number, digits: number): number =>
+    Number(value.toFixed(digits));
+  const scale = round(1 / tileMetres, 6);
+  const cos = round(Math.cos(rotation), 6);
+  const sin = round(Math.sin(rotation), 6);
+  const [shiftU, shiftV] = offset.map((v) => round(v / tileMetres, 6));
+  const key = `worldUv${macro ? (macro.baseDirt ? ":macro-dirt" : ":macro") : ""}`;
 
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.worldUvA = { value: new THREE.Vector3(scale, cos, sin) };
+    shader.uniforms.worldUvShift = {
+      value: new THREE.Vector2(shiftU, shiftV),
+    };
+
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        macro
-          ? "#include <common>\nvarying vec3 vWorldMacro;"
-          : "#include <common>",
+        `#include <common>
+uniform vec3 worldUvA;
+uniform vec2 worldUvShift;
+${macro ? "varying vec3 vWorldMacro;\nvarying vec3 vWorldFlat;" : ""}`,
       )
       .replace(
         "#include <uv_vertex>",
@@ -69,9 +78,9 @@ export function useWorldSpaceUv(
           ? worldUvPosition.xz
           : ( worldUvNormal.x > worldUvNormal.z ? worldUvPosition.zy : worldUvPosition.xy );
         worldUv = vec2(
-          worldUv.x * ${cos} - worldUv.y * ${sin},
-          worldUv.x * ${sin} + worldUv.y * ${cos}
-        ) * ${scale} + vec2( ${shiftU}, ${shiftV} );
+          worldUv.x * worldUvA.y - worldUv.y * worldUvA.z,
+          worldUv.x * worldUvA.z + worldUv.y * worldUvA.y
+        ) * worldUvA.x + worldUvShift;
         #ifdef USE_MAP
           vMapUv = worldUv;
         #endif
@@ -81,17 +90,21 @@ export function useWorldSpaceUv(
         #ifdef USE_ROUGHNESSMAP
           vRoughnessMapUv = worldUv;
         #endif
-        ${macro ? "vWorldMacro = worldUvPosition.xyz;" : ""}
+        ${macro ? "vWorldMacro = worldUvPosition.xyz; vWorldFlat = worldUvNormal;" : ""}
       }
       `,
       );
 
     if (macro) {
-      const frequency = macro.frequency.toFixed(5);
-      const slower = (macro.frequency * 0.37).toFixed(5);
-      const finer = (macro.frequency * 2.9).toFixed(5);
-      const strength = macro.strength.toFixed(4);
-      const dirt = (macro.baseDirt ?? 0).toFixed(4);
+      shader.uniforms.worldMacroA = {
+        value: new THREE.Vector4(
+          round(macro.frequency, 5),
+          round(macro.frequency * 0.37, 5),
+          round(macro.frequency * 2.9, 5),
+          round(macro.strength, 4),
+        ),
+      };
+      shader.uniforms.worldDirt = { value: round(macro.baseDirt ?? 0, 4) };
 
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -99,6 +112,9 @@ export function useWorldSpaceUv(
           /* glsl */ `
           #include <common>
           varying vec3 vWorldMacro;
+          varying vec3 vWorldFlat;
+          uniform vec4 worldMacroA;
+          uniform float worldDirt;
           float macroHash( vec3 p ) {
             p = fract( p * 0.3183099 + vec3( 0.1, 0.2, 0.3 ) );
             p *= 17.0;
@@ -123,14 +139,35 @@ export function useWorldSpaceUv(
           #include <map_fragment>
           {
             vec3 mp = vWorldMacro;
-            float blotch = macroNoise( mp * ${frequency} ) * 0.6 + macroNoise( mp * ${finer} ) * 0.4;
-            diffuseColor.rgb *= 1.0 + ( blotch - 0.5 ) * 2.0 * ${strength};
-            float drift = macroNoise( mp * ${slower} + vec3( 17.0, 3.0, 9.0 ) );
+            float blotch = macroNoise( mp * worldMacroA.x ) * 0.6 + macroNoise( mp * worldMacroA.z ) * 0.4;
+            diffuseColor.rgb *= 1.0 + ( blotch - 0.5 ) * 2.0 * worldMacroA.w;
+            float drift = macroNoise( mp * worldMacroA.y + vec3( 17.0, 3.0, 9.0 ) );
             diffuseColor.rgb *= mix( vec3( 0.97, 0.985, 1.02 ), vec3( 1.025, 1.005, 0.975 ), drift );
             ${
               macro.baseDirt
                 ? `float storey = mod( mp.y + 0.02, 4.0 );
-            diffuseColor.rgb *= 1.0 - ${dirt} * ( 1.0 - smoothstep( 0.0, 0.9, storey ) );`
+            // Only an upright face has a foot: a narrow plinth band, a thin
+            // shadow seam where it meets the wall, a little contact darkening
+            // at the very base and a soft grime above (a fraction of the old
+            // broad band, so the wall no longer melts into the floor).
+            if ( vWorldFlat.y < 0.5 ) {
+              float grime = 1.0 - smoothstep( 0.0, 0.7, storey );
+              diffuseColor.rgb *= 1.0 - worldDirt * 0.55 * grime;
+              float plinth = 1.0 - smoothstep( 0.11, 0.125, storey );
+              diffuseColor.rgb *= mix( 1.0, 1.1, plinth );
+              float seam = exp( - pow( ( storey - 0.125 ) / 0.012, 2.0 ) );
+              diffuseColor.rgb *= 1.0 - 0.4 * seam;
+              float contact = 1.0 - smoothstep( 0.0, 0.05, storey );
+              diffuseColor.rgb *= 1.0 - 0.28 * contact;
+              // Cracks: hairlines where a noise field crosses its middle, in
+              // patches (a long fault with finer ones branching from it).
+              float faultMask = smoothstep( 0.42, 0.66, macroNoise( mp * 0.3 + vec3( 7.0, 2.0, 5.0 ) ) );
+              float fault = 1.0 - smoothstep( 0.0, 0.014, abs( macroNoise( mp * 0.8 + vec3( 31.0 ) ) - 0.5 ) );
+              float twigMask = smoothstep( 0.5, 0.72, macroNoise( mp * 0.55 + vec3( 3.0, 9.0, 1.0 ) ) );
+              float twig = 1.0 - smoothstep( 0.0, 0.022, abs( macroNoise( mp * 2.4 + vec3( 11.0 ) ) - 0.5 ) );
+              float crack = clamp( fault * faultMask + twig * twigMask * 0.8, 0.0, 1.0 );
+              diffuseColor.rgb *= 1.0 - 0.6 * crack;
+            }`
                 : ""
             }
           }
