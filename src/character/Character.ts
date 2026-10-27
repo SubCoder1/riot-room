@@ -455,6 +455,27 @@ export class Character {
    * ============================================================
    */
 
+  /**
+   * Starts every animation file downloading at once. They are then read one
+   * after another (below) from Three's file cache, instead of each waiting for
+   * the one before it to arrive: on a slow or distant connection that serial
+   * chain is nearly 20 round trips.
+   */
+  private async prefetchAnimations(): Promise<void> {
+    const paths = Object.entries(this)
+      .filter(
+        ([name, value]) =>
+          name.endsWith("AnimationPath") && typeof value === "string",
+      )
+      .map(([, value]) => value as string);
+    const loader = new THREE.FileLoader().setResponseType("arraybuffer");
+
+    THREE.Cache.enabled = true;
+    await Promise.all(
+      paths.map((path) => loader.loadAsync(path).catch(() => undefined)),
+    );
+  }
+
   private async loadAnimations(): Promise<void> {
     const targetMesh = this.findTargetMesh();
 
@@ -463,6 +484,8 @@ export class Character {
 
       return;
     }
+
+    await this.prefetchAnimations();
 
     /**
      * All animation GLBs were authored from
