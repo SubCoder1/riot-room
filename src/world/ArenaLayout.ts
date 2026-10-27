@@ -1,3 +1,5 @@
+import { SLIDE_COVER_SCALE, isSlideHatch, slideDistance } from "./SlideHatch";
+
 /**
  * The graybox map as plain data: no Three.js, no rendering. The mesh builder,
  * the collision module, the spawn system and the tests all read this one
@@ -623,8 +625,12 @@ export interface PosterDefinition {
 /** An item lying on a surface that a player can take (it comes back later). */
 export interface PickupDefinition {
   id: string;
-  /** Which of the player's utilities it adds to. */
-  type: "GRENADE" | "SMOKE" | "MOLOTOV";
+  /**
+   * Which of the player's utilities it adds to. DYNAMITE is not a utility
+   * (it is not in the inventory or the weapon wheel): taking it is a mission
+   * event only.
+   */
+  type: "GRENADE" | "SMOKE" | "MOLOTOV" | "DYNAMITE";
   x: number;
   y: number;
   z: number;
@@ -727,12 +733,35 @@ export function spawn(
   };
 }
 
+/** How high a sliding cover lies above the roof (m): a low plate, a step. */
+export const SLIDE_COVER_THICKNESS = 0.05;
+
 /**
  * The lid of an opened hatch: the panel standing on its hinge (the hole's west
  * edge), a solid you cannot walk through. It only exists while the hatch is open.
  */
 export function hatchLid(hatch: HatchDefinition): BoxSolid {
   const width = (hatch.maxX - hatch.minX) * 0.96;
+
+  // A sliding cover: when open it lies flat on the roof, clear of the opening.
+  if (isSlideHatch(hatch.id)) {
+    const depth = hatch.maxZ - hatch.minZ;
+    const shift = slideDistance(depth);
+    const centre = (hatch.minZ + hatch.maxZ) / 2 - shift;
+    const half = (depth * SLIDE_COVER_SCALE) / 2;
+
+    return {
+      kind: "box",
+      id: `${hatch.id}-lid`,
+      role: "hatch",
+      minX: hatch.minX + 0.02,
+      maxX: hatch.minX + 0.02 + width,
+      minZ: centre - half,
+      maxZ: centre + half,
+      bottom: ROOF_HIGH,
+      height: ROOF_HIGH + SLIDE_COVER_THICKNESS,
+    };
+  }
 
   return {
     kind: "box",

@@ -4,7 +4,9 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   OUTER_WALL_THICKNESS,
   PERIMETER_WALL_HEIGHT,
+  ROOF_HIGH,
   ROOF_MID,
+  SLIDE_COVER_THICKNESS,
   stairsToSteps,
   type ArenaLayout,
   type VentNetwork,
@@ -23,6 +25,7 @@ import { createDecals, createPiles } from "./PileMeshes";
 import { createSteelStructure } from "./SteelStructure";
 import { createTankMesh } from "./TankMesh";
 import { VENT_GRATING_PREFIX, grilleBars, isVentHatchId } from "./ArmoryVent";
+import { isSlideHatch, slideDistance } from "./SlideHatch";
 import { VENT_CELL, ventBlocks, ventCeilingY, ventFloorY } from "./Vents";
 import {
   brickGroup,
@@ -731,6 +734,21 @@ function createHatchPanel(solid: BoxSolid, mesh: THREE.Mesh): THREE.Group {
 
     if (grille) {
       pivot.add(grille);
+    }
+
+    // A sliding cover: it rises from the opening, slides toward -z over the
+    // roof and settles on it (the game moves it; see Game.updateHatches).
+    if (isSlideHatch(solid.id)) {
+      pivot.userData.slide = {
+        baseY: pivot.position.y,
+        baseZ: pivot.position.z,
+        distance: slideDistance(solid.maxZ - solid.minZ),
+        // The bars hang 0.1 m under the pivot: they come to rest on the roof.
+        restY: ROOF_HIGH + SLIDE_COVER_THICKNESS + 0.1,
+        // It clears the curb round the opening on its way.
+        hump: 0.15,
+        progress: 0,
+      };
     }
 
     return pivot;

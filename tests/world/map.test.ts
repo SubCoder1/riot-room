@@ -1195,7 +1195,8 @@ describe("Hatches", () => {
 
 describe("An opened hatch", () => {
   it("its lid stands up as a solid, and is gone again when the hatch is shut", () => {
-    const hatch = layout.hatches[0];
+    // (A hinged hatch: the Armory's vents have sliding covers, see slideHatch.)
+    const hatch = layout.hatches.find((h) => h.id === "hatch-alcove")!;
     const x = hatch.minX;
     const z = (hatch.minZ + hatch.maxZ) / 2;
     const fresh = new ArenaCollision();
