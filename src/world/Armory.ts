@@ -838,6 +838,18 @@ export function furnishArmory(map: MapBuilder, floorY: number): void {
   furnishArmoryVent(map, F);
   registerThrowablePickups(map, F);
 
+  // The dynamite: one bundle on the maintenance table's near edge, taken for
+  // the mission (it is not a throwable, and stays gone until the next round).
+  map.addPickup({
+    id: "armory-dynamite-1",
+    type: "DYNAMITE",
+    x: -27.1,
+    y: F + 0.91,
+    z: 9.02,
+    amount: 1,
+    respawn: 1e9,
+  });
+
   // The tube lighting under the beams, and its lamps.
   furnishTubeFixtures(map, F);
   furnishTubeLights(map);

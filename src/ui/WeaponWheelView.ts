@@ -15,17 +15,17 @@ import { ICONS, svg } from "./WeaponIcons";
  * and the highlighted slot's name and quantity in the middle.
  */
 
-const OUTER = 140;
-const INNER = 50;
+const OUTER = 138;
+const INNER = 54;
 /** Every slot's block (icon, name, quantity) is centred on its sector's midpoint. */
 const SLOT_RADIUS = (INNER + OUTER) / 2;
 /** Inside a slot's block, measured from the block's centre: icon, name, quantity. */
-const ICON_Y = -20;
-const NAME_Y = 14;
-const QTY_Y = 30;
+const ICON_Y = -17;
+const NAME_Y = 15;
+const QTY_Y = 29;
 /** Every icon is scaled so its longer side is this many units, drawn at one stroke weight. */
-const ICON_SIZE = 30;
-const ICON_STROKE = 1.9;
+const ICON_SIZE = 28;
+const ICON_STROKE = 1.7;
 /** The widest the name in the hub may be (the hub is 2 * INNER across). */
 const HUB_TEXT_WIDTH = 2 * INNER - 18;
 const HUB_NAME_SIZE = 22;
@@ -56,6 +56,8 @@ interface SlotView {
   group: SVGElement | null;
   quantity: SVGElement | null;
   icon: SVGElement | null;
+  /** A mission item's empty ring, shown until the item is picked up. */
+  placeholder: SVGElement | null;
   /** A short arc on the hub's rim, lit while this slot is selected. */
   rim: SVGElement;
   lastQuantity: string;
@@ -128,6 +130,7 @@ export class WeaponWheelView {
         group: null,
         quantity: null,
         icon: null,
+        placeholder: null,
         rim,
         lastQuantity: "",
       });
@@ -168,6 +171,7 @@ export class WeaponWheelView {
       );
 
       slot.group = group;
+      group.dataset.type = slot.definition.type;
 
       if (slot.definition.reserved) {
         group.dataset.reserved = "true";
@@ -182,15 +186,33 @@ export class WeaponWheelView {
         svg(tag, attrs, icon);
       }
 
+      // A mission item's slot is an empty ring until the item is picked up:
+      // the item's own icon and name appear then (see `render`).
+      if (slot.definition.missionItem) {
+        const ring = svg("g", { class: "ww-icon" }, group);
+
+        slot.placeholder = ring;
+        ring.dataset.icon = "empty";
+        ring.dataset.placeholder = "true";
+
+        for (const [tag, attrs] of ICONS.empty) {
+          svg(tag, attrs, ring);
+        }
+      }
+
       const name = svg(
         "text",
         { x: "0.85", y: String(NAME_Y), class: "ww-name" },
         group,
       );
 
-      name.textContent = slot.definition.name.toUpperCase();
+      // A placeholder carries no name: only its quiet empty ring.
+      name.textContent = slot.definition.reserved
+        ? ""
+        : slot.definition.name.toUpperCase();
 
-      if (slot.definition.counted) {
+      // A mission item is one thing, held or not: no "x1" under it.
+      if (slot.definition.counted && !slot.definition.missionItem) {
         slot.quantity = svg(
           "text",
           { y: String(QTY_Y), class: "ww-qty" },
@@ -206,7 +228,7 @@ export class WeaponWheelView {
     );
     this.centerQuantity = svg(
       "text",
-      { y: "18", class: "ww-center-qty" },
+      { y: "19", class: "ww-center-qty" },
       canvas,
     );
 
@@ -221,9 +243,9 @@ export class WeaponWheelView {
    * drawn around different centres and at different sizes on their grid).
    */
   private layoutIcons(): void {
-    for (const slot of this.slots) {
-      const icon = slot.icon;
+    const icons = this.slots.flatMap((slot) => [slot.icon, slot.placeholder]);
 
+    for (const icon of icons) {
       if (!icon) {
         continue;
       }
@@ -287,6 +309,20 @@ export class WeaponWheelView {
       this.root.dataset.open = String(open);
     }
 
+    // A locked slot (the dynamite before it is picked up) is dimmed and has no
+    // name yet. This reads the same inventory fact the selection does.
+    for (const slot of this.slots) {
+      if (slot.definition.missionItem && slot.group) {
+        const locked = String(
+          !this.utilities.isAvailable(slot.definition.type),
+        );
+
+        if (slot.group.dataset.locked !== locked) {
+          slot.group.dataset.locked = locked;
+        }
+      }
+    }
+
     // Quantities come straight from the inventory, so they are always current.
     for (const slot of this.slots) {
       if (!slot.quantity) {
@@ -316,16 +352,17 @@ export class WeaponWheelView {
     }
 
     const current = this.slots[highlight].definition;
-    const have = current.counted
-      ? (this.utilities.quantityOf(current.type) ?? 0)
-      : null;
+    const have =
+      current.counted && !current.missionItem
+        ? (this.utilities.quantityOf(current.type) ?? 0)
+        : null;
     const center = `${current.type}:${have}`;
 
     if (center !== this.lastCenter) {
       this.lastCenter = center;
       this.centerName.textContent = current.name.toUpperCase();
       // With a quantity underneath the pair is centred; alone, the name is.
-      this.centerName.setAttribute("y", have === null ? "8" : "-3");
+      this.centerName.setAttribute("y", have === null ? "8" : "-6");
       this.centerQuantity.textContent = have === null ? "" : `×${have}`;
       this.fitCenterName();
     }

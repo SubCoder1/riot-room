@@ -36,9 +36,11 @@ import {
 } from "../world/JunkRoom";
 import {
   ARMORY_VENT_HATCHES,
+  ARMORY_VENT_TOP,
   isVentHatchId,
   ventDripPoints,
 } from "../world/ArmoryVent";
+import { SLIDE_SECONDS, isSlideHatch } from "../world/SlideHatch";
 import {
   CEILING_SLAB_BULB_LIGHT,
   CEILING_SLAB_ID,
@@ -105,6 +107,9 @@ import { ElectricHazard } from "../combat/ElectricHazard";
 import { ElectricPuddleView } from "../vfx/ElectricPuddleView";
 import { HitFeedback } from "../ui/HitFeedback";
 import { EquippedHud } from "../ui/EquippedHud";
+import { ObjectivesView } from "../ui/ObjectivesView";
+import { ObjectiveLog, OBJECTIVES } from "../mission/Objectives";
+import { createDynamite } from "../vfx/DynamiteMesh";
 import { Minimap } from "../ui/Minimap";
 import { PlayerHealthBar } from "../ui/PlayerHealthBar";
 import { PlayerUtilities } from "../inventory/PlayerUtilities";
@@ -212,6 +217,9 @@ export class Game {
   private readonly minimap: Minimap;
   private readonly healthBar: PlayerHealthBar;
   private readonly equippedHud: EquippedHud;
+  /** What the mission asks of the player, and the HUD list that shows it. */
+  private readonly objectives = new ObjectiveLog(OBJECTIVES);
+  private readonly objectivesView: ObjectivesView;
   /** The bottom-left cluster: the heart and the equipped item, on one centreline. */
   private readonly hudCluster = document.createElement("div");
 
@@ -704,6 +712,7 @@ export class Game {
       this.utilities,
       (type) => Game.carryMax(type),
     );
+    this.objectivesView = new ObjectivesView(document.body, this.objectives);
 
     // Arms and fists stop at cover and walls instead of sinking into them.
     this.character.armProbe = (from, to) => this.armClearFraction(from, to);
@@ -1187,7 +1196,7 @@ export class Game {
     this.weaponWheelView.render();
   }
 
-  /** The selected slot as something to throw, or null (fists, the reserved slot). */
+  /** The selected slot as something to throw, or null (fists, the dynamite). */
   private selectedThrowable(): HeldKind | null {
     const selected = this.utilities.selected;
 
@@ -1247,6 +1256,8 @@ export class Game {
         }
       } else if (this.breakCeilingSlabIfOn()) {
         // Broke through the Generator Room's wooden slab from the roof.
+      } else if (this.slideCoverIfNear()) {
+        // Slid an Armory roof vent's cover open or shut.
       } else if (this.liftVentGrilleIfNear()) {
         // Lifted the Armory vent's grille from the roof.
       } else if (this.takePickupIfNear()) {
@@ -1303,19 +1314,21 @@ export class Game {
             ? "PRESS {E} TO ENTER VENT"
             : this.ceilingSlabInReach()
               ? "PRESS {E} TO BREAK THROUGH"
-              : this.ventGrilleInReach()
-                ? "PRESS {E} TO LIFT GRILLE"
-                : this.pickupPrompt()
-                  ? this.pickupPrompt()
-                  : this.cutoffPrompt()
-                    ? this.cutoffPrompt()
-                    : this.powerPrompt()
-                      ? this.powerPrompt()
-                      : this.noticePrompt()
-                        ? this.noticePrompt()
-                        : this.player.ladderInReach()
-                          ? "PRESS {E} TO CLIMB"
-                          : "";
+              : this.slideCoverPrompt()
+                ? this.slideCoverPrompt()
+                : this.ventGrilleInReach()
+                  ? "PRESS {E} TO LIFT GRILLE"
+                  : this.pickupPrompt()
+                    ? this.pickupPrompt()
+                    : this.cutoffPrompt()
+                      ? this.cutoffPrompt()
+                      : this.powerPrompt()
+                        ? this.powerPrompt()
+                        : this.noticePrompt()
+                          ? this.noticePrompt()
+                          : this.player.ladderInReach()
+                            ? "PRESS {E} TO CLIMB"
+                            : "";
 
     // A key in braces, {E}, is drawn in the key colour.
     if (this.climbPrompt.dataset.text !== text) {
@@ -1615,7 +1628,8 @@ export class Game {
     let bestDistance = 1.4;
 
     for (const { id, area } of ARMORY_VENT_HATCHES) {
-      if (this.openHatches.has(id)) {
+      // (A sliding cover has its own prompt: see slideCoverInReach.)
+      if (this.openHatches.has(id) || isSlideHatch(id)) {
         continue;
       }
 
@@ -1722,6 +1736,109 @@ export class Game {
     }
   }
 
+  /**
+   * The sliding cover of an Armory roof vent that the player is beside (within
+   * 1.8 m of its opening) and looking at, with whether it is open now; null if
+   * none. When two are in view the one nearer the middle of the view is meant.
+   */
+  private slideCoverInReach(): { id: string; open: boolean } | null {
+    if (this.player.isClimbing || this.player.isInVent) {
+      return null;
+    }
+
+    const feetY = this.player.position.y - this.player.eyeHeight;
+
+    if (Math.abs(feetY - ROOF_HIGH) >= 0.5) {
+      return null;
+    }
+
+    const eye = this.renderer.camera.position;
+    const forward = this.renderer.camera.getWorldDirection(new THREE.Vector3());
+    let best: { id: string; open: boolean } | null = null;
+    let bestAim = 0.6;
+
+    for (const { id, area } of ARMORY_VENT_HATCHES) {
+      if (!isSlideHatch(id)) {
+        continue;
+      }
+
+      const dx = Math.max(area.minX - eye.x, 0, eye.x - area.maxX);
+      const dz = Math.max(area.minZ - eye.z, 0, eye.z - area.maxZ);
+
+      if (Math.hypot(dx, dz) > 1.8) {
+        continue;
+      }
+
+      // How squarely the opening is in the middle of the view.
+      const toward = new THREE.Vector3(
+        (area.minX + area.maxX) / 2 - eye.x,
+        ROOF_HIGH - eye.y,
+        (area.minZ + area.maxZ) / 2 - eye.z,
+      ).normalize();
+      const aim = forward.dot(toward);
+
+      if (aim > bestAim) {
+        bestAim = aim;
+        best = { id, open: this.openHatches.has(id) };
+      }
+    }
+
+    return best;
+  }
+
+  /**
+   * Whether the player is where the cover would be: over its opening (with a
+   * body's width round it), at or just above the grating. Sliding the cover
+   * shut on them (or out from under them) is not allowed.
+   */
+  private overOpening(id: string): boolean {
+    const area = ARMORY_VENT_HATCHES.find((h) => h.id === id)?.area;
+
+    if (!area) {
+      return false;
+    }
+
+    const feetY = this.player.position.y - this.player.eyeHeight;
+    const reach = 0.5;
+
+    return (
+      feetY > ARMORY_VENT_TOP - 0.6 &&
+      feetY < ROOF_HIGH + 2.5 &&
+      this.player.position.x > area.minX - reach &&
+      this.player.position.x < area.maxX + reach &&
+      this.player.position.z > area.minZ - reach &&
+      this.player.position.z < area.maxZ + reach
+    );
+  }
+
+  /** The prompt at a sliding cover ("" when there is none, or nothing can be done). */
+  private slideCoverPrompt(): string {
+    const near = this.slideCoverInReach();
+
+    if (!near || this.overOpening(near.id)) {
+      return "";
+    }
+
+    return near.open
+      ? "PRESS {E} TO SLIDE COVER SHUT"
+      : "PRESS {E} TO SLIDE COVER OPEN";
+  }
+
+  /** E at a sliding cover: it slides open, or back shut (never over the player). */
+  private slideCoverIfNear(): boolean {
+    const near = this.slideCoverInReach();
+
+    if (!near) {
+      return false;
+    }
+
+    if (!this.overOpening(near.id)) {
+      this.setHatchOpen(near.id, !near.open);
+    }
+
+    return true;
+  }
+
   /** E on the roof beside a vent: its grille lifts on its hinge and stays up for good. */
   private liftVentGrilleIfNear(): boolean {
     const id = this.ventGrilleInReach();
@@ -1800,7 +1917,10 @@ export class Game {
       let mesh: THREE.Object3D;
       let lift: number;
 
-      if (pickup.type === "SMOKE") {
+      if (pickup.type === "DYNAMITE") {
+        mesh = createDynamite();
+        lift = 0;
+      } else if (pickup.type === "SMOKE") {
         mesh = createSmokeCanister(parts);
         mesh.scale.setScalar(PICKUP_SCALE);
         lift = 0.085 * PICKUP_SCALE;
@@ -1877,6 +1997,13 @@ export class Game {
       return "";
     }
 
+    // The dynamite is a mission item: one is all there is to carry.
+    if (pickup.type === "DYNAMITE") {
+      return (this.utilities.quantityOf("DYNAMITE") ?? 0) > 0
+        ? ""
+        : "PRESS {E} TO TAKE DYNAMITE";
+    }
+
     const have = this.utilities.quantityOf(pickup.type) ?? 0;
 
     const name =
@@ -1899,17 +2026,27 @@ export class Game {
       return false;
     }
 
-    const have = this.utilities.quantityOf(pickup.type) ?? 0;
+    if (pickup.type === "DYNAMITE") {
+      // Already carried (this cannot happen with the one bundle, which is
+      // hidden once taken): nothing to take, nothing to complete again.
+      if ((this.utilities.quantityOf("DYNAMITE") ?? 0) > 0) {
+        return true;
+      }
 
-    // Anything below the carry limit can be topped up (used ones are replaced).
-    if (have >= Game.carryMax(pickup.type)) {
-      return true;
+      this.utilities.add("DYNAMITE", 1);
+    } else {
+      const have = this.utilities.quantityOf(pickup.type) ?? 0;
+
+      // Anything below the carry limit can be topped up (used ones are replaced).
+      if (have >= Game.carryMax(pickup.type)) {
+        return true;
+      }
+
+      this.utilities.add(
+        pickup.type,
+        Math.min(pickup.amount, Game.carryMax(pickup.type) - have),
+      );
     }
-
-    this.utilities.add(
-      pickup.type,
-      Math.min(pickup.amount, Game.carryMax(pickup.type) - have),
-    );
 
     const state = this.pickupState.get(pickup.id);
 
@@ -1917,6 +2054,9 @@ export class Game {
       state.mesh.visible = false;
       state.readyAt = performance.now() + pickup.respawn * 1000;
     }
+
+    // The pickup really happened: this is what the mission listens for.
+    this.objectives.pickupTaken(pickup.type);
 
     return true;
   }
@@ -2142,7 +2282,12 @@ export class Game {
 
     // The panel swings up on its hinge (see updateHatches) and stays in view.
     if (panel) {
-      panel.userData.target = open ? HATCH_OPEN_ANGLE : 0;
+      // (A sliding cover moves from 0 to 1; a hinged one swings to an angle.)
+      panel.userData.target = open
+        ? isSlideHatch(id)
+          ? 1
+          : HATCH_OPEN_ANGLE
+        : 0;
     }
   }
 
@@ -2239,6 +2384,39 @@ export class Game {
 
       if (panel) {
         const target = (panel.userData.target as number | undefined) ?? 0;
+        const slide = panel.userData.slide as
+          | {
+              baseY: number;
+              baseZ: number;
+              distance: number;
+              restY: number;
+              hump: number;
+              progress: number;
+            }
+          | undefined;
+
+        if (slide) {
+          // Slides at a steady pace and eases at both ends: it rises off the
+          // opening, crosses the curb and settles on the roof.
+          const step = dt / SLIDE_SECONDS;
+
+          slide.progress +=
+            Math.sign(target - slide.progress) *
+            Math.min(step, Math.abs(target - slide.progress));
+
+          const ease = (t: number): number => t * t * (3 - 2 * t);
+          const clamp01 = (t: number): number => Math.min(Math.max(t, 0), 1);
+          const lift = ease(clamp01(slide.progress * 2.5));
+          const along = ease(clamp01((slide.progress - 0.2) / 0.8));
+
+          panel.position.z = slide.baseZ - slide.distance * along;
+          panel.position.y =
+            slide.baseY +
+            (slide.restY - slide.baseY) * lift +
+            slide.hump * Math.sin(Math.PI * along);
+
+          continue;
+        }
 
         panel.rotation.z +=
           (target - panel.rotation.z) * (1 - Math.exp(-9 * dt));
@@ -2281,13 +2459,13 @@ export class Game {
     });
 
     // The click goes to a punch only when the throwable did not take it, the
-    // player is not mid-aim and the reserved (empty) slot is not selected:
-    // that slot holds nothing, so there is nothing to do with a click.
+    // player is not mid-aim and the dynamite is not in hand: it is carried,
+    // not thrown or swung, so there is nothing to do with a click.
     this.punchClick =
       click &&
       !this.throwStance.consumedClick &&
       this.throwStance.canPunch &&
-      !this.utilities.reservedSelected;
+      !this.utilities.missionSelected;
   }
 
   /**
@@ -3163,7 +3341,13 @@ export class Game {
     this.shutterCrush.reset();
     this.electricHazard.reset();
 
-    // The stash is full again.
+    // The stash is full again (and the mission starts over): the dynamite
+    // goes back on its table, so it is no longer carried (the wheel locks it).
+    this.objectives.reset();
+    this.utilities.remove(
+      "DYNAMITE",
+      this.utilities.quantityOf("DYNAMITE") ?? 0,
+    );
 
     for (const [id, state] of this.pickupState) {
       if (id.startsWith("armory-")) {
@@ -3181,7 +3365,9 @@ export class Game {
     // Every roof hatch is shut again for a new round.
     // (The Armory's vent hatch is not: once lifted it stays up.)
     for (const id of [...this.openHatches]) {
-      if (!isVentHatchId(id)) {
+      // (A vent's hinged grille stays up for the session; a sliding cover
+      // goes back to its start, shut, with the round.)
+      if (!isVentHatchId(id) || isSlideHatch(id)) {
         this.setHatchOpen(id, false);
       }
     }
@@ -3646,6 +3832,7 @@ export class Game {
     this.minimap.dispose();
     this.healthBar.dispose();
     this.equippedHud.dispose();
+    this.objectivesView.dispose();
     this.hudCluster.remove();
     this.tubeGlow.dispose();
     this.hangingTubes.dispose();

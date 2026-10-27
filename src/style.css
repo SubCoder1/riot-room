@@ -144,8 +144,8 @@ canvas {
   position: fixed;
   left: 50%;
   top: 50%;
-  width: min(390px, 78vmin);
-  height: min(390px, 78vmin);
+  width: min(405px, 80vmin);
+  height: min(405px, 80vmin);
   transform: translate(-50%, -50%) scale(0.92);
   opacity: 0;
   visibility: hidden;
@@ -178,47 +178,51 @@ canvas {
 }
 
 .ww-disc {
-  fill: rgba(8, 12, 22, 0.78);
-  stroke: rgba(255, 255, 255, 0.2);
-  stroke-width: 1;
+  fill: rgba(8, 10, 14, 0.87);
+  stroke: rgba(205, 214, 226, 0.34);
+  stroke-width: 1.2;
 }
 
 .ww-sector {
   fill: transparent;
+  transition: fill 120ms ease-out;
 }
 
+/* The selected slot: a restrained amber fill, kept inside its own sector. */
 .ww-sector.is-selected {
-  fill: rgba(255, 255, 255, 0.13);
+  fill: rgba(196, 148, 48, 0.42);
 }
 
 .ww-divider {
-  stroke: rgba(255, 255, 255, 0.16);
-  stroke-width: 0.8;
+  stroke: rgba(205, 214, 226, 0.24);
+  stroke-width: 0.9;
 }
 
 .ww-hub {
-  fill: rgba(6, 9, 18, 0.9);
-  stroke: rgba(255, 255, 255, 0.22);
-  stroke-width: 1;
+  fill: rgba(5, 7, 10, 0.94);
+  stroke: rgba(205, 214, 226, 0.34);
+  stroke-width: 1.2;
 }
 
 .ww-rim {
   fill: none;
   stroke: transparent;
-  stroke-width: 2;
+  stroke-width: 2.5;
   stroke-linecap: butt;
+  transition: stroke 120ms ease-out;
 }
 
 .ww-rim.is-selected {
-  stroke: rgba(255, 255, 255, 0.55);
+  stroke: #d4a23a;
 }
 
 .ww-icon {
   fill: none;
-  stroke: #aeb7c9;
+  stroke: #b9c2d0;
   stroke-width: 1.45;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: stroke 120ms ease-out;
   /* Placed, sized and stroked from the icon's own bounds (see WeaponWheelView). */
 }
 
@@ -227,27 +231,50 @@ canvas {
 }
 
 .ww-name {
-  fill: #98a2b6;
-  font-size: 12px;
+  fill: #9aa4b4;
+  font-size: 11.5px;
   font-weight: 400;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-anchor: middle;
+  transition: fill 120ms ease-out;
 }
 
 .ww-qty {
-  fill: #dde3ee;
-  font-size: 14px;
+  fill: #7f8a9b;
+  font-size: 12px;
   font-weight: 400;
   text-anchor: middle;
 }
 
 .ww-slot.is-selected .ww-name {
-  fill: #e8edf5;
+  fill: #ffffff;
+  font-size: 12.5px;
 }
 
-/* The reserved slot is a placeholder: visible, but plainly nothing yet. */
+.ww-slot.is-selected .ww-qty {
+  fill: #e6dcc4;
+}
+
+/* A reserved (future gun) slot is a placeholder: a quiet empty ring that is
+   never selected, never lit and has nothing to read. */
 .ww-slot[data-reserved="true"] {
-  opacity: 0.45;
+  opacity: 0.26;
+}
+
+/* The dynamite before it is picked up: dimmed, and its name not shown yet. */
+.ww-slot[data-locked="true"] {
+  opacity: 0.26;
+}
+
+/* Until it is picked up the dynamite's slot is an empty ring; its own icon
+   and name are there once it is taken. */
+.ww-slot[data-locked="true"] .ww-icon:not([data-placeholder]),
+.ww-slot:not([data-locked="true"]) .ww-icon[data-placeholder] {
+  display: none;
+}
+
+.ww-slot[data-locked="true"] .ww-name {
+  visibility: hidden;
 }
 
 /* Inside a smoke cloud the whole view greys out (opacity is set from code). */
@@ -270,7 +297,7 @@ canvas {
 }
 
 .ww-center-name {
-  fill: #ffffff;
+  fill: #f2f4f7;
   font-size: 22px;
   font-weight: 400;
   letter-spacing: 0.14em;
@@ -278,8 +305,8 @@ canvas {
 }
 
 .ww-center-qty {
-  fill: #cfd6e4;
-  font-size: 19px;
+  fill: #8f9aac;
+  font-size: 14px;
   font-weight: 400;
   text-anchor: middle;
 }
@@ -393,6 +420,19 @@ canvas {
 
 .player-health.critical .player-health__segment.on {
   background: #a8403f;
+}
+
+/* Below half: the number and the filled bar go yellow; below a quarter, red. */
+.player-health.low .player-health__segment.on {
+  background: #c9a227;
+}
+
+.player-health.low .player-health__value {
+  color: #e0be3c;
+}
+
+.player-health.critical .player-health__value {
+  color: #e0554f;
 }
 
 /* ------------------------------------------------------------------
@@ -514,10 +554,48 @@ canvas {
 }
 
 .loading-bar {
+  position: relative;
   width: min(360px, 70vw);
   height: 3px;
   background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
+}
+
+/* A faint light sweeping along the bar says the page is alive. It is a
+   transform animation, which the browser runs off the page's own thread, so
+   it keeps moving through the long steps that hold the page up (the bar's
+   width is the real count of finished stages; this adds no progress). */
+.loading-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  animation: loading-sweep 1.4s linear infinite;
+}
+
+@keyframes loading-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(333%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-bar::after {
+    animation: none;
+    display: none;
+  }
 }
 
 .loading-fill {
@@ -541,4 +619,182 @@ canvas {
 
 .loading-screen.failed .loading-label {
   color: #e0705a;
+}
+
+/* ------------------------------------------------------------------
+   The objectives list, left of the screen: a small, quiet panel. A row
+   is a circle and a line of text. The current one has an amber circle,
+   an upcoming one a grey circle and dimmer text, a done one a green
+   circle with a tick and a struck-through line, which then slides up
+   and fades out. Rows are joined by a dashed line behind the circles
+   (only when there is more than one row).
+   ------------------------------------------------------------------ */
+.objectives {
+  --dot: 16px;
+  --line: 21px;
+  --gap: 12px;
+  --amber: #d4a23a;
+  --grey: #6a6f77;
+  --green: #5aa467;
+  position: fixed;
+  left: 24px;
+  top: 24px;
+  width: min(340px, 30vw);
+  min-width: 190px;
+  padding: 13px 18px 15px 15px;
+  background: linear-gradient(
+    90deg,
+    rgba(8, 10, 13, 0.62),
+    rgba(8, 10, 13, 0.3) 70%,
+    rgba(8, 10, 13, 0)
+  );
+  border-radius: 3px;
+  color: #e4e7eb;
+  pointer-events: none;
+  user-select: none;
+  z-index: 10;
+}
+
+.objectives__title {
+  margin: 0 0 14px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  letter-spacing: 0.22em;
+  color: rgba(228, 231, 235, 0.62);
+}
+
+.objectives__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(34vh, 260px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.objectives__list::-webkit-scrollbar {
+  display: none;
+}
+
+.objective {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: var(--gap);
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: var(--line);
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease,
+    height 320ms ease,
+    margin-bottom 320ms ease;
+}
+
+.objective:last-child {
+  margin-bottom: 0;
+}
+
+/* The dashed line to the next row: it starts under this row's circle and
+   ends at the top of the next row's circle, so it follows wrapped text. */
+.objective:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: calc(var(--dot) / 2 - 0.5px);
+  top: calc((var(--line) - var(--dot)) / 2 + var(--dot));
+  bottom: calc(-1 * var(--gap) + (var(--line) - var(--dot)) / 2);
+  border-left: 1px dashed rgba(106, 111, 119, 0.7);
+}
+
+.objective.is-complete:not(:last-child)::before {
+  border-left-color: rgba(90, 164, 103, 0.6);
+}
+
+.objective__dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--dot);
+  height: var(--dot);
+  margin-top: calc((var(--line) - var(--dot)) / 2);
+  border: 2px solid var(--grey);
+  border-radius: 50%;
+  background: #0b0d10;
+  color: transparent;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease;
+}
+
+.objective__dot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.objective__text {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgba(228, 231, 235, 0.92);
+  transition:
+    color 200ms ease,
+    background-size 260ms ease;
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 55% / 0%
+    1px;
+}
+
+.objective.is-current .objective__dot {
+  border-color: var(--amber);
+  background: rgba(212, 162, 58, 0.22);
+}
+
+.objective.is-current .objective__text {
+  color: #f1f3f5;
+  font-weight: 500;
+}
+
+.objective.is-upcoming .objective__text {
+  opacity: 0.5;
+}
+
+.objective.is-complete .objective__dot {
+  border-color: var(--green);
+  background: var(--green);
+  color: #0b0d10;
+}
+
+.objective.is-complete .objective__text {
+  color: rgba(228, 231, 235, 0.6);
+  background-size: 100% 1px;
+}
+
+.objective.is-leaving {
+  height: 0 !important;
+  margin-bottom: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .objective,
+  .objective__dot,
+  .objective__text {
+    transition: none;
+  }
+
+  .objective.is-leaving {
+    transform: none;
+  }
+}
+
+@media (max-height: 520px) {
+  .objectives {
+    top: 16px;
+    left: 16px;
+  }
 }

@@ -17,10 +17,11 @@ describe("WeaponWheelView", () => {
     sectors()
       .filter((s) => s.classList.contains("is-selected"))
       .map((s) => (s as SVGElement).dataset.type ?? "");
-  const slotText = (name: string): string =>
-    Array.from(view.root.querySelectorAll(".ww-slot")).find(
-      (g) => g.querySelector(".ww-name")?.textContent === name,
-    )?.textContent ?? "";
+  const slotOf = (type: string): SVGElement =>
+    Array.from(view.root.querySelectorAll<SVGElement>(".ww-slot")).find(
+      (g) => g.dataset.type === type,
+    )!;
+  const slotText = (type: string): string => slotOf(type)?.textContent ?? "";
 
   /** One scroll, then draw (as the game loop does). */
   const scroll = (steps: number): void => {
@@ -46,50 +47,114 @@ describe("WeaponWheelView", () => {
     expect(view.root.dataset.open).toBe("false");
   });
 
-  it("draws exactly five slots, in order, ending with the reserved one", () => {
-    expect(sectors()).toHaveLength(5);
-    expect(view.root.querySelectorAll(".ww-slot")).toHaveLength(5);
+  it("draws exactly seven slots, in order, ending with the two reserved gun slots", () => {
+    expect(sectors()).toHaveLength(7);
+    expect(view.root.querySelectorAll(".ww-slot")).toHaveLength(7);
+
+    const types = Array.from(
+      view.root.querySelectorAll<SVGElement>(".ww-slot"),
+    ).map((g) => g.dataset.type);
+
+    expect(types).toEqual([
+      "GRENADE",
+      "MOLOTOV",
+      "SMOKE",
+      "FISTS",
+      "DYNAMITE",
+      "GUN_1",
+      "GUN_2",
+    ]);
 
     const names = Array.from(view.root.querySelectorAll(".ww-name")).map(
       (n) => n.textContent,
     );
 
-    expect(names).toEqual(["GRENADE", "MOLOTOV", "SMOKE", "FISTS", "EMPTY"]);
+    // The placeholders carry no name.
+    expect(names).toEqual([
+      "GRENADE",
+      "MOLOTOV",
+      "SMOKE",
+      "FISTS",
+      "DYNAMITE",
+      "",
+      "",
+    ]);
     expect(view.root.textContent).not.toMatch(/rock/i);
   });
 
-  it("lays the five slots out evenly round the wheel, the grenade at the top", () => {
-    const place = (name: string): { x: number; y: number } => {
-      const g = Array.from(view.root.querySelectorAll(".ww-slot")).find(
-        (e) => e.querySelector(".ww-name")?.textContent === name,
-      )!;
+  it("lays the seven slots out evenly round the wheel, the grenade at the top", () => {
+    const place = (type: string): { x: number; y: number } => {
       const m = /translate\((-?[\d.]+),(-?[\d.]+)\)/.exec(
-        g.getAttribute("transform")!,
+        slotOf(type).getAttribute("transform")!,
       )!;
 
       return { x: Number(m[1]), y: Number(m[2]) };
     };
+    const types = [
+      "GRENADE",
+      "MOLOTOV",
+      "SMOKE",
+      "FISTS",
+      "DYNAMITE",
+      "GUN_1",
+      "GUN_2",
+    ];
 
-    // Top, upper right, lower right, lower left, upper left.
+    // Every block is on one circle, 360 / 7 degrees from the next, clockwise
+    // from the top.
+    const radius = Math.hypot(place("GRENADE").x, place("GRENADE").y);
+
+    types.forEach((type, k) => {
+      const { x, y } = place(type);
+      const angle = (k * 2 * Math.PI) / 7;
+
+      expect(Math.hypot(x, y)).toBeCloseTo(radius, 1);
+      expect(x).toBeCloseTo(radius * Math.sin(angle), 1);
+      expect(y).toBeCloseTo(-radius * Math.cos(angle), 1);
+    });
+
     expect(place("GRENADE").y).toBeLessThan(-50);
-    expect(Math.abs(place("GRENADE").x)).toBeLessThan(1);
     expect(place("MOLOTOV").x).toBeGreaterThan(50);
-    expect(place("MOLOTOV").y).toBeLessThan(0);
-    expect(place("SMOKE").x).toBeGreaterThan(30);
-    expect(place("SMOKE").y).toBeGreaterThan(30);
-    expect(place("FISTS").x).toBeLessThan(-30);
-    expect(place("FISTS").y).toBeGreaterThan(30);
-    expect(place("EMPTY").x).toBeLessThan(-50);
-    expect(place("EMPTY").y).toBeLessThan(0);
+    // The two gun slots sit together at the upper left, mirroring the
+    // grenade's neighbour on the right.
+    expect(place("GUN_1").x).toBeLessThan(-50);
+    expect(place("GUN_2").x).toBeLessThan(-30);
+    expect(place("GUN_2").y).toBeLessThan(place("GUN_1").y);
+  });
+
+  it("keeps the blocks apart: no two neighbouring slots are closer than the width of a name", () => {
+    const point = (type: string): [number, number] => {
+      const m = /translate\((-?[\d.]+),(-?[\d.]+)\)/.exec(
+        slotOf(type).getAttribute("transform")!,
+      )!;
+
+      return [Number(m[1]), Number(m[2])];
+    };
+    const types = utilities.slots.map((s) => s.type);
+
+    types.forEach((type, k) => {
+      const [x0, y0] = point(type);
+      const [x1, y1] = point(types[(k + 1) % types.length]);
+
+      expect(Math.hypot(x1 - x0, y1 - y0)).toBeGreaterThan(75);
+    });
   });
 
   it("every slot has its own icon and the rock is gone", () => {
-    const icons = Array.from(view.root.querySelectorAll(".ww-icon")).map(
-      (g) => (g as SVGElement).dataset.icon,
-    );
+    const icons = Array.from(
+      view.root.querySelectorAll(".ww-icon:not([data-placeholder])"),
+    ).map((g) => (g as SVGElement).dataset.icon);
 
-    expect(icons).toEqual(["grenade", "molotov", "smoke", "glove", "empty"]);
-    expect(new Set(icons).size).toBe(5);
+    expect(icons).toEqual([
+      "grenade",
+      "molotov",
+      "smoke",
+      "glove",
+      "dynamite",
+      "empty",
+      "empty",
+    ]);
+    expect(new Set(icons).size).toBe(6);
   });
 
   it("shows the quantities on the slots, read from the inventory", () => {
@@ -105,19 +170,60 @@ describe("WeaponWheelView", () => {
     expect(slotText("MOLOTOV")).toContain("×2");
   });
 
-  it("the reserved slot has no quantity and is marked as a placeholder", () => {
-    const reserved = Array.from(view.root.querySelectorAll(".ww-slot")).find(
-      (g) => g.querySelector(".ww-name")?.textContent === "EMPTY",
-    ) as SVGElement;
+  it("the two gun slots have no quantity, no name, and are marked as placeholders", () => {
+    for (const type of ["GUN_1", "GUN_2"]) {
+      const reserved = slotOf(type);
 
-    expect(reserved.querySelector(".ww-qty")).toBeNull();
-    expect(reserved.dataset.reserved).toBe("true");
+      expect(reserved.querySelector(".ww-qty")).toBeNull();
+      expect(reserved.querySelector(".ww-name")?.textContent).toBe("");
+      expect(reserved.dataset.reserved).toBe("true");
+    }
+  });
+
+  it("the dynamite slot is locked until the dynamite is taken, then shows its name at once", () => {
+    expect(slotOf("DYNAMITE").dataset.locked).toBe("true");
+    expect(slotOf("DYNAMITE").querySelector(".ww-qty")).toBeNull();
+
+    utilities.add("DYNAMITE");
+    view.render();
+
+    expect(slotOf("DYNAMITE").dataset.locked).toBe("false");
+    expect(slotText("DYNAMITE")).toContain("DYNAMITE");
+
+    utilities.remove("DYNAMITE");
+    view.render();
+    expect(slotOf("DYNAMITE").dataset.locked).toBe("true");
+  });
+
+  it("only an available slot is ever highlighted: never the locked dynamite or a gun slot", () => {
+    for (let k = 0; k < 12; k++) {
+      scroll(1);
+
+      expect(selected()).toHaveLength(1);
+      expect(["DYNAMITE", "GUN_1", "GUN_2"]).not.toContain(selected()[0]);
+    }
+
+    utilities.add("DYNAMITE");
+    utilities.select("FISTS");
+    scroll(1);
+    expect(selected()).toEqual(["DYNAMITE"]);
+    expect(text(".ww-center-name")).toBe("DYNAMITE");
+    expect(text(".ww-center-qty")).toBe("");
+  });
+
+  it("the placeholders take no pointer: the wheel is a display only", () => {
+    expect(view.root.querySelector("a, button, input")).toBeNull();
+    for (const type of ["GUN_1", "GUN_2"]) {
+      const before = utilities.selected;
+
+      slotOf(type).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      view.render();
+      expect(utilities.selected).toBe(before);
+    }
   });
 
   it("the Fists slot shows a boxing glove, not an X, and has no quantity", () => {
-    const fists = Array.from(view.root.querySelectorAll(".ww-slot")).find(
-      (g) => g.querySelector(".ww-name")?.textContent === "FISTS",
-    )!;
+    const fists = slotOf("FISTS");
     const icon = fists.querySelector(".ww-icon") as SVGElement;
 
     expect(icon.dataset.icon).toBe("glove");
@@ -148,7 +254,8 @@ describe("WeaponWheelView", () => {
   it("highlights exactly one slot, and the centre follows each scroll at once", () => {
     utilities.remove("MOLOTOV", 1); // (the test starts with none)
     utilities.remove("MOLOTOV", 1);
-    utilities.select("EMPTY");
+    utilities.add("DYNAMITE");
+    utilities.select("DYNAMITE");
     scroll(1);
 
     expect(selected()).toEqual(["GRENADE"]);
@@ -171,8 +278,8 @@ describe("WeaponWheelView", () => {
     expect(text(".ww-center-qty")).toBe("");
 
     scroll(1);
-    expect(selected()).toEqual(["EMPTY"]);
-    expect(text(".ww-center-name")).toBe("EMPTY");
+    expect(selected()).toEqual(["DYNAMITE"]);
+    expect(text(".ww-center-name")).toBe("DYNAMITE");
     expect(text(".ww-center-qty")).toBe("");
   });
 
@@ -193,9 +300,7 @@ describe("WeaponWheelView", () => {
     utilities.remove("GRENADE", 1);
     view.render();
 
-    const grenades = Array.from(view.root.querySelectorAll(".ww-slot")).find(
-      (g) => g.querySelector(".ww-name")?.textContent === "GRENADE",
-    ) as SVGElement;
+    const grenades = slotOf("GRENADE");
 
     expect(grenades.dataset.empty).toBe("true");
     expect(slotText("GRENADE")).toContain("×0");
@@ -217,7 +322,7 @@ describe("WeaponWheelView", () => {
     document.body.innerHTML = "";
     view = new WeaponWheelView(document.body, more, new WeaponWheel(more));
 
-    expect(view.root.querySelectorAll(".ww-slot")).toHaveLength(6);
+    expect(view.root.querySelectorAll(".ww-slot")).toHaveLength(8);
     expect(slotText("FLASH")).toContain("×2");
   });
 

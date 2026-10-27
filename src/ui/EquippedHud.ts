@@ -39,7 +39,8 @@ export function describeEquipped(
     return null;
   }
 
-  if (!definition.counted) {
+  // The mission item is carried, not counted: just its icon.
+  if (!definition.counted || definition.missionItem) {
     return {
       type: definition.type,
       icon: definition.icon,

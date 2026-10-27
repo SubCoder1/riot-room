@@ -86,6 +86,30 @@ describe("PlayerHealthBar: number and seven segments; red at 25 or below", () =>
     expect(SEGMENTS).toBe(7);
   });
 
+  it("is yellow below 50 and red at 25 or less, white otherwise", () => {
+    const root = document.querySelector(".player-health")!;
+
+    for (const [hp, low, red] of [
+      [100, false, false],
+      [50, false, false],
+      [49, true, false],
+      [26, true, false],
+      [25, false, true],
+      [1, false, true],
+      [0, false, true],
+    ] as const) {
+      bar.update({ current: hp, max: 100 });
+      expect(bar.isLow, `${hp} HP`).toBe(low);
+      expect(root.classList.contains("low"), `${hp} HP`).toBe(low);
+      expect(root.classList.contains("critical"), `${hp} HP`).toBe(red);
+    }
+
+    // Healed back up: the colours go with it.
+    bar.update({ current: 80, max: 100 });
+    expect(root.classList.contains("low")).toBe(false);
+    expect(root.classList.contains("critical")).toBe(false);
+  });
+
   it("is the number and a bar of seven rectangles, in that order, with no icon", () => {
     const root = document.querySelector(".player-health")!;
 
@@ -209,11 +233,28 @@ describe("EquippedHud: only the item in hand", () => {
     expect(root().querySelector(".equipped__count")!.textContent).toBe("1 / 1");
   });
 
-  it("shows nothing for the reserved empty slot, and never lists the others", () => {
-    utilities.select("EMPTY");
+  it("shows nothing for a reserved gun slot (it cannot be selected), and never lists the others", () => {
+    utilities.select("GUN_1");
     hud.update();
-    expect(root().classList.contains("is-empty")).toBe(true);
-    expect(root().querySelectorAll("svg")).toHaveLength(0);
+    expect(utilities.selected).toBe("FISTS");
+    expect(root().querySelectorAll("svg")).toHaveLength(1);
+    expect(
+      describeEquipped(new PlayerUtilities(undefined, "GUN_2"), carry),
+    ).toMatchObject({ type: "FISTS" });
+  });
+
+  it("shows the dynamite as an icon alone once it is carried", () => {
+    utilities.add("DYNAMITE");
+    utilities.select("DYNAMITE");
+    hud.update();
+
+    expect(root().querySelectorAll("svg")).toHaveLength(1);
+    expect(root().querySelector(".equipped__count")).toBeNull();
+    expect(describeEquipped(utilities, carry)).toMatchObject({
+      type: "DYNAMITE",
+      primary: null,
+      secondary: null,
+    });
   });
 
   it("describeEquipped reads the inventory (never its own copy)", () => {

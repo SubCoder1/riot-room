@@ -48,10 +48,25 @@ export class WeaponWheel {
       return;
     }
 
-    const count = this.utilities.slots.length;
-    const next = (((this.highlightedIndex + whole) % count) + count) % count;
+    const slots = this.utilities.slots;
+    const count = slots.length;
+    const direction = whole > 0 ? 1 : -1;
+    let index = this.highlightedIndex;
 
-    this.utilities.select(this.utilities.slots[next].type);
+    // One step at a time, past every slot that cannot be selected (the locked
+    // dynamite, the reserved gun slots). The fists are always available, so a
+    // step always lands.
+    for (let step = 0; step < Math.abs(whole); step++) {
+      for (let tried = 0; tried < count; tried++) {
+        index = (((index + direction) % count) + count) % count;
+
+        if (this.utilities.isAvailable(slots[index].type)) {
+          break;
+        }
+      }
+    }
+
+    this.utilities.select(slots[index].type);
     this.visibleLeft = WHEEL_VISIBLE_SECONDS;
   }
 

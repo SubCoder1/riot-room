@@ -26,6 +26,9 @@ export class LoadingScreen {
     this.root.querySelector(".loading-bar")?.appendChild(this.fill);
     this.root.append(this.label, this.clock);
     parent.appendChild(this.root);
+    // The plain title page from index.html (painted before this code
+    // arrived) gives way to this one in the same frame.
+    document.getElementById("boot")?.remove();
     this.timer = window.setInterval(() => this.tick(), 250);
   }
 

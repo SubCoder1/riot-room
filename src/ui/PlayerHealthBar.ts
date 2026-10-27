@@ -9,8 +9,10 @@
  * a segment glides (a short CSS transition), never the value.
  */
 
-/** At this much health or less the filled segments turn a muted red. */
+/** At this much health or less the number and the filled segments turn red. */
 export const CRITICAL_AT = 25;
+/** Below this much health (and above the red) they are yellow. */
+export const LOW_BELOW = 50;
 /** How many segments the bar has. */
 export const SEGMENTS = 7;
 
@@ -26,6 +28,7 @@ export class PlayerHealthBar {
   private lastText = "";
   private lastFilled = -1;
   private lastCritical: boolean | null = null;
+  private lastLow: boolean | null = null;
 
   constructor(parent: HTMLElement) {
     const bar = document.createElement("div");
@@ -56,6 +59,7 @@ export class PlayerHealthBar {
     // Proportional: any health at all shows a segment; none shows none.
     const filled = Math.ceil((current / max) * SEGMENTS - 1e-9);
     const critical = current <= CRITICAL_AT;
+    const low = !critical && current < LOW_BELOW;
 
     if (text !== this.lastText) {
       this.lastText = text;
@@ -74,6 +78,11 @@ export class PlayerHealthBar {
       this.lastCritical = critical;
       this.root.classList.toggle("critical", critical);
     }
+
+    if (low !== this.lastLow) {
+      this.lastLow = low;
+      this.root.classList.toggle("low", low);
+    }
   }
 
   /** The number shown (for tests). */
@@ -89,6 +98,11 @@ export class PlayerHealthBar {
   /** Whether the red state is on (for tests). */
   public get isCritical(): boolean {
     return this.lastCritical === true;
+  }
+
+  /** Whether the yellow state is on (for tests). */
+  public get isLow(): boolean {
+    return this.lastLow === true;
   }
 
   public dispose(): void {

@@ -61,9 +61,19 @@ export const ICONS: Record<UtilityIcon, Shape[]> = {
     ["line", { x1: "-8.5", y1: "8.5", x2: "6.5", y2: "8.5" }],
     ["path", { d: "M-4,8.5 L-2,11.5 M0,8.5 L2,11.5" }],
   ],
-  // A reserved slot: an empty dashed ring.
+  // A bundle of dynamite: three sticks bound with a band, a fuse and a spark.
+  dynamite: [
+    ["rect", { x: "-9", y: "-3", width: "6", height: "17", rx: "1.5" }],
+    ["rect", { x: "-3", y: "-3", width: "6", height: "17", rx: "1.5" }],
+    ["rect", { x: "3", y: "-3", width: "6", height: "17", rx: "1.5" }],
+    ["line", { x1: "-10", y1: "4", x2: "10", y2: "4" }],
+    ["path", { d: "M0,-3 C0,-7 4,-8 5,-12" }],
+    ["path", { d: "M5,-12 L7.5,-14.5 M5,-12 L2.5,-14.5 M5,-12 L8,-11" }],
+  ],
+  // A reserved slot: an empty dashed ring (no weapon is drawn for a gun that
+  // does not exist yet).
   empty: [
-    ["circle", { cx: "0", cy: "0", r: "11", "stroke-dasharray": "4 4.5" }],
+    ["circle", { cx: "0", cy: "0", r: "10", "stroke-dasharray": "3.5 4" }],
   ],
 };
 
@@ -89,6 +99,7 @@ const ICON_CENTRE: Record<UtilityIcon, number> = {
   molotov: -3,
   smoke: 0,
   glove: -0.5,
+  dynamite: -0.5,
   empty: 0,
 };
 

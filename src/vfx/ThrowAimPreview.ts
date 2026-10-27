@@ -10,9 +10,9 @@ const GAP = 0.2;
 /** Half a dash's width, as a fraction of the distance (a constant, thin look on screen). */
 const HALF_WIDTH = 0.0011;
 /** The dashes' colour (a pale cool blue-white) and how strong they are at each end. */
-const LINE_COLOR = new THREE.Color(0xb4c8de);
-const START_ALPHA = 0.6;
-const END_ALPHA = 0.22;
+const LINE_COLOR = new THREE.Color(0xd2e2f5);
+const START_ALPHA = 0.75;
+const END_ALPHA = 0.3;
 /** The arc fades in over this distance from the camera (m), so it never dominates the view. */
 const FADE_IN = 2.5;
 /** Nothing is drawn closer to the camera than this. */

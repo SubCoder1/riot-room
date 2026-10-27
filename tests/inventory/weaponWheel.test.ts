@@ -19,19 +19,23 @@ describe("PlayerUtilities", () => {
     utilities = new PlayerUtilities();
   });
 
-  it("has exactly five slots: Grenade, Molotov, Smoke, Fists and Empty", () => {
+  it("has exactly seven slots: Grenade, Molotov, Smoke, Fists, Dynamite and two gun slots", () => {
     expect(utilities.slots.map((s) => s.type)).toEqual([
       "GRENADE",
       "MOLOTOV",
       "SMOKE",
       "FISTS",
-      "EMPTY",
+      "DYNAMITE",
+      "GUN_1",
+      "GUN_2",
     ]);
     expect(utilities.slots.map((s) => s.name)).toEqual([
       "Grenade",
       "Molotov",
       "Smoke",
       "Fists",
+      "Dynamite",
+      "Empty",
       "Empty",
     ]);
   });
@@ -51,8 +55,10 @@ describe("PlayerUtilities", () => {
     expect(utilities.slots[0].angle).toBe(0);
   });
 
-  it("the slots are spread evenly round the wheel, 72 degrees apart", () => {
-    expect(utilities.slots.map((s) => s.angle)).toEqual([0, 72, 144, 216, 288]);
+  it("the slots are spread evenly round the wheel, 360 / 7 degrees apart", () => {
+    utilities.slots.forEach((slot, k) => {
+      expect(slot.angle).toBeCloseTo((k * 360) / 7, 6);
+    });
   });
 
   it("the Fists slot is the no-utility slot, shown with a boxing glove", () => {
@@ -64,15 +70,61 @@ describe("PlayerUtilities", () => {
     expect(fists.counted).toBe(false);
   });
 
-  it("the last slot is reserved: nothing to count, nothing to equip", () => {
-    const reserved = utilities.slots[4];
+  it("the last two slots are reserved for guns: nothing to count, nothing to equip", () => {
+    for (const k of [5, 6]) {
+      const reserved = utilities.slots[k];
 
-    expect(reserved.type).toBe("EMPTY");
-    expect(reserved.reserved).toBe(true);
-    expect(reserved.counted).toBe(false);
-    expect(utilities.quantityOf("EMPTY")).toBeNull();
-    expect(utilities.add("EMPTY", 3)).toBeNull();
-    expect(utilities.remove("EMPTY")).toBe(false);
+      expect(reserved.reserved).toBe(true);
+      expect(reserved.counted).toBe(false);
+      expect(utilities.isAvailable(reserved.type)).toBe(false);
+      expect(utilities.quantityOf(reserved.type)).toBeNull();
+      expect(utilities.add(reserved.type, 3)).toBeNull();
+      expect(utilities.remove(reserved.type)).toBe(false);
+    }
+  });
+
+  it("the dynamite is locked until it is picked up, then available, and never more than one", () => {
+    expect(utilities.slots[4].type).toBe("DYNAMITE");
+    expect(utilities.quantityOf("DYNAMITE")).toBe(0);
+    expect(utilities.isAvailable("DYNAMITE")).toBe(false);
+
+    utilities.select("DYNAMITE");
+    expect(utilities.selected).toBe("FISTS");
+
+    expect(utilities.add("DYNAMITE", 1)).toBe(1);
+    expect(utilities.add("DYNAMITE", 1)).toBe(1);
+    expect(utilities.isAvailable("DYNAMITE")).toBe(true);
+
+    utilities.select("DYNAMITE");
+    expect(utilities.selected).toBe("DYNAMITE");
+  });
+
+  it("the dynamite in hand is held: not thrown, not fists, nothing active", () => {
+    utilities.add("DYNAMITE");
+    utilities.select("DYNAMITE");
+
+    expect(utilities.missionSelected).toBe(true);
+    expect(utilities.active).toBeNull();
+    expect(utilities.usingFists).toBe(false);
+  });
+
+  it("a used or reset dynamite gives way to fists by itself", () => {
+    utilities.add("DYNAMITE");
+    utilities.select("DYNAMITE");
+    utilities.remove("DYNAMITE");
+
+    expect(utilities.isAvailable("DYNAMITE")).toBe(false);
+    expect(utilities.selected).toBe("FISTS");
+    expect(utilities.missionSelected).toBe(false);
+    expect(utilities.usingFists).toBe(true);
+  });
+
+  it("the gun slots can never be selected", () => {
+    utilities.select("GRENADE");
+    utilities.select("GUN_1");
+    expect(utilities.selected).toBe("GRENADE");
+    utilities.select("GUN_2");
+    expect(utilities.selected).toBe("GRENADE");
   });
 
   it("starts with exactly one grenade, one smoke grenade and one molotov; Fists has no quantity", () => {
@@ -137,7 +189,7 @@ describe("PlayerUtilities", () => {
     expect(utilities.selected).toBe("FISTS");
     expect(utilities.usingFists).toBe(true);
     expect(utilities.active).toBeNull();
-    expect(utilities.reservedSelected).toBe(false);
+    expect(utilities.missionSelected).toBe(false);
   });
 
   it("selecting Fists, or a utility with none left, falls back to fists", () => {
@@ -162,15 +214,6 @@ describe("PlayerUtilities", () => {
     utilities.remove("GRENADE", GRENADE_CONFIG.GRENADE_START_QUANTITY);
     expect(utilities.selected).toBe("GRENADE");
     expect(utilities.usingFists).toBe(true);
-  });
-
-  it("the reserved slot can be selected but equips nothing, throws nothing and is not fists", () => {
-    utilities.select("EMPTY");
-
-    expect(utilities.selected).toBe("EMPTY");
-    expect(utilities.reservedSelected).toBe(true);
-    expect(utilities.active).toBeNull();
-    expect(utilities.usingFists).toBe(false);
   });
 
   it("switching slots never resets any quantity", () => {
@@ -222,7 +265,7 @@ describe("PlayerUtilities", () => {
     };
     const extended = new PlayerUtilities([...UTILITY_SLOTS, flash]);
 
-    expect(extended.slots).toHaveLength(6);
+    expect(extended.slots).toHaveLength(8);
     expect(extended.quantityOf("FLASH" as never)).toBe(2);
     extended.add("FLASH" as never, 1);
     expect(extended.quantityOf("FLASH" as never)).toBe(3);
@@ -253,47 +296,58 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
     expect(wheel.highlighted).toBe("MOLOTOV");
   });
 
-  it("scrolling back from the grenade goes round to the reserved slot", () => {
+  const walk = (steps: number): string[] => {
+    const seen: string[] = [utilities.selected];
+
+    for (let k = 0; k < Math.abs(steps); k++) {
+      wheel.scroll(Math.sign(steps));
+      seen.push(utilities.selected);
+    }
+
+    return seen;
+  };
+
+  it("scrolling back from the grenade goes round to the fists: the locked dynamite and the gun slots are skipped", () => {
     utilities.select("GRENADE");
     wheel.scroll(-1);
 
-    expect(utilities.selected).toBe("EMPTY");
+    expect(utilities.selected).toBe("FISTS");
     expect(wheel.isOpen).toBe(true);
   });
 
-  it("steps GRENADE -> MOLOTOV -> SMOKE -> FISTS -> EMPTY -> GRENADE, one slot per step", () => {
+  it("before the pickup, steps GRENADE -> MOLOTOV -> SMOKE -> FISTS -> GRENADE (the dynamite and guns skipped)", () => {
     utilities.select("GRENADE");
 
-    const seen = [utilities.selected];
-
-    for (let k = 0; k < 5; k++) {
-      wheel.scroll(1);
-      seen.push(utilities.selected);
-    }
-
-    expect(seen).toEqual([
+    expect(walk(4)).toEqual([
       "GRENADE",
       "MOLOTOV",
       "SMOKE",
       "FISTS",
-      "EMPTY",
       "GRENADE",
     ]);
   });
 
-  it("steps the other way round too", () => {
+  it("after the pickup, the dynamite is a stop between the fists and the grenade", () => {
+    utilities.add("DYNAMITE");
     utilities.select("GRENADE");
 
-    const seen = [utilities.selected];
-
-    for (let k = 0; k < 5; k++) {
-      wheel.scroll(-1);
-      seen.push(utilities.selected);
-    }
-
-    expect(seen).toEqual([
+    expect(walk(5)).toEqual([
       "GRENADE",
-      "EMPTY",
+      "MOLOTOV",
+      "SMOKE",
+      "FISTS",
+      "DYNAMITE",
+      "GRENADE",
+    ]);
+  });
+
+  it("steps the other way round too, never onto a slot that is not available", () => {
+    utilities.add("DYNAMITE");
+    utilities.select("GRENADE");
+
+    expect(walk(-5)).toEqual([
+      "GRENADE",
+      "DYNAMITE",
       "FISTS",
       "SMOKE",
       "MOLOTOV",
@@ -301,21 +355,36 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
     ]);
   });
 
-  it("several steps at once move that many slots, wrapping", () => {
+  it("several steps at once move that many available slots, wrapping", () => {
     utilities.select("GRENADE");
 
     wheel.scroll(2);
     expect(utilities.selected).toBe("SMOKE");
 
-    wheel.scroll(5);
-    expect(utilities.selected).toBe("SMOKE");
+    wheel.scroll(5); // four to a lap: one more than a lap
+    expect(utilities.selected).toBe("FISTS");
 
     wheel.scroll(-9);
-    expect(utilities.selected).toBe("FISTS");
+    expect(utilities.selected).toBe("SMOKE");
+  });
+
+  it("many scrolls in a row never land on a slot that cannot be selected", () => {
+    for (let k = 0; k < 40; k++) {
+      wheel.scroll(k % 3 === 0 ? -1 : 1);
+
+      expect(utilities.isAvailable(utilities.selected)).toBe(true);
+      expect(["DYNAMITE", "GUN_1", "GUN_2"]).not.toContain(utilities.selected);
+    }
   });
 
   it("the highlighted index always points at the selected slot's own entry", () => {
+    utilities.add("DYNAMITE");
+
     for (const [index, slot] of utilities.slots.entries()) {
+      if (!utilities.isAvailable(slot.type)) {
+        continue;
+      }
+
       utilities.select(slot.type);
 
       expect(wheel.highlightedIndex).toBe(index);
@@ -387,21 +456,33 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
   });
 
   it("an equipped utility is equipped for real: it can be used up and gives way to fists", () => {
-    utilities.select("EMPTY");
-    wheel.scroll(1); // Grenade
+    utilities.select("FISTS");
+    wheel.scroll(1); // Grenade (the dynamite is locked)
 
     expect(utilities.active).toBe("GRENADE");
     utilities.remove("GRENADE", GRENADE_CONFIG.GRENADE_START_QUANTITY);
     expect(utilities.active).toBeNull();
   });
 
-  it("scrolling onto the reserved slot equips nothing", () => {
+  it("scrolling onto the dynamite holds it: nothing to throw, nothing to punch with", () => {
+    utilities.add("DYNAMITE");
     utilities.select("FISTS");
     wheel.scroll(1);
 
-    expect(utilities.selected).toBe("EMPTY");
+    expect(utilities.selected).toBe("DYNAMITE");
     expect(utilities.active).toBeNull();
-    expect(utilities.reservedSelected).toBe(true);
+    expect(utilities.missionSelected).toBe(true);
+  });
+
+  it("picking the dynamite up while the game runs is felt by the next scroll, with no reload", () => {
+    utilities.select("FISTS");
+    wheel.scroll(1);
+    expect(utilities.selected).toBe("GRENADE");
+
+    utilities.add("DYNAMITE");
+    utilities.select("FISTS");
+    wheel.scroll(1);
+    expect(utilities.selected).toBe("DYNAMITE");
   });
 
   it("does not throw when slots without a quantity are selected", () => {
