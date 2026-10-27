@@ -89,28 +89,100 @@ describe("The chain shutter", () => {
     expect(t).toBeLessThan(ARMORY.OPEN_SECONDS * 1.3);
   });
 
-  it("rises in pulls with pauses between them, not smoothly", () => {
+  it("rises continuously: it never stalls once it is moving, and never jumps", () => {
     const shutter = new ChainShutter();
     let stalled = 0;
-    let moved = 0;
+    let biggest = 0;
 
-    // Past the slack, then watch a few seconds of hauling.
+    // Past the slack, then watch the whole climb.
     run(shutter, 0.3, true);
 
-    for (let t = 0; t < 3; t += DT) {
+    while (shutter.state !== "held") {
       const before = shutter.lift;
 
       shutter.update(DT, true);
 
-      if (shutter.lift === before) {
+      if (shutter.lift === before && shutter.state !== "held") {
         stalled++;
-      } else {
-        moved++;
       }
+
+      biggest = Math.max(biggest, shutter.lift - before);
     }
 
-    expect(stalled).toBeGreaterThan(10);
-    expect(moved).toBeGreaterThan(stalled);
+    expect(stalled).toBe(0);
+    // At most about 1.6 x the average speed (smoothstep peaks at 1.5 x).
+    const average = ChainShutter.MAX_LIFT / ARMORY.OPEN_SECONDS;
+
+    expect(biggest).toBeLessThan(average * 1.7 * DT);
+  });
+
+  it("eases in and out: slowest at the start and the top, quickest in the middle", () => {
+    const shutter = new ChainShutter();
+    const speeds: number[] = [];
+
+    for (
+      let t = 0;
+      t < ARMORY.OPEN_SECONDS + 1 && shutter.state !== "held";
+      t += DT
+    ) {
+      const before = shutter.lift;
+
+      shutter.update(DT, true);
+      speeds.push((shutter.lift - before) / DT);
+    }
+
+    const third = Math.floor(speeds.length / 3);
+    const mean = (a: number[]): number =>
+      a.reduce((x, y) => x + y, 0) / a.length;
+
+    expect(mean(speeds.slice(third, 2 * third))).toBeGreaterThan(
+      mean(speeds.slice(0, third)) * 1.5,
+    );
+    expect(mean(speeds.slice(third, 2 * third))).toBeGreaterThan(
+      mean(speeds.slice(2 * third)) * 1.5,
+    );
+    // It arrives at the top slowly, never at a run.
+    expect(speeds[speeds.length - 2]).toBeLessThan(0.1);
+  });
+
+  it("rises the same at any frame rate", () => {
+    const at = (fps: number): number => {
+      const shutter = new ChainShutter();
+
+      for (let t = 0; t < 3; t += 1 / fps) {
+        shutter.update(1 / fps, true);
+      }
+
+      return shutter.lift;
+    };
+
+    const reference = at(240);
+
+    for (const fps of [30, 60, 144]) {
+      expect(Math.abs(at(fps) - reference)).toBeLessThan(0.03);
+    }
+  });
+
+  it("picks up smoothly from part-way after being let go: no jump in height or speed", () => {
+    const shutter = new ChainShutter();
+
+    run(shutter, 3, true);
+    run(shutter, 0.2, false);
+    // (Held again before it has started to fall.)
+    const at = shutter.lift;
+    let last = at;
+    let jump = 0;
+
+    for (let t = 0; t < 1; t += DT) {
+      shutter.update(DT, true);
+      jump = Math.max(jump, Math.abs(shutter.lift - last));
+      last = shutter.lift;
+    }
+
+    expect(last).toBeGreaterThanOrEqual(at);
+    expect(jump).toBeLessThan(
+      (ChainShutter.MAX_LIFT / ARMORY.OPEN_SECONDS) * 2 * DT,
+    );
   });
 
   it("stops the moment the chain is let go, hangs a beat, then falls", () => {
@@ -826,16 +898,18 @@ describe("Hauling the chain, hand over hand", () => {
     expect(handOnChain(stroke, -1).y).toBeCloseTo(handOnChain(0, 1).y, 9);
   });
 
-  it("is a function of the chain's travel alone: it stops when the chain does", () => {
+  it("is a function of the chain's travel alone: it moves with the chain and stops when the chain does", () => {
     const shutter = new ChainShutter();
     let paused = 0;
     let moved = 0;
 
-    for (let i = 0; i < 200; i++) {
+    // Hauled for a second and a half (past the slack), then let go (it hangs
+    // a beat before it falls).
+    for (let i = 0; i < 120; i++) {
       const before = shutter.chainTravel;
       const yBefore = handOnChain(before, 1).y;
 
-      shutter.update(DT, true);
+      shutter.update(DT, i < 90);
 
       const yAfter = handOnChain(shutter.chainTravel, 1).y;
 
@@ -848,9 +922,8 @@ describe("Hauling the chain, hand over hand", () => {
       }
     }
 
-    // Both happened: pulls, and the pauses between them.
+    expect(moved).toBeGreaterThan(60);
     expect(paused).toBeGreaterThan(10);
-    expect(moved).toBeGreaterThan(10);
   });
 });
 

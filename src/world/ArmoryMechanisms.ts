@@ -21,13 +21,16 @@ export const ARMORY = {
   SHUTTER_HEIGHT: 2.6,
 
   // ------------------------------------------------------------ the chain
-  /** Seconds to haul the shutter from shut to fully up, hand over hand. */
+  /**
+   * Seconds to haul the shutter from shut to fully up. It rises continuously,
+   * easing in and out (smoothstep) over this time.
+   */
   OPEN_SECONDS: 5.5,
-  /** Each haul: a pull, then a pause while the hands change over. */
+  /** The hands' stroke on the chain: one pull's length is this many seconds of the old pace. */
   HAUL_PULL: 0.7,
   HAUL_PAUSE: 0.25,
-  /** Pulls are uneven: the speed wanders by this fraction along the lift. */
-  HAUL_UNEVENNESS: 0.22,
+  /** Picking the chain up again part-way eases the speed in over this long (s). */
+  HAUL_EASE_IN: 0.3,
   /** From taking the chain to the shutter starting to move (the slack). */
   ENGAGE_LAG: 0.12,
   /** From letting go to the shutter starting to fall. */
@@ -108,10 +111,26 @@ export interface ShutterEvents {
 
 const STEP = 1 / 120;
 
+/** 0 to 1 to 0 to 1, with no speed at either end. */
+function smoothstep(t: number): number {
+  const x = Math.min(Math.max(t, 0), 1);
+
+  return x * x * (3 - 2 * x);
+}
+
+/** The t whose smoothstep is `y` (0 to 1). */
+function inverseSmoothstep(y: number): number {
+  const clamped = Math.min(Math.max(y, 0), 1);
+
+  return 0.5 - Math.sin(Math.asin(1 - 2 * clamped) / 3);
+}
+
 /**
  * A heavy counterbalanced shutter that only the chain lifts. While the chain is
- * hauled it rises in uneven pulls; let go and, after a short delay, it falls,
- * several times faster than it rose. There is no brake: it never hangs in the air.
+ * hauled it rises steadily, easing in and out over OPEN_SECONDS (driven by the
+ * elapsed time, so any frame rate gives the same motion); let go and, after a
+ * short delay, it falls, several times faster than it rose. There is no brake:
+ * it never hangs in the air.
  */
 export class ChainShutter {
   public static readonly MAX_LIFT = ARMORY.SHUTTER_HEIGHT;
@@ -125,7 +144,10 @@ export class ChainShutter {
   public descent = 0;
   public events: ShutterEvents = {};
 
-  private haulClock = 0;
+  /** How far along the smooth rise the haul is (0 shut, 1 fully up). */
+  private haulT = 0;
+  /** 0 to 1: how far the speed has eased in since the chain was taken up. */
+  private ease = 1;
   private lag = 0;
   private releaseTimer = 0;
   private catches = 0;
@@ -165,7 +187,8 @@ export class ChainShutter {
     this.state = "closed";
     this.lift = 0;
     this.velocity = 0;
-    this.haulClock = 0;
+    this.haulT = 0;
+    this.ease = 1;
     this.lag = 0;
     this.releaseTimer = 0;
     this.catches = 0;
@@ -174,9 +197,17 @@ export class ChainShutter {
 
   /**
    * Advances by `dt`. `hauling` is whether the chain is being pulled right now.
-   * Time is cut into fixed small steps, so any frame rate gives the same motion.
+   * The rise follows the elapsed time exactly; the fall (a physical drop) is
+   * cut into fixed small steps. Either way any frame rate gives the same motion.
    */
   public update(dt: number, hauling: boolean): void {
+    if (hauling) {
+      this.leftover = 0;
+      this.step(Math.min(dt, 0.1), true);
+
+      return;
+    }
+
     this.leftover += Math.min(dt, 0.1);
 
     while (this.leftover >= STEP) {
@@ -192,6 +223,10 @@ export class ChainShutter {
         this.lag = ARMORY.ENGAGE_LAG;
         this.velocity = 0;
         this.releaseTimer = 0;
+        // Taken up again wherever it is (after a fall, part-way): the rise
+        // carries on from there, easing the speed in.
+        this.haulT = inverseSmoothstep(this.lift / ChainShutter.MAX_LIFT);
+        this.ease = 0;
 
         if (this.state === "opening") {
           this.events.onStrain?.();
@@ -243,21 +278,18 @@ export class ChainShutter {
       return;
     }
 
-    this.haulClock += dt;
+    this.ease = Math.min(this.ease + dt / ARMORY.HAUL_EASE_IN, 1);
+    this.haulT = Math.min(
+      this.haulT + (dt / ARMORY.OPEN_SECONDS) * smoothstep(this.ease),
+      1,
+    );
 
-    const cycle = ARMORY.HAUL_PULL + ARMORY.HAUL_PAUSE;
-    const pulling = this.haulClock % cycle < ARMORY.HAUL_PULL;
-    // An uneven pull: stronger and weaker along the lift, as a worn drum is.
-    const uneven =
-      1 +
-      ARMORY.HAUL_UNEVENNESS *
-        Math.sin(this.lift * 9.1) *
-        Math.cos(this.lift * 3.7 + 1);
+    const before = this.lift;
 
-    this.velocity = pulling ? ChainShutter.PULL_SPEED * uneven : 0;
-    this.lift += this.velocity * dt;
+    this.lift = ChainShutter.MAX_LIFT * smoothstep(this.haulT);
+    this.velocity = dt > 0 ? (this.lift - before) / dt : 0;
 
-    if (this.lift >= ChainShutter.MAX_LIFT) {
+    if (this.haulT >= 1) {
       this.lift = ChainShutter.MAX_LIFT;
       this.velocity = 0;
       this.state = "held";

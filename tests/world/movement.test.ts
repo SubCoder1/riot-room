@@ -31,16 +31,17 @@ const speedOf = (p: ReturnType<typeof open>): number =>
   Math.hypot(p.player.velocity.x, p.player.velocity.z);
 
 describe("CS:GO-style movement", () => {
-  it("runs a little above a CS:GO rifle's speed, and Shift is a clearly faster sprint", () => {
+  it("walks a little under a CS:GO rifle's speed, and Shift is a clearly faster sprint", () => {
     expect(SOURCE_MOVEMENT.RIFLE_SPEED / 0.0254).toBeCloseTo(215, 0);
+    expect(SOURCE_MOVEMENT.RUN_SPEED).toBeLessThan(SOURCE_MOVEMENT.RIFLE_SPEED);
     expect(SOURCE_MOVEMENT.RUN_SPEED).toBeGreaterThan(
-      SOURCE_MOVEMENT.RIFLE_SPEED,
+      SOURCE_MOVEMENT.RIFLE_SPEED * 0.9,
     );
-    expect(SOURCE_MOVEMENT.RUN_SPEED).toBeLessThan(
-      SOURCE_MOVEMENT.RIFLE_SPEED * 1.2,
-    );
+    // The walk and the sprint are each 13 and 17.5 per cent under what they were.
+    expect(SOURCE_MOVEMENT.RUN_SPEED).toBeCloseTo(6 * 0.867, 1);
+    expect(SOURCE_MOVEMENT.SPRINT_SPEED).toBeCloseTo(8 * 0.825, 1);
     expect(SOURCE_MOVEMENT.SPRINT_SPEED).toBeGreaterThan(
-      SOURCE_MOVEMENT.RUN_SPEED * 1.3,
+      SOURCE_MOVEMENT.RUN_SPEED * 1.25,
     );
 
     const run = open();
@@ -163,7 +164,7 @@ describe("CS:GO-style movement", () => {
     );
 
     // Holding Shift makes a real difference to a strafe...
-    expect(speedOf(fastStrafe)).toBeGreaterThan(speedOf(strafe) * 1.3);
+    expect(speedOf(fastStrafe)).toBeGreaterThan(speedOf(strafe) * 1.2);
     // ...and a strafe is clearly slower than a run.
     expect(speedOf(strafe)).toBeLessThan(SOURCE_MOVEMENT.RUN_SPEED * 0.85);
   });
@@ -178,8 +179,8 @@ describe("CS:GO-style movement", () => {
     expect(speedOf(p)).toBeCloseTo(SOURCE_MOVEMENT.RUN_SPEED, 1);
   });
 
-  it("sprinting is slower than the old arcade sprint but still quick", () => {
-    expect(SOURCE_MOVEMENT.SPRINT_SPEED).toBeLessThan(8.5);
-    expect(SOURCE_MOVEMENT.SPRINT_SPEED).toBeGreaterThanOrEqual(7);
+  it("sprinting is slower than the old arcade sprint (8 m/s) but still quick", () => {
+    expect(SOURCE_MOVEMENT.SPRINT_SPEED).toBeLessThan(8);
+    expect(SOURCE_MOVEMENT.SPRINT_SPEED).toBeGreaterThanOrEqual(6.5);
   });
 });

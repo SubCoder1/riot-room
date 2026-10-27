@@ -32,10 +32,16 @@ export const SOURCE_MOVEMENT = {
   AIR_CONTROL: 10,
   /** CS:GO rifle run speed (about 215 u/s). */
   RIFLE_SPEED: 215 * UNIT,
-  /** The normal run speed: a little above a rifle's. */
-  RUN_SPEED: 6,
-  /** Shift: faster than any CS:GO weapon, so sprinting is clearly quick. */
-  SPRINT_SPEED: 8,
+  /**
+   * The normal (walking) speed: a little under a rifle's, for a grounded,
+   * weighty pace (it was 6 m/s).
+   */
+  RUN_SPEED: 5.2,
+  /**
+   * Shift: faster than any CS:GO weapon, so sprinting is clearly quick, and
+   * still a good quarter above the walk (it was 8 m/s).
+   */
+  SPRINT_SPEED: 6.6,
   /**
    * Side-stepping alone (A / D with no W / S) is this share of the forward
    * speed, with or without Shift: strafing is slower than running.
