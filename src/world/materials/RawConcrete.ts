@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { mulberry32, tileableNoise } from "./ConcreteTexture";
+import { mulberry32, normalLength, tileableNoise } from "./ConcreteTexture";
 import { useWorldSpaceUv } from "./WorldSpaceUv";
 
 /**
@@ -53,7 +53,7 @@ function make(
     for (let x = 0; x < size; x++) {
       const nx = -(at(x + 1, y) - at(x - 1, y)) * strength;
       const ny = -(at(x, y + 1) - at(x, y - 1)) * strength;
-      const length = Math.hypot(nx, ny, 1);
+      const length = normalLength(nx, ny);
       const i = (y * size + x) * 4;
 
       normal[i] = Math.round(((nx / length) * 0.5 + 0.5) * 255);
@@ -189,15 +189,20 @@ export function createFormworkTextures(size = 768, seed = 7219): RawTextures {
   const holeAt = (x: number, y: number): number => {
     const lx = ((x % sheetW) + sheetW) % sheetW;
     const ly = ((y % sheetH) + sheetH) % sheetH;
-    let best = 99;
+    // (The squared distance is compared and rooted once: `Math.hypot` for each
+    // of the six holes, for every pixel, was most of this texture's time.)
+    let best = 99 * 99;
 
     for (const hx of [0.3 * per, sheetW - 0.3 * per]) {
       for (const hy of [0.3 * per, sheetH / 2, sheetH - 0.3 * per]) {
-        best = Math.min(best, Math.hypot(lx - hx, ly - hy));
+        const dx = lx - hx;
+        const dy = ly - hy;
+
+        best = Math.min(best, dx * dx + dy * dy);
       }
     }
 
-    return best;
+    return Math.sqrt(best);
   };
 
   // A few patched repairs: lighter, smoother rectangles with a thin dark edge.

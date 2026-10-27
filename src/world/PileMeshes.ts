@@ -424,6 +424,13 @@ function wearOf(kind: PileKind, element: PileElement): number {
   }
 }
 
+/** Colours a rock is blended toward (made once: not for every vertex). */
+const FRACTURE = new THREE.Color(0x8d8c88);
+const STAIN_GREEN = new THREE.Color(0x3d4a38);
+const STAIN_RUST = new THREE.Color(0x5a3a28);
+const DUST = new THREE.Color(0x4a4742);
+const SOOT = new THREE.Color(0x8c887e);
+
 function placed(
   kind: PileKind,
   source: THREE.BufferGeometry,
@@ -433,7 +440,17 @@ function placed(
   cz: number,
   grain: boolean,
 ): THREE.BufferGeometry {
-  const geometry = source.clone();
+  // A copy of the source that can be moved and painted. (`clone()` also copies
+  // groups, bounds and user data, which are never used here, and this is done
+  // for every piece of every heap: some 18,000 times. The index is only read.)
+  const geometry = new THREE.BufferGeometry();
+
+  geometry.index = source.index;
+
+  for (const name of Object.keys(source.attributes)) {
+    geometry.setAttribute(name, source.attributes[name].clone());
+  }
+
   const color = new THREE.Color(element.color);
   const position = geometry.getAttribute("position");
   const colors = new Float32Array(position.count * 3);
@@ -521,7 +538,7 @@ function placed(
       }
       // Fracture faces (lower, to the sides) lighter than the weathered top.
       shade.lerp(
-        new THREE.Color(0x8d8c88),
+        FRACTURE,
         Math.max(0, fresh - 0.6) * 0.7 * (py < 0.2 ? 1 : 0.3),
       );
 
@@ -529,16 +546,14 @@ function placed(
 
       if (stain > 0.72) {
         shade.lerp(
-          noise3(seed, 1, 2, 3) < 0.5
-            ? new THREE.Color(0x3d4a38)
-            : new THREE.Color(0x5a3a28),
+          noise3(seed, 1, 2, 3) < 0.5 ? STAIN_GREEN : STAIN_RUST,
           (stain - 0.72) * 2.2,
         );
       }
 
       // Dust in the low places and under the heap.
       if (py < -0.15) {
-        shade.lerp(new THREE.Color(0x4a4742), 0.35);
+        shade.lerp(DUST, 0.35);
       }
     } else if (element.shape === "brick") {
       // A brick is never one flat colour: soot, mortar and chips.
@@ -552,7 +567,7 @@ function placed(
       shade.multiplyScalar(0.78 + 0.4 * mottle);
 
       if (position.getY(i) > 0.4 && mottle > 0.7) {
-        shade.lerp(new THREE.Color(0x8c887e), 0.4);
+        shade.lerp(SOOT, 0.4);
       }
     }
 

@@ -82,6 +82,15 @@ export function tileableNoise(
   return out;
 }
 
+/**
+ * The length of the surface normal (nx, ny, 1) that a normal map normalises
+ * by. (`Math.hypot` with three arguments is much slower than this, and it is
+ * called for every pixel of every normal map.)
+ */
+export function normalLength(nx: number, ny: number): number {
+  return Math.sqrt(nx * nx + ny * ny + 1);
+}
+
 const smooth = (a: number, b: number, x: number): number => {
   const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
 
@@ -288,7 +297,7 @@ export function createConcreteTextures(
       const grainX = (grain[i] - grain[y * size + ((x + 1) % size)]) * 0.35;
       const nx = -dx + grainX;
       const ny = -dy;
-      const length = Math.hypot(nx, ny, 1);
+      const length = normalLength(nx, ny);
 
       normal[i * 4] = Math.round(((nx / length) * 0.5 + 0.5) * 255);
       normal[i * 4 + 1] = Math.round(((ny / length) * 0.5 + 0.5) * 255);

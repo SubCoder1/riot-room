@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { mulberry32, tileableNoise } from "./ConcreteTexture";
+import { mulberry32, normalLength, tileableNoise } from "./ConcreteTexture";
 
 /** Pixels along one side of the (square, seamless) ceiling textures. */
 export const CEILING_TEXTURE_SIZE = 512;
@@ -94,7 +94,7 @@ export function createCeilingTextures(
       const strength = 6;
       const nx = -(at(x + 1, y) - at(x - 1, y)) * strength;
       const ny = -(at(x, y + 1) - at(x, y - 1)) * strength;
-      const length = Math.hypot(nx, ny, 1);
+      const length = normalLength(nx, ny);
       const i = (y * size + x) * 4;
 
       normal[i] = Math.round(((nx / length) * 0.5 + 0.5) * 255);
