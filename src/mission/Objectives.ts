@@ -5,7 +5,8 @@
  *
  * Objectives are listed in order. The first one not done is the current one,
  * those after it are upcoming, and a completed one is reported once, as it is
- * completed (the HUD takes it off the list).
+ * completed (it stays on the list, done). An objective can only be completed
+ * when every one before it is, so the mission cannot be skipped ahead.
  */
 
 export type ObjectiveState = "upcoming" | "current" | "completed";
@@ -23,13 +24,31 @@ export type ObjectiveChange =
 
 export type ObjectiveListener = (change: ObjectiveChange) => void;
 
-/** The mission as it stands: one objective for now. */
+/** The ids of the mission's objectives, in order. */
+export const OBJECTIVE_ID = {
+  COLLECT: "collect-dynamite",
+  /** The rubble blocking the vault passage is blown clear. */
+  CLEAR: "clear-passage",
+  /** The player has left the blast's danger area. */
+  GET_CLEAR: "get-clear",
+  /** The player is in the Chemical Vault. */
+  ENTER: "enter-vault",
+} as const;
+
+/**
+ * The mission as the player sees it: four short lines, all shown together.
+ * How to do each (plant, light, get clear) is found in the world, by the
+ * prompts at the place, not listed here.
+ */
 export const OBJECTIVES: readonly ObjectiveDefinition[] = [
   {
-    id: "collect-dynamite",
+    id: OBJECTIVE_ID.COLLECT,
     label: "Collect dynamites from Armory",
     completesOnPickup: "DYNAMITE",
   },
+  { id: OBJECTIVE_ID.CLEAR, label: "Clear the blocked passage" },
+  { id: OBJECTIVE_ID.GET_CLEAR, label: "Get clear of the blast" },
+  { id: OBJECTIVE_ID.ENTER, label: "Enter the Chemical Vault" },
 ];
 
 export class ObjectiveLog {
@@ -53,22 +72,43 @@ export class ObjectiveLog {
     return current?.id === id ? "current" : "upcoming";
   }
 
-  /** The objectives still to show (the completed ones are gone), in order. */
+  /** The objectives to show: the done ones and the current one (never a future one). */
+  public visible(): ReadonlyArray<{
+    definition: ObjectiveDefinition;
+    state: ObjectiveState;
+  }> {
+    return this.entries().filter((e) => e.state !== "upcoming");
+  }
+
+  /** Every objective with its state, in mission order (done ones stay). */
+  public entries(): ReadonlyArray<{
+    definition: ObjectiveDefinition;
+    state: ObjectiveState;
+  }> {
+    return this.definitions.map((definition) => ({
+      definition,
+      state: this.stateOf(definition.id),
+    }));
+  }
+
+  /** The objectives not done yet, in order. */
   public remaining(): ReadonlyArray<{
     definition: ObjectiveDefinition;
     state: ObjectiveState;
   }> {
-    return this.definitions
-      .filter((d) => !this.done.has(d.id))
-      .map((definition) => ({
-        definition,
-        state: this.stateOf(definition.id),
-      }));
+    return this.entries().filter((e) => e.state !== "completed");
   }
 
-  /** Completes an objective. True only the one time it changes (never twice). */
+  /**
+   * Completes an objective. True only the one time it changes (never twice),
+   * and only the current one: it is the one that is being worked on.
+   */
   public complete(id: string): boolean {
     if (this.done.has(id) || !this.definitions.some((d) => d.id === id)) {
+      return false;
+    }
+
+    if (this.stateOf(id) !== "current") {
       return false;
     }
 

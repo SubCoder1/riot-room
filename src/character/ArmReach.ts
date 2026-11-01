@@ -28,6 +28,8 @@ export function limitArmReach(
   elbow: THREE.Vector3,
   wrist: THREE.Vector3,
   clearFraction: ClearFraction,
+  /** Extra room for something held past the fist (a bottle, a grenade). */
+  held = 0,
 ): ArmPose | null {
   const upper = elbow.distanceTo(shoulder);
   const fore = wrist.distanceTo(elbow);
@@ -41,7 +43,7 @@ export function limitArmReach(
   direction.divideScalar(length);
 
   // Look a fist's width past the wrist, so the knuckles themselves count.
-  const probeLength = length + FIST_RADIUS;
+  const probeLength = length + FIST_RADIUS + held;
   const end = shoulder.clone().addScaledVector(direction, probeLength);
   const free = clearFraction(shoulder, end);
 
@@ -50,7 +52,7 @@ export function limitArmReach(
   }
 
   const allowed = Math.max(
-    free * probeLength - FIST_RADIUS - 0.02,
+    free * probeLength - FIST_RADIUS - held - 0.02,
     length * MIN_REACH,
   );
 

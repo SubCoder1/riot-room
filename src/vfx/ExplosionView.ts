@@ -34,6 +34,11 @@ interface Explosion {
   /** Each spark's launch velocity, m/s. */
   sparkVel: THREE.Vector3[];
   at: THREE.Vector3;
+  /** How big it is and what share of its puffs are drawn (1 for a grenade). */
+  size: number;
+  share: number;
+  /** What share of the fireball's puffs are drawn (a dusty blast shows little fire). */
+  fireShare: number;
 }
 
 const clamp01 = (t: number): number => Math.min(Math.max(t, 0), 1);
@@ -72,12 +77,20 @@ export class ExplosionView {
     return this.pool.filter((e) => e.active).length;
   }
 
-  public spawn(point: THREE.Vector3): void {
+  /**
+   * `size` scales the whole blast and `share` is the part of its puffs drawn
+   * (a lighter one costs the graphics card less: the breach goes off in a
+   * doorway, close to the player, where big overlapping puffs fill the screen).
+   */
+  public spawn(point: THREE.Vector3, size = 1, share = 1, fire = 1): void {
     const e = this.pool[this.next];
 
     this.next = (this.next + 1) % this.pool.length;
     e.active = true;
     e.age = 0;
+    e.size = size;
+    e.share = share;
+    e.fireShare = fire;
     e.at.copy(point);
     e.ring.position.set(point.x, point.y + 0.05, point.z);
     e.scorch.position.set(point.x, point.y + 0.03, point.z);
@@ -126,12 +139,12 @@ export class ExplosionView {
   }
 
   public update(dt: number): void {
-    const R = GRENADE_CONFIG.GRENADE_BLAST_RADIUS;
-
     for (const e of this.pool) {
       if (!e.active) {
         continue;
       }
+
+      const R = GRENADE_CONFIG.GRENADE_BLAST_RADIUS * e.size;
 
       e.age += dt;
 
@@ -173,6 +186,13 @@ export class ExplosionView {
       for (let i = 0; i < FIRE_PUFFS; i++) {
         const s = e.fire[i];
         const d = e.fireDir[i];
+
+        if (i >= Math.ceil(FIRE_PUFFS * e.share * e.fireShare)) {
+          s.visible = false;
+
+          continue;
+        }
+
         // Each puff starts a little later than the one before it.
         const local = clamp01((e.age - i * 0.012) / 0.75);
         const g = easeOut(local);
@@ -194,6 +214,13 @@ export class ExplosionView {
       for (let i = 0; i < SMOKE_PUFFS; i++) {
         const s = e.smoke[i];
         const d = e.smokeDir[i];
+
+        if (i >= Math.ceil(SMOKE_PUFFS * e.share)) {
+          s.visible = false;
+
+          continue;
+        }
+
         const local = clamp01((e.age - 0.12 - i * 0.03) / (LIFE + 0.1));
 
         s.visible = local > 0 && local < 1;
@@ -211,6 +238,13 @@ export class ExplosionView {
       for (let i = 0; i < DUST_PUFFS; i++) {
         const s = e.dust[i];
         const d = e.dustDir[i];
+
+        if (i >= Math.ceil(DUST_PUFFS * e.share)) {
+          s.visible = false;
+
+          continue;
+        }
+
         const local = clamp01(e.age / (LIFE * 0.9));
 
         s.visible = local < 1;
@@ -364,6 +398,9 @@ export class ExplosionView {
       dustDir: Array.from({ length: DUST_PUFFS }, () => new THREE.Vector3()),
       sparkVel: Array.from({ length: SPARKS }, () => new THREE.Vector3()),
       at: new THREE.Vector3(),
+      size: 1,
+      share: 1,
+      fireShare: 1,
     };
   }
 

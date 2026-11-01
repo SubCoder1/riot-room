@@ -478,6 +478,15 @@ function door(map: MapBuilder): void {
   map.createFitting("fittings-gate-closed", 0, p.elements, [
     { minX: face, maxX: face + 0.34, minZ: z0, maxZ: z1, top: H },
   ]);
+
+  // The wall beside the door, in front of the stairs' foot, is as flush as the
+  // door: no 0.34 m slot between the two for a body to step into.
+  const flank = new Pieces();
+
+  flank.box(face + 0.17, 0, (z1 + -14.9) / 2, 0.34, H, -14.9 - z1, GUNMETAL);
+  map.createFitting("fittings-spawn-gate-flank", 0, flank.elements, [
+    { minX: face, maxX: face + 0.34, minZ: z1, maxZ: -14.9, top: H },
+  ]);
 }
 
 export function furnishSpawnAreas(map: MapBuilder): void {

@@ -2,8 +2,13 @@ import * as THREE from "three";
 
 import { buildArena } from "./ArenaBuilder";
 import { ArenaCollision } from "./ArenaCollision";
+import { VAULT_WRECK_ID } from "./CollapsedEntrance";
 import { createCrimeTape } from "./CrimeTape";
-import { buildLightRegions, installLightRegions } from "./LightRegions";
+import {
+  buildLightRegions,
+  dynamicDecayAt,
+  installLightRegions,
+} from "./LightRegions";
 import { createGraffiti } from "./WallGraffiti";
 import { doorPassage } from "./DoorPassage";
 import { createFacilityPoster } from "./FacilityPoster";
@@ -298,6 +303,82 @@ export class Arena {
 
   /** Whether the fallen floodlight is showing as lit (it blinks). */
   private blinkLit = true;
+  /** The vault entrance has been blown: its tape is torn and its floodlight smashed and dark. */
+  private breached = false;
+  private readonly tapeWhole: THREE.Group[] = [];
+  private readonly tapeTorn: THREE.Group[] = [];
+  private readonly headHome = new Map<
+    THREE.Object3D,
+    { position: THREE.Vector3; quaternion: THREE.Quaternion }
+  >();
+
+  /**
+   * The vault entrance after the blast (or before it, on a new round): the
+   * tape across the approach is gone and torn pieces lie about; the fallen
+   * floodlight stays dark for good, its visor off and its frame bent, the bits
+   * of it on the floor shown. Only that one lamp is touched.
+   */
+  public setBreached(breached: boolean): void {
+    this.breached = breached;
+
+    for (const tape of this.tapeWhole) {
+      tape.visible = !breached;
+    }
+
+    for (const tape of this.tapeTorn) {
+      tape.visible = breached;
+    }
+
+    const wreck = this.group.getObjectByName(`anim:${VAULT_WRECK_ID}`);
+
+    if (wreck) {
+      wreck.visible = breached;
+    }
+
+    const id = BLINKING_LAMP.id;
+    const glow = this.group.getObjectByName(`glow-${id}`);
+    const head = glow?.children[0];
+
+    this.blinkLit = !breached;
+    this.setLampBroken(id, breached);
+
+    if (glow) {
+      // The smashed head stays where it lies, dark (no beam, no lens glow).
+      glow.visible = true;
+      glow.userData.setPower?.(breached ? 0 : 1);
+    }
+
+    if (!glow || !head || head.children.length < 3) {
+      return;
+    }
+
+    const [, rim, visor] = head.children;
+
+    if (breached) {
+      for (const part of [head, glow, rim]) {
+        this.headHome.set(part, {
+          position: part.position.clone(),
+          quaternion: part.quaternion.clone(),
+        });
+      }
+
+      visor.visible = false;
+      head.rotateZ(0.32);
+      head.rotateX(-0.12);
+      glow.position.y -= 0.1;
+      rim.rotateZ(-0.35);
+      rim.position.x += 0.05;
+      rim.position.y -= 0.03;
+    } else {
+      for (const [part, home] of this.headHome) {
+        part.position.copy(home.position);
+        part.quaternion.copy(home.quaternion);
+      }
+
+      this.headHome.clear();
+      visor.visible = true;
+    }
+  }
 
   /** Advances the night's flicker and lightning. */
   public update(dt: number): void {
@@ -305,7 +386,7 @@ export class Arena {
 
     const lit = Math.floor(this.time / BLINKING_LAMP.period) % 2 === 0;
 
-    if (lit !== this.blinkLit) {
+    if (!this.breached && lit !== this.blinkLit) {
       this.blinkLit = lit;
       this.setLampBroken(BLINKING_LAMP.id, !lit);
     }
@@ -393,7 +474,20 @@ export class Arena {
 
     // Police tape across the approach to the collapsed vault entrance.
     for (const tape of this.layout.tapes ?? []) {
-      this.group.add(createCrimeTape(tape.runs, tape.viewer));
+      const whole = createCrimeTape(tape.runs, tape.viewer);
+
+      this.group.add(whole);
+      this.tapeWhole.push(whole);
+
+      // What the blast leaves of it: there from the start, shown when it goes off.
+      if (tape.torn?.length) {
+        const torn = createCrimeTape(tape.torn, tape.viewer);
+
+        torn.name = "CrimeTapeTorn";
+        torn.visible = false;
+        this.group.add(torn);
+        this.tapeTorn.push(torn);
+      }
     }
 
     // Fires burning in steel drums.
@@ -413,6 +507,18 @@ export class Arena {
     const regions = buildLightRegions(this.layout, lights);
 
     installLightRegions(regions.glsl);
+
+    // The fires in drums have shadows (and so no region of their own above):
+    // tagged here, so a wall's joints cannot let their light into a room.
+    for (const fire of this.barrelFires) {
+      fire.setRegion(
+        dynamicDecayAt(
+          fire.group.position.x,
+          fire.group.position.y + 0.55,
+          fire.group.position.z,
+        ),
+      );
+    }
 
     for (const light of lights) {
       if (light.target) {

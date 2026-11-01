@@ -15,6 +15,45 @@ export const CRITICAL_AT = 25;
 export const LOW_BELOW = 50;
 /** How many segments the bar has. */
 export const SEGMENTS = 7;
+/** From this much health up the bar is full: a scratch does not show on it. */
+export const FULL_FROM = 90;
+
+type Rgb = readonly [number, number, number];
+
+/** Bar and number colours at full health, at half and at the red: the colour glides between them. */
+const BAR_STOPS: ReadonlyArray<readonly [number, Rgb]> = [
+  [25, [168, 64, 63]],
+  [50, [201, 162, 39]],
+  [70, [120, 148, 131]],
+];
+const TEXT_STOPS: ReadonlyArray<readonly [number, Rgb]> = [
+  [25, [224, 85, 79]],
+  [50, [224, 190, 60]],
+  [70, [242, 244, 245]],
+];
+
+/** The colour for `hp` along `stops` (flat beyond the ends, blended between). */
+function glide(
+  stops: ReadonlyArray<readonly [number, Rgb]>,
+  hp: number,
+): string {
+  if (hp <= stops[0][0]) {
+    return `rgb(${stops[0][1].join(",")})`;
+  }
+
+  for (let i = 1; i < stops.length; i++) {
+    const [hi, high] = stops[i];
+    const [lo, low] = stops[i - 1];
+
+    if (hp <= hi) {
+      const t = (hp - lo) / (hi - lo);
+
+      return `rgb(${low.map((c, k) => Math.round(c + (high[k] - c) * t)).join(",")})`;
+    }
+  }
+
+  return `rgb(${stops[stops.length - 1][1].join(",")})`;
+}
 
 export interface HealthReading {
   readonly current: number;
@@ -25,6 +64,8 @@ export class PlayerHealthBar {
   private readonly root = document.createElement("div");
   private readonly value = document.createElement("div");
   private readonly segments: HTMLElement[] = [];
+  private readonly fills: HTMLElement[] = [];
+  private lastHealth = -1;
   private lastText = "";
   private lastFilled = -1;
   private lastCritical: boolean | null = null;
@@ -41,8 +82,13 @@ export class PlayerHealthBar {
     for (let i = 0; i < SEGMENTS; i++) {
       const segment = document.createElement("div");
 
+      const fill = document.createElement("div");
+
       segment.className = "player-health__segment";
+      fill.className = "player-health__fill";
+      segment.append(fill);
       this.segments.push(segment);
+      this.fills.push(fill);
       bar.append(segment);
     }
 
@@ -56,14 +102,33 @@ export class PlayerHealthBar {
     // Never shown above max or below zero, and always a whole number.
     const current = Math.min(Math.max(health.current, 0), max);
     const text = String(Math.ceil(current));
-    // Proportional: any health at all shows a segment; none shows none.
-    const filled = Math.ceil((current / max) * SEGMENTS - 1e-9);
+    // Proportional, and full from FULL_FROM up; any health at all shows some.
+    const share = Math.min(current / (max * (FULL_FROM / 100)), 1) * SEGMENTS;
+    const filled = Math.ceil(share - 1e-9);
     const critical = current <= CRITICAL_AT;
     const low = !critical && current < LOW_BELOW;
 
     if (text !== this.lastText) {
       this.lastText = text;
       this.value.textContent = text;
+    }
+
+    if (current !== this.lastHealth) {
+      this.lastHealth = current;
+
+      // Each segment drains from its end, a little at a time (its width glides
+      // by a CSS transition): never a whole block at once.
+      this.fills.forEach((fill, i) => {
+        const part = Math.min(Math.max(share - i, 0), 1);
+
+        fill.style.width = `${(part * 100).toFixed(1)}%`;
+      });
+
+      // The colours glide with the health (percent of max, so any max works).
+      const percent = (current / max) * 100;
+
+      this.root.style.setProperty("--hp-bar", glide(BAR_STOPS, percent));
+      this.root.style.setProperty("--hp-text", glide(TEXT_STOPS, percent));
     }
 
     if (filled !== this.lastFilled) {

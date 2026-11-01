@@ -43,6 +43,8 @@ const STEP_SMOOTHING = 11;
  * (it was 3.6, 0.6 of a 6 m/s walk). Only the speed along the flight changes;
  * the step-up and the foot placement are the same.
  */
+/** Walking speed while held by an electric shock. */
+const SHOCKED_SPEED_FACTOR = 0.45;
 const STAIRS_WALK_FACTOR = 0.57;
 
 /** Seconds the climb down into (or up out of) a vent takes. */
@@ -323,9 +325,71 @@ export class Player {
     if (fitsInTunnels(move.net, x + stepX, z + stepZ, VENT_BODY_RADIUS)) {
       this.position.x = x + stepX;
       this.position.z = z + stepZ;
-    } else if (fitsInTunnels(move.net, x + stepX, z, VENT_BODY_RADIUS)) {
+
+      return;
+    }
+
+    // Blocked: slide along the wall, if that carries on in the way asked.
+    const slideX = fitsInTunnels(move.net, x + stepX, z, VENT_BODY_RADIUS);
+    const slideZ =
+      !slideX && fitsInTunnels(move.net, x, z + stepZ, VENT_BODY_RADIUS);
+    const slid = slideX ? Math.abs(stepX) : slideZ ? Math.abs(stepZ) : 0;
+    const asked = Math.hypot(stepX, stepZ);
+
+    // At a corner into a side branch the body is rarely lined up with the
+    // branch to within the clearance it needs, so it would stop dead at the
+    // mouth (or crawl along its edge). When the slide gets little of the
+    // step, it is eased sideways, toward the nearest line that is clear, as it
+    // goes forward: round the corner in one smooth move.
+    if (slid < asked * 0.5) {
+      const perpX = -stepZ / asked;
+      const perpZ = stepX / asked;
+
+      for (const offset of [
+        0.06, 0.12, 0.18, 0.24, 0.3, 0.36, 0.42, 0.55, 0.7, 0.9,
+      ]) {
+        for (const sign of [1, -1]) {
+          if (
+            !fitsInTunnels(
+              move.net,
+              x + stepX + sign * perpX * offset,
+              z + stepZ + sign * perpZ * offset,
+              VENT_BODY_RADIUS,
+            )
+          ) {
+            continue;
+          }
+
+          // Eased over, no faster than the step it goes forward.
+          const nudge = Math.min(offset, asked);
+          const nx = x + stepX + sign * perpX * nudge;
+          const nz = z + stepZ + sign * perpZ * nudge;
+
+          if (fitsInTunnels(move.net, nx, nz, VENT_BODY_RADIUS)) {
+            this.position.x = nx;
+            this.position.z = nz;
+
+            return;
+          }
+
+          // Not yet lined up: glide across toward the branch (the forward
+          // step waits until the body is clear to go in).
+          const gx = x + sign * perpX * nudge;
+          const gz = z + sign * perpZ * nudge;
+
+          if (fitsInTunnels(move.net, gx, gz, VENT_BODY_RADIUS)) {
+            this.position.x = gx;
+            this.position.z = gz;
+
+            return;
+          }
+        }
+      }
+    }
+
+    if (slideX) {
       this.position.x = x + stepX;
-    } else if (fitsInTunnels(move.net, x, z + stepZ, VENT_BODY_RADIUS)) {
+    } else if (slideZ) {
       this.position.z = z + stepZ;
     }
   }
@@ -496,6 +560,9 @@ export class Player {
    * Crouch state. Set by Game.ts; slows movement and overrides sprint.
    */
   public isCrouching = false;
+
+  /** Set by the game while the player is held by an electric shock: no sprinting, and a slow walk. */
+  public isShocked = false;
 
   /** Set by the game while both hands are busy (the chain): no walking, sprinting or jumping, only looking. */
   public movementLocked = false;
@@ -847,7 +914,8 @@ export class Player {
      */
 
     this.isSprinting =
-      input.isPressed("ShiftLeft") || input.isPressed("ShiftRight");
+      !this.isShocked &&
+      (input.isPressed("ShiftLeft") || input.isPressed("ShiftRight"));
 
     /**
      * ======================================================
@@ -926,6 +994,10 @@ export class Player {
 
       if (this.isPunching) {
         speed *= this.punchSpeedFactor;
+      }
+
+      if (this.isShocked) {
+        speed *= SHOCKED_SPEED_FACTOR;
       }
 
       if (this.grounded) {

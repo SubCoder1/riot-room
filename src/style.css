@@ -271,11 +271,15 @@ canvas {
 /* Until it is picked up the dynamite's slot is an empty ring; its own icon
    and name are there once it is taken. */
 .ww-slot[data-locked="true"] .ww-icon:not([data-placeholder]),
-.ww-slot:not([data-locked="true"]) .ww-icon[data-placeholder] {
+.ww-slot[data-empty="true"] .ww-icon:not([data-placeholder]),
+.ww-slot:not([data-locked="true"]):not([data-empty="true"])
+  .ww-icon[data-placeholder] {
   display: none;
 }
 
-.ww-slot[data-locked="true"] .ww-name {
+.ww-slot[data-locked="true"] .ww-name,
+.ww-slot[data-empty="true"] .ww-name,
+.ww-slot[data-empty="true"] .ww-qty {
   visibility: hidden;
 }
 
@@ -409,32 +413,30 @@ canvas {
 }
 
 .player-health__segment {
+  position: relative;
+  overflow: hidden;
   width: clamp(14px, 1.3vw, 19px);
   height: clamp(18px, 1.6vw, 23px);
   background: #2a3034;
   box-shadow: 0 0 0 1px rgba(3, 4, 5, 0.85);
-  transition: background-color 220ms ease-out;
 }
 
-.player-health__segment.on {
-  background: #789483;
+/* The filled part of a segment: it shrinks smoothly from the right as health
+   goes, and its colour glides from gray-green through yellow to red (the
+   colour is set from code, from the health). */
+.player-health__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--hp-bar, #789483);
+  transition:
+    width 450ms ease-out,
+    background-color 450ms ease-out;
 }
 
-.player-health.critical .player-health__segment.on {
-  background: #a8403f;
-}
-
-/* Below half: the number and the filled bar go yellow; below a quarter, red. */
-.player-health.low .player-health__segment.on {
-  background: #c9a227;
-}
-
-.player-health.low .player-health__value {
-  color: #e0be3c;
-}
-
-.player-health.critical .player-health__value {
-  color: #e0554f;
+.player-health__value {
+  color: var(--hp-text, #f2f4f5);
+  transition: color 450ms ease-out;
 }
 
 /* ------------------------------------------------------------------
@@ -520,7 +522,8 @@ canvas {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .player-health__segment {
+  .player-health__fill,
+  .player-health__value {
     transition: none;
   }
 }
@@ -641,7 +644,7 @@ canvas {
   position: fixed;
   left: 24px;
   top: 24px;
-  width: min(340px, 30vw);
+  width: min(400px, 36vw);
   min-width: 190px;
   padding: 13px 18px 15px 15px;
   background: linear-gradient(
@@ -669,8 +672,6 @@ canvas {
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: min(34vh, 260px);
-  overflow-y: auto;
   scrollbar-width: none;
 }
 
@@ -740,6 +741,8 @@ canvas {
 
 .objective__text {
   position: relative;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
   min-width: 0;
   overflow-wrap: anywhere;
   color: rgba(228, 231, 235, 0.92);
@@ -771,15 +774,8 @@ canvas {
 }
 
 .objective.is-complete .objective__text {
-  color: rgba(228, 231, 235, 0.6);
+  color: rgba(120, 190, 134, 0.85);
   background-size: 100% 1px;
-}
-
-.objective.is-leaving {
-  height: 0 !important;
-  margin-bottom: 0;
-  opacity: 0;
-  transform: translateY(-10px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -788,10 +784,6 @@ canvas {
   .objective__text {
     transition: none;
   }
-
-  .objective.is-leaving {
-    transform: none;
-  }
 }
 
 @media (max-height: 520px) {
@@ -799,4 +791,20 @@ canvas {
     top: 16px;
     left: 16px;
   }
+}
+
+/* The brief flash of the dynamite going off (its strength is set from code). */
+.breach-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 232, 190, 0.9),
+    rgba(255, 190, 110, 0.7)
+  );
+  z-index: 8;
+  /* Its own layer from the start, so the first flash is not rastered mid-blast. */
+  will-change: opacity;
 }

@@ -31,8 +31,15 @@ export const OUTDOORS_DECAY = 2 + 1 * STEP;
 export const DYNAMIC_DECAY = OUTDOORS_DECAY;
 /** How far a light is let through a door, each way (m). */
 const PORTAL = 3.5;
-/** How far the walls' inside faces are from a room's bounds (the walls stand inside them). */
-const WALL = 0.27;
+/**
+ * How far a room's inside begins from its bounds. The walls are centred on the
+ * bounds (0.15 m each side of them), so their inside faces are 0.15 m in: the
+ * inside must begin just short of that, or the walls' inner faces and the strip
+ * of floor along them count as outdoors and an outdoor lamp lights them (a thin
+ * bright line along every wall's foot and edges). The outer faces, 0.15 m the
+ * other way, stay outside.
+ */
+const WALL = 0.12;
 /** Lamps whose light is meant to cross a wall (a glass cover over a room). */
 const THROUGH_GLASS = new Set(["halogen-wall-storage", "halogen-roof-east"]);
 

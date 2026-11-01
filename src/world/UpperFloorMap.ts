@@ -14,7 +14,21 @@ import {
   type ArenaLayout,
 } from "./ArenaLayout";
 import { MapBuilder, bounds } from "./MapParts";
-import { entranceOf, furnishCollapsedEntrance } from "./CollapsedEntrance";
+import {
+  chargeSiteOf,
+  entranceOf,
+  furnishCollapsedEntrance,
+  type ChargeSite,
+  type ObstructionPiece,
+  obstructionOf,
+} from "./CollapsedEntrance";
+
+/** Where the vault breach charge is planted (set when the map is built). */
+export const VAULT_BREACH: {
+  site: ChargeSite | null;
+  /** The rubble that blocks the passage, piece by piece (see `obstructionOf`). */
+  obstruction: ObstructionPiece[];
+} = { site: null, obstruction: [] };
 import { addWeathering } from "./Weathering";
 import { furnishHall, furnishStorageRoom, furnishYard } from "./StorageRoom";
 import { furnishDebris } from "./Debris";
@@ -596,14 +610,16 @@ function createUpperFloor(): ArenaLayout {
   // The Server room's doorway is the vault entrance, brought down under its
   // own wall (see CollapsedEntrance): shut until a breach is built.
   {
-    const site = furnishCollapsedEntrance(
-      map,
-      entranceOf([serverRoom], WALL_THICKNESS, DOOR_HEIGHT),
-    );
+    const entrance = entranceOf([serverRoom], WALL_THICKNESS, DOOR_HEIGHT);
+    const site = furnishCollapsedEntrance(map, entrance);
+
+    VAULT_BREACH.site = chargeSiteOf(entrance);
+    VAULT_BREACH.obstruction = obstructionOf(entrance);
 
     map.addTape({
       id: "tape-vault",
       runs: site.tape,
+      torn: site.torn,
       viewer: site.viewer,
     });
   }

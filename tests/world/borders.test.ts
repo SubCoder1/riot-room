@@ -4,7 +4,9 @@ import { ARENA_LAYOUT as layout } from "../../src/world/UpperFloorMap";
 
 /** Boxes kept as authored on purpose (see EXACT_FITTINGS in MapParts). */
 const KEPT =
-  /^(junk-pile|bunk-barracks|armory-crates|armory-bay|site-work-area|fittings-yard-drums|rail-)/;
+  /^(junk-pile|bunk-barracks|armory-crates|armory-bay|site-work-area|fittings-yard-drums|rail-|fittings-vault-core)/;
+// (The vault obstruction's collision is drawn by ObstructionView, not by its
+// pile: breach.test.ts checks the pieces cover it.)
 
 describe("Object borders are strict", () => {
   it("every fitting box has something drawn up to its top and all round it (no air above or beside it)", () => {

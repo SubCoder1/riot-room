@@ -198,12 +198,12 @@ describe("PlayerUtilities", () => {
     expect(utilities.usingFists).toBe(false);
     expect(utilities.active).toBe("GRENADE");
 
+    // A slot with none left cannot be selected: nothing changes.
     utilities.select("MOLOTOV");
-    expect(utilities.selected).toBe("MOLOTOV");
-    expect(utilities.usingFists).toBe(true);
-    expect(utilities.active).toBeNull();
+    expect(utilities.selected).toBe("GRENADE");
 
     utilities.add("MOLOTOV");
+    utilities.select("MOLOTOV");
     expect(utilities.active).toBe("MOLOTOV");
 
     utilities.select("FISTS");
@@ -212,7 +212,7 @@ describe("PlayerUtilities", () => {
     // Running out of the selected utility drops back to fists by itself.
     utilities.select("GRENADE");
     utilities.remove("GRENADE", GRENADE_CONFIG.GRENADE_START_QUANTITY);
-    expect(utilities.selected).toBe("GRENADE");
+    expect(utilities.selected).toBe("FISTS");
     expect(utilities.usingFists).toBe(true);
   });
 
@@ -446,13 +446,12 @@ describe("WeaponWheel: opens on scroll, equips at once, fades by itself", () => 
     utilities.select("GRENADE");
     expect(utilities.usingFists).toBe(false);
 
-    wheel.scroll(3); // Fists
+    wheel.scroll(2); // Fists (past the Molotov, none left, and the Smoke)
     expect(utilities.selected).toBe("FISTS");
     expect(utilities.usingFists).toBe(true);
 
-    wheel.scroll(-2); // Molotov (none)
-    expect(utilities.selected).toBe("MOLOTOV");
-    expect(utilities.usingFists).toBe(true);
+    wheel.scroll(-2); // Past the Molotov (none left: it cannot be selected)
+    expect(utilities.selected).toBe("GRENADE");
   });
 
   it("an equipped utility is equipped for real: it can be used up and gives way to fists", () => {

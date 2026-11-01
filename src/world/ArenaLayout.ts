@@ -563,12 +563,18 @@ export interface TapeRun {
   from: [number, number, number];
   to: [number, number, number];
   sag: number;
+  /** Where along the printed text the strip starts, in tiles (a torn piece). */
+  textStart?: number;
+  /** Lies on its side: its width runs level, across the strip (hanging or on the floor). */
+  flat?: boolean;
 }
 
 /** Tape strung round one place, and where it is read from (its text faces there). */
 export interface TapeDefinition {
   id: string;
   runs: TapeRun[];
+  /** What is left of it once it has been blown apart (hidden until then). */
+  torn?: TapeRun[];
   viewer: [number, number, number];
 }
 

@@ -46,6 +46,20 @@ const steel = (color: number, roughness = 0.65, metalness = 0.55) =>
     },
   );
 
+/**
+ * The hatch door's steel: matt, and with a trace of light of its own (a twentieth
+ * of its colour), so the door does not sink to black in the dark Armory and Hall,
+ * while still taking the room's light and shadow like everything else.
+ */
+const doorSteel = (color: number, roughness = 0.9) => {
+  const material = steel(color, roughness, 0.04) as THREE.MeshStandardMaterial;
+
+  material.emissive.setHex(color);
+  material.emissiveIntensity = 0.06;
+
+  return material;
+};
+
 export class ArmoryMechanismView {
   public readonly group = new THREE.Group();
 
@@ -441,8 +455,8 @@ export class ArmoryMechanismView {
   }
 
   /**
-   * The hatch door: an old, rusted sheet-steel door, plain and a little uneven,
-   * with a few welded patches and a seam, three simple hinges on the Hall face,
+   * The hatch door: a heavy double-leaf steel security door (swung as one),
+   * with a raised border, ribs and a centre seam, three strap hinges on the Hall face,
    * a pull bar on the Hall face, and on the Armory face a sliding bolt in two
    * keepers with a release lever that draws it. Local x runs from the hinge
    * along the leaf, y from its centre, and the Armory face is -z.
@@ -454,15 +468,19 @@ export class ArmoryMechanismView {
     const H = ARMORY.DOOR_HEIGHT;
     const T = ARMORY.DOOR_THICKNESS;
     const cx = 0.02 + W / 2;
-    // Aged dark-brown steel, charcoal paint, rust, and old worn metal.
-    const plate = track(steel(0x3a2d26, 0.92, 0.35));
-    const paint = track(steel(0x2b2e32, 0.9, 0.3));
-    const frame = track(steel(0x2a2420, 0.9, 0.4));
-    const rust = track(steel(0x56321e, 0.95, 0.2));
-    const rustDark = track(steel(0x3a2316, 0.95, 0.2));
+    // Dark painted steel, olive-grey and matt: gunmetal frame, a little
+    // lighter where the paint has worn from the edges, grime low down, and a
+    // few small patches of rust. (Matt, with a trace of light of its own, so it
+    // is read against the dark walls without a lamp on it.)
+    const plate = track(doorSteel(0x3d4239));
+    const border = track(doorSteel(0x32372f));
+    const rib = track(doorSteel(0x373c33));
+    const edge = track(doorSteel(0x5c6155));
+    const grime = track(doorSteel(0x1f221d));
+    const rust = track(doorSteel(0x4a3224));
     const worn = track(steel(0x55524c, 0.8, 0.5));
     const bright = track(steel(0x77746c, 0.6, 0.7));
-    const stain = track(steel(0x1d1a18, 0.95, 0.2));
+    const frame = border;
     const box = (
       w: number,
       h: number,
@@ -484,209 +502,114 @@ export class ArmoryMechanismView {
       return mesh;
     };
 
-    // Built like a real steel door, not a flat plate with a skin: a core sheet,
-    // a welded frame of stiles and rails that stands proud of it on both faces
-    // (two stiles, a top, a lock and a bottom rail, and a mullion above and
-    // below the lock rail), so there are four recessed panels, each with its
-    // own wear. Rivets run along the frame, braces cross two panels on the Hall
-    // face, and heavy strap hinges carry it.
+    // A heavy double-leaf security door, swung as one: two flush leaves with a
+    // clean seam down the middle, each a solid slab with a raised reinforced
+    // border, a recessed panel and two broad steel ribs; the seam is covered
+    // by a flat bar on the Hall face.
     const x0 = 0.02;
     const x1 = 0.02 + W;
     const top = H / 2;
     const bot = -H / 2;
-    const STILE = 0.14;
-    const RAIL = 0.14;
-    const FOOT = 0.2;
-    const LOCK_Y = -0.21;
-    const LOCK = 0.13;
-    const PANEL_Z = 0.02;
+    const BORDER = 0.075;
+    const SEAM = 0.012;
     const noise = (k: number, face: number): number =>
       Math.abs(Math.sin(k * 12.9898 + face * 3.1) * 43758.5453) % 1;
 
-    // The core sheet: thin, so the frame is deep over it.
-    box(W - 0.04, H - 0.04, 0.036, plate, cx, 0, 0);
+    // The slab itself: one solid core, full thickness, so it is never a sheet.
+    box(W - 0.04, H - 0.04, T - 0.01, plate, cx, 0, 0);
 
-    // The frame: members as deep as the door, so they stand proud on both faces.
-    box(STILE, H, T, frame, x0 + STILE / 2, 0, 0);
-    box(STILE, H, T, frame, x1 - STILE / 2, 0, 0);
-    box(W - 2 * STILE, RAIL, T, frame, cx, top - RAIL / 2, 0);
-    box(W - 2 * STILE, FOOT, T, frame, cx, bot + FOOT / 2, 0);
-    box(W - 2 * STILE, LOCK, T, frame, cx, LOCK_Y, 0);
+    for (const leafIndex of [0, 1]) {
+      const lx0 = leafIndex === 0 ? x0 : cx + SEAM / 2;
+      const lx1 = leafIndex === 0 ? cx - SEAM / 2 : x1;
+      const lw = lx1 - lx0;
+      const lcx = (lx0 + lx1) / 2;
 
-    const upperLow = LOCK_Y + LOCK / 2;
-    const upperHigh = top - RAIL;
-    const lowerLow = bot + FOOT;
-    const lowerHigh = LOCK_Y - LOCK / 2;
-    const MULL = 0.1;
+      for (const face of [-1, 1]) {
+        const zb = face * (T / 2 - 0.004);
 
-    box(
-      MULL,
-      upperHigh - upperLow,
-      T,
-      frame,
-      cx,
-      (upperHigh + upperLow) / 2,
-      0,
-    );
-    box(
-      MULL,
-      lowerHigh - lowerLow,
-      T,
-      frame,
-      cx,
-      (lowerHigh + lowerLow) / 2,
-      0,
-    );
+        // The reinforced border: four flat bars standing a little proud.
+        box(lw, BORDER, 0.016, border, lcx, top - BORDER / 2, zb);
+        box(lw, BORDER, 0.016, border, lcx, bot + BORDER / 2, zb);
+        box(BORDER, H - 2 * BORDER, 0.016, border, lx0 + BORDER / 2, 0, zb);
+        box(BORDER, H - 2 * BORDER, 0.016, border, lx1 - BORDER / 2, 0, zb);
 
-    // The four panels (x range, y range) and what finish each has had.
-    const panels = [
-      [x0 + STILE, cx - MULL / 2, upperLow, upperHigh, paint],
-      [cx + MULL / 2, x1 - STILE, upperLow, upperHigh, plate],
-      [x0 + STILE, cx - MULL / 2, lowerLow, lowerHigh, rustDark],
-      [cx + MULL / 2, x1 - STILE, lowerLow, lowerHigh, paint],
-    ] as const;
-
-    for (const face of [-1, 1]) {
-      const zz = face * (PANEL_Z + 0.0015);
-
-      panels.forEach(([ax, bx, ay, by, finish], n) => {
-        const w = bx - ax;
-        const h = by - ay;
-        const px = (ax + bx) / 2;
-        const py = (ay + by) / 2;
-
-        // The panel's finish: paint worn off at its edges, bare steel showing.
-        box(w - 0.02, h - 0.02, 0.003, finish, px, py, zz);
-
-        // A stamped rib round the inside of each panel (a raised bead).
-        for (const [dx, dy, ww, hh] of [
-          [0, h / 2 - 0.05, w - 0.12, 0.018],
-          [0, -h / 2 + 0.05, w - 0.12, 0.018],
-          [-w / 2 + 0.05, 0, 0.018, h - 0.12],
-          [w / 2 - 0.05, 0, 0.018, h - 0.12],
-        ] as const) {
-          box(ww, hh, 0.008, plate, px + dx, py + dy, face * (PANEL_Z + 0.005));
+        // Two broad ribs across each leaf.
+        for (const y of [-0.62, 0.62]) {
+          box(lw - 2 * BORDER, 0.09, 0.014, rib, lcx, y, zb);
         }
 
-        // Rust creeping up from the foot of each panel in ragged tongues.
-        for (let k = 0; k < 5; k++) {
-          const tw = (w - 0.1) / 5;
-          const tongue =
-            0.04 + 0.2 * noise(k + n * 7, face) * (n > 1 ? 1.6 : 1);
-
-          box(
-            tw * 0.8,
-            tongue,
-            0.004,
-            noise(k + 3, n) > 0.5 ? rust : rustDark,
-            ax + 0.05 + tw * (k + 0.5),
-            ay + 0.03 + tongue / 2,
-            zz + face * 0.002,
-          );
+        // Rivets in the border, few and flat.
+        for (let y = bot + 0.25; y < top - 0.15; y += 0.42) {
+          box(0.02, 0.02, 0.01, edge, lx0 + BORDER / 2, y, zb + face * 0.01);
+          box(0.02, 0.02, 0.01, edge, lx1 - BORDER / 2, y, zb + face * 0.01);
         }
 
-        // Streaks run down from the rib, under the rivets.
-        for (let k = 0; k < 3; k++) {
-          const len = 0.15 + 0.4 * noise(k + n * 11, face);
-
-          box(
-            0.03 + 0.03 * noise(k + 40, n),
-            len,
-            0.003,
-            stain,
-            ax + 0.1 + (w - 0.2) * noise(k + n * 5, face),
-            by - 0.08 - len / 2,
-            zz + face * 0.0015,
-          );
-        }
-      });
-
-      // Rivets down both stiles and along the rails and the lock rail.
-      const rz = face * (T / 2 + 0.004);
-
-      for (let y = bot + 0.12; y < top - 0.1; y += 0.22) {
-        box(0.026, 0.026, 0.012, bright, x0 + STILE / 2, y, rz);
-        box(0.026, 0.026, 0.012, bright, x1 - STILE / 2, y, rz);
-      }
-
-      for (let x = x0 + STILE + 0.1; x < x1 - STILE - 0.05; x += 0.24) {
-        box(0.026, 0.026, 0.012, bright, x, top - RAIL / 2, rz);
-        box(0.026, 0.026, 0.012, bright, x, bot + FOOT / 2, rz);
-        box(0.026, 0.026, 0.012, bright, x, LOCK_Y, rz);
-      }
-
-      // Rust blooming on the frame itself: the foot rail and the lower stiles.
-      box(W - 0.04, 0.09, 0.004, rust, cx, bot + 0.07, face * (T / 2 + 0.001));
-      box(
-        0.07,
-        0.6,
-        0.004,
-        rustDark,
-        x1 - 0.08,
-        bot + 0.4,
-        face * (T / 2 + 0.001),
-      );
-      box(
-        0.07,
-        0.45,
-        0.004,
-        rust,
-        x0 + 0.08,
-        bot + 0.3,
-        face * (T / 2 + 0.001),
-      );
-    }
-
-    // Diagonal braces across two panels on the Hall face: angle iron welded on.
-    for (const [ax, bx, ay, by] of [
-      [panels[0][0], panels[0][1], panels[0][2], panels[0][3]],
-      [panels[3][0], panels[3][1], panels[3][2], panels[3][3]],
-    ] as const) {
-      const w = bx - ax - 0.12;
-      const h = by - ay - 0.12;
-      const brace = box(
-        Math.hypot(w, h),
-        0.05,
-        0.022,
-        frame,
-        (ax + bx) / 2,
-        (ay + by) / 2,
-        PANEL_Z + 0.014,
-      );
-
-      brace.rotation.z = Math.atan2(h, w) * (ax < cx ? 1 : -1);
-    }
-
-    // A weld bead along the foot of every panel's frame, in short uneven runs.
-    for (const [ax, bx, ay] of panels) {
-      for (let x = ax + 0.04; x < bx - 0.1; x += 0.13) {
+        // Grime low down on each leaf, and a patch of rust in the lower corner
+        // by the outer edge.
         box(
-          0.1,
-          0.014 + 0.008 * noise(x * 9, 1),
+          lw - 2 * BORDER,
+          0.12,
+          0.003,
+          grime,
+          lcx,
+          bot + 0.22,
+          zb + face * 0.009,
+        );
+
+        const outer = leafIndex === 0 ? lx0 + 0.16 : lx1 - 0.16;
+
+        box(
+          0.17,
+          0.09 + 0.05 * noise(leafIndex, face),
+          0.003,
+          rust,
+          outer,
+          bot + 0.13,
+          zb + face * 0.009,
+        );
+      }
+
+      // Paint chipped from the corners of each leaf: small bare-steel flecks.
+      for (let k = 0; k < 5; k++) {
+        // (Worn where hands and boots are: the seam side, and low down.)
+        const fx = leafIndex === 0 ? lx1 : lx0;
+        const fy = k < 4 ? bot : top;
+
+        box(
+          0.05 + 0.04 * noise(k, leafIndex),
           0.012,
-          rustDark,
-          x + 0.05,
-          ay + 0.007,
-          PANEL_Z + 0.008,
+          0.004,
+          edge,
+          fx + (fx === lx0 ? 0.04 : -0.04),
+          fy +
+            (fy === top
+              ? -0.03 - 0.1 * noise(k + 5, 2)
+              : 0.03 + 0.1 * noise(k + 5, 2)),
+          T / 2 + 0.004,
         );
       }
     }
 
-    // Scratches where hands and knees have been, and a few chips of bare steel.
-    for (let k = 0; k < 8; k++) {
+    // The seam: a dark groove between the leaves, and a flat cover bar over it
+    // on the Hall face (the leaves close against it).
+    box(SEAM, H - 0.04, T, grime, cx, 0, 0);
+    box(0.08, H - 0.12, 0.014, border, cx + 0.035, 0, T / 2 + 0.002);
+
+    // A few scratches where hands and knees have been.
+    for (let k = 0; k < 6; k++) {
       const r = noise(k, 1);
       const q = noise(k + 50, 1);
       const scratch = box(
-        0.15 + 0.25 * r,
-        0.006,
+        0.12 + 0.2 * r,
+        0.005,
         0.003,
         worn,
         0.3 + (W - 0.6) * q,
-        -1.0 + 1.9 * r,
-        T / 2 + 0.006,
+        -0.9 + 1.6 * r,
+        T / 2 + 0.014,
       );
 
-      scratch.rotation.z = (q - 0.5) * 0.9;
+      scratch.rotation.z = (q - 0.5) * 0.8;
     }
 
     // Three heavy strap hinges on the Hall face: a long strap bolted to the
@@ -783,6 +706,42 @@ export class ArmoryMechanismView {
       leverY + 0.3,
       T / 2 + 0.014,
     );
+
+    // A solid threshold at floor level across the opening, and a heavy steel
+    // frame standing proud of the wall on the Hall face (the wall's own lining
+    // and trim stay as they are).
+    const sill = new THREE.Mesh(
+      track(new THREE.BoxGeometry(2.2, 0.05, 0.5)),
+      track(doorSteel(0x2a2e2a)),
+    );
+
+    sill.position.set(-26.0, ARMORY.FLOOR + 0.025, ARMORY.DOOR_Z);
+    this.group.add(sill);
+
+    const post = track(doorSteel(0x282c29));
+    const FRAME_Z = ARMORY.DOOR_Z + 0.2;
+
+    for (const x of [-27.07, -24.93]) {
+      const jamb = new THREE.Mesh(
+        track(new THREE.BoxGeometry(0.14, ARMORY.DOOR_HEIGHT + 0.2, 0.06)),
+        post,
+      );
+
+      jamb.position.set(
+        x,
+        ARMORY.FLOOR + (ARMORY.DOOR_HEIGHT + 0.2) / 2,
+        FRAME_Z,
+      );
+      this.group.add(jamb);
+    }
+
+    const head = new THREE.Mesh(
+      track(new THREE.BoxGeometry(2.28, 0.14, 0.06)),
+      post,
+    );
+
+    head.position.set(-26.0, ARMORY.FLOOR + ARMORY.DOOR_HEIGHT + 0.17, FRAME_Z);
+    this.group.add(head);
 
     this.leaf.position.set(
       ARMORY.DOOR_HINGE_X,

@@ -188,7 +188,8 @@ export class WeaponWheelView {
 
       // A mission item's slot is an empty ring until the item is picked up:
       // the item's own icon and name appear then (see `render`).
-      if (slot.definition.missionItem) {
+      // (A counted item shows the same ring when none is left.)
+      if (slot.definition.missionItem || slot.definition.counted) {
         const ring = svg("g", { class: "ww-icon" }, group);
 
         slot.placeholder = ring;
@@ -336,6 +337,7 @@ export class WeaponWheelView {
         slot.lastQuantity = text;
         slot.quantity.textContent = text;
         slot.group!.dataset.empty = String(have <= 0);
+        this.lastCenter = "";
       }
     }
 
@@ -356,16 +358,35 @@ export class WeaponWheelView {
       current.counted && !current.missionItem
         ? (this.utilities.quantityOf(current.type) ?? 0)
         : null;
+    const spent = have !== null && have <= 0;
     const center = `${current.type}:${have}`;
 
     if (center !== this.lastCenter) {
       this.lastCenter = center;
-      this.centerName.textContent = current.name.toUpperCase();
+      // A slot with none left reads as empty, not as "×0".
+      this.centerName.textContent = spent
+        ? "EMPTY"
+        : current.name.toUpperCase();
       // With a quantity underneath the pair is centred; alone, the name is.
-      this.centerName.setAttribute("y", have === null ? "8" : "-6");
-      this.centerQuantity.textContent = have === null ? "" : `×${have}`;
+      this.centerName.setAttribute("y", have === null || spent ? "8" : "-6");
+      this.centerQuantity.textContent =
+        have === null || spent ? "" : `×${have}`;
       this.fitCenterName();
     }
+  }
+
+  /**
+   * Opens and closes the wheel once, with the page's style and layout worked
+   * out each time, so the first real scroll does not pay for it.
+   */
+  public warm(): void {
+    this.root.dataset.open = "true";
+    this.root.getBoundingClientRect();
+    this.root.dataset.open = "false";
+    this.root.getBoundingClientRect();
+    this.lastOpen = false;
+    this.lastHighlight = -1;
+    this.lastCenter = "";
   }
 
   public dispose(): void {

@@ -112,6 +112,16 @@ export class BarrelFire {
     this.group.add(this.light);
   }
 
+  /**
+   * Gives the fire's light its room (or outdoors) for the room-aware lighting:
+   * a shadow map alone leaks a thin bright line along the edges of a wall it
+   * lights from outside (joints with the ceiling, the floor and the corners),
+   * so the fire is also kept off every pixel that is not in its own region.
+   */
+  public setRegion(decay: number): void {
+    this.light.decay = decay;
+  }
+
   /** Moves the flames on to `time` (seconds). */
   public update(time: number): void {
     let flare = 0;

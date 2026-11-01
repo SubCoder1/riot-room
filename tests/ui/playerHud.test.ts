@@ -66,7 +66,7 @@ describe("PlayerHealthBar: number and seven segments; red at 25 or below", () =>
       [100, 7, false],
       [75, 6, false],
       [50, 4, false],
-      [26, 2, false],
+      [26, 3, false],
       [25, 2, true],
       [10, 1, true],
       [0, 0, true],
@@ -84,6 +84,45 @@ describe("PlayerHealthBar: number and seven segments; red at 25 or below", () =>
 
     expect(CRITICAL_AT).toBe(25);
     expect(SEGMENTS).toBe(7);
+  });
+
+  it("drains smoothly: nothing is lost above 90, and a segment is part-filled, never a whole block at a time", () => {
+    const widths = (): number[] =>
+      [...document.querySelectorAll<HTMLElement>(".player-health__fill")].map(
+        (f) => parseFloat(f.style.width),
+      );
+
+    bar.update({ current: 92, max: 100 });
+    expect(widths()).toEqual([100, 100, 100, 100, 100, 100, 100]);
+
+    bar.update({ current: 80, max: 100 });
+
+    const eighty = widths();
+
+    expect(eighty.slice(0, 6)).toEqual([100, 100, 100, 100, 100, 100]);
+    expect(eighty[6]).toBeGreaterThan(0);
+    expect(eighty[6]).toBeLessThan(100);
+
+    bar.update({ current: 79, max: 100 });
+    expect(widths()[6]).toBeLessThan(eighty[6]);
+  });
+
+  it("the colour glides with the health: gray-green, then yellow, then red", () => {
+    const root = document.querySelector<HTMLElement>(".player-health")!;
+    const bar$ = (hp: number): string => {
+      bar.update({ current: hp, max: 100 });
+
+      return root.style.getPropertyValue("--hp-bar");
+    };
+
+    expect(bar$(100)).toBe("rgb(120,148,131)");
+    expect(bar$(50)).toBe("rgb(201,162,39)");
+    expect(bar$(25)).toBe("rgb(168,64,63)");
+    // In between it is neither end.
+    expect(bar$(60)).not.toBe(bar$(50));
+    expect(bar$(60)).not.toBe(bar$(70));
+    expect(bar$(37)).not.toBe(bar$(25));
+    expect(bar$(37)).not.toBe(bar$(50));
   });
 
   it("is yellow below 50 and red at 25 or less, white otherwise", () => {
@@ -225,8 +264,8 @@ describe("EquippedHud: only the item in hand", () => {
 
     utilities.remove("GRENADE", 2);
     hud.update();
-    expect(root().querySelector(".equipped__count")!.textContent).toBe("0 / 2");
-    expect(root().classList.contains("is-spent")).toBe(true);
+    // Used up: nothing is in hand any more (the fists).
+    expect(root().dataset.type).toBe("FISTS");
 
     utilities.select("MOLOTOV");
     hud.update();

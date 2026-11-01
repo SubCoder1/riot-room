@@ -1,37 +1,32 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  ObjectiveLog,
+  OBJECTIVE_ID,
   OBJECTIVES,
-  type ObjectiveDefinition,
+  ObjectiveLog,
 } from "../../src/mission/Objectives";
 import { ObjectivesView } from "../../src/ui/ObjectivesView";
 
 const rows = (): HTMLElement[] => [
   ...document.querySelectorAll<HTMLElement>(".objective"),
 ];
-
-function reduceMotion(on: boolean): void {
-  window.matchMedia = ((query: string) => ({
-    matches: on && query.includes("prefers-reduced-motion"),
-    media: query,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-  })) as unknown as typeof window.matchMedia;
-}
+const states = (): string[] =>
+  rows().map((r) =>
+    r.classList.contains("is-complete")
+      ? "done"
+      : r.classList.contains("is-current")
+        ? "current"
+        : r.classList.contains("is-upcoming")
+          ? "upcoming"
+          : "?",
+  );
 
 describe("ObjectivesView", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    reduceMotion(false);
     document.body.innerHTML = "";
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("starts with the heading and one current objective, and nothing else", () => {
+  it("shows the heading and all four objectives together, the first current", () => {
     const view = new ObjectivesView(
       document.body,
       new ObjectiveLog(OBJECTIVES),
@@ -40,126 +35,77 @@ describe("ObjectivesView", () => {
     expect(document.querySelector(".objectives__title")?.textContent).toBe(
       "OBJECTIVES",
     );
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0].classList.contains("is-current")).toBe(true);
-    expect(rows()[0].textContent).toContain("Collect dynamites from Armory");
-    expect(document.querySelector(".is-upcoming")).toBeNull();
+    expect(rows().map((r) => r.textContent)).toEqual([
+      "Collect dynamites from Armory",
+      "Clear the blocked passage",
+      "Get clear of the blast",
+      "Enter the Chemical Vault",
+    ]);
+    expect(states()).toEqual(["current", "upcoming", "upcoming", "upcoming"]);
 
     view.dispose();
   });
 
-  it("stays as it is until the objective is really completed", () => {
+  it("follows the mission: a tick on each done row, the next one current", () => {
     const log = new ObjectiveLog(OBJECTIVES);
 
     new ObjectivesView(document.body, log);
+    log.pickupTaken("DYNAMITE");
+    expect(states()).toEqual(["done", "current", "upcoming", "upcoming"]);
+    expect(rows()[0].querySelector("svg")).not.toBeNull();
+
+    log.complete(OBJECTIVE_ID.CLEAR);
+    log.complete(OBJECTIVE_ID.GET_CLEAR);
+    expect(states()).toEqual(["done", "done", "done", "current"]);
+
+    log.complete(OBJECTIVE_ID.ENTER);
+    expect(rows()).toHaveLength(4);
+    expect(states()).toEqual(["done", "done", "done", "done"]);
+  });
+
+  it("only a step the game completes moves it on", () => {
+    const log = new ObjectiveLog(OBJECTIVES);
+
+    new ObjectivesView(document.body, log);
+    log.complete(OBJECTIVE_ID.ENTER);
+    log.complete(OBJECTIVE_ID.CLEAR);
     log.pickupTaken("GRENADE");
-    vi.advanceTimersByTime(5000);
 
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0].classList.contains("is-current")).toBe(true);
+    expect(states()).toEqual(["current", "upcoming", "upcoming", "upcoming"]);
   });
 
-  it("turns done, rests, leaves, and leaves only the heading", () => {
-    const log = new ObjectiveLog(OBJECTIVES);
-
-    new ObjectivesView(document.body, log);
-    log.pickupTaken("DYNAMITE");
-
-    const row = rows()[0];
-
-    expect(row.classList.contains("is-complete")).toBe(true);
-    expect(row.classList.contains("is-current")).toBe(false);
-    expect(row.querySelector("svg")).not.toBeNull();
-    expect(row.classList.contains("is-leaving")).toBe(false);
-
-    vi.advanceTimersByTime(700);
-    expect(rows()).toHaveLength(1);
-    expect(row.classList.contains("is-leaving")).toBe(true);
-
-    vi.advanceTimersByTime(400);
-    expect(rows()).toHaveLength(0);
-    expect(document.querySelector(".objectives__title")).not.toBeNull();
-    // Nothing is added in its place.
-    expect(document.querySelectorAll("li")).toHaveLength(0);
-  });
-
-  it("does not animate twice if completed again", () => {
+  it("does not change twice if a step is completed again", () => {
     const log = new ObjectiveLog(OBJECTIVES);
 
     new ObjectivesView(document.body, log);
     log.pickupTaken("DYNAMITE");
     log.pickupTaken("DYNAMITE");
-    log.complete("collect-dynamite");
-    vi.advanceTimersByTime(2000);
+    log.complete(OBJECTIVE_ID.COLLECT);
 
-    expect(rows()).toHaveLength(0);
+    expect(rows()).toHaveLength(4);
+    expect(states()).toEqual(["done", "current", "upcoming", "upcoming"]);
   });
 
-  it("with reduced motion shows the done look, then removes it without moving", () => {
-    reduceMotion(true);
-
+  it("starts the list over after a reset (a new round)", () => {
     const log = new ObjectiveLog(OBJECTIVES);
 
     new ObjectivesView(document.body, log);
     log.pickupTaken("DYNAMITE");
-
-    const row = rows()[0];
-
-    vi.advanceTimersByTime(500);
-    expect(row.classList.contains("is-complete")).toBe(true);
-    expect(row.classList.contains("is-leaving")).toBe(false);
-
-    vi.advanceTimersByTime(600);
-    expect(rows()).toHaveLength(0);
-    expect(row.classList.contains("is-leaving")).toBe(false);
-  });
-
-  it("brings the next objective forward once a done one has left", () => {
-    const two: readonly ObjectiveDefinition[] = [
-      { id: "a", label: "First", completesOnPickup: "ONE" },
-      { id: "b", label: "Second" },
-    ];
-    const log = new ObjectiveLog(two);
-
-    new ObjectivesView(document.body, log);
-    expect(rows().map((r) => r.className)).toEqual([
-      "objective is-current",
-      "objective is-upcoming",
-    ]);
-
-    log.pickupTaken("ONE");
-    vi.advanceTimersByTime(1100);
-
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0].dataset.id).toBe("b");
-    expect(rows()[0].classList.contains("is-current")).toBe(true);
-  });
-
-  it("shows the objective again after a reset (a new round)", () => {
-    const log = new ObjectiveLog(OBJECTIVES);
-
-    new ObjectivesView(document.body, log);
-    log.pickupTaken("DYNAMITE");
-    vi.advanceTimersByTime(1100);
-    expect(rows()).toHaveLength(0);
-
+    log.complete(OBJECTIVE_ID.CLEAR);
     log.reset();
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0].classList.contains("is-current")).toBe(true);
+
+    expect(rows()).toHaveLength(4);
+    expect(states()).toEqual(["current", "upcoming", "upcoming", "upcoming"]);
   });
 
-  it("cleans up: no timers or listeners are left after dispose", () => {
+  it("cleans up: nothing is left in the page after dispose, and a later change reaches nobody", () => {
     const log = new ObjectiveLog(OBJECTIVES);
     const view = new ObjectivesView(document.body, log);
 
-    log.pickupTaken("DYNAMITE");
     view.dispose();
+    log.pickupTaken("DYNAMITE");
 
     expect(document.querySelector(".objectives")).toBeNull();
-    expect(vi.getTimerCount()).toBe(0);
-
-    // A later change reaches nobody.
-    log.reset();
     expect(document.querySelector(".objective")).toBeNull();
   });
 });

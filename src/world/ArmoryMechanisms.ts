@@ -27,8 +27,8 @@ export const ARMORY = {
    */
   OPEN_SECONDS: 5.5,
   /** The hands' stroke on the chain: one pull's length is this many seconds of the old pace. */
-  HAUL_PULL: 0.7,
-  HAUL_PAUSE: 0.25,
+  HAUL_PULL: 0.55,
+  HAUL_PAUSE: 0.18,
   /** Picking the chain up again part-way eases the speed in over this long (s). */
   HAUL_EASE_IN: 0.3,
   /** From taking the chain to the shutter starting to move (the slack). */
@@ -43,7 +43,7 @@ export const ARMORY = {
   /** A catch slows the fall to this fraction of its speed. */
   FALL_CATCH_FACTOR: 0.4,
   /** How far the chain moves along its loop for each metre of lift. */
-  CHAIN_METRES_PER_LIFT: 1.6,
+  CHAIN_METRES_PER_LIFT: 2.1,
 
   // -------------------------------------------------------------- crushing
   /** Bodies this close to the curtain's line (x, z) can be caught beneath it. */
@@ -59,7 +59,7 @@ export const ARMORY = {
   /** The wheel's radius (m). */
   CHAIN_WHEEL_RADIUS: 0.17,
   /** The leaf has swung clear of the passage from this angle on (rad). */
-  DOOR_PASSABLE_ANGLE: 0.9,
+  DOOR_PASSABLE_ANGLE: 0.75,
   /** And stands against the jamb from this one. */
   DOOR_STANDING_ANGLE: 1.4,
   /** The camera yaw that faces the wall at the chain, from the walkway. */

@@ -28,7 +28,8 @@ export type DamageSourceId =
   | "grenade-blast"
   | "molotov-fire"
   | "shutter-crush"
-  | "electric-shock";
+  | "electric-shock"
+  | "breach-blast";
 
 export type AttackCategory = "light" | "heavy" | "aerial";
 

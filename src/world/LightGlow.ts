@@ -32,8 +32,9 @@ const BEAM_FRAGMENT = /* glsl */ `
   varying float vRim;
 
   void main() {
-    float along = pow(1.0 - vFade, 1.6) * smoothstep(0.0, 0.06, vFade);
-    float soft = pow(vRim, 1.5);
+    float along = pow(1.0 - vFade, 2.2) * smoothstep(0.0, 0.1, vFade);
+    // Soft to nothing at the cone's edge, so it has no hard outline in the air.
+    float soft = pow(smoothstep(0.0, 0.85, vRim), 2.2);
     gl_FragColor = vec4(uColor, uStrength * along * soft);
   }
 `;
@@ -86,7 +87,10 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   const from = new THREE.Vector3(light.x, light.y, light.z);
   const to = new THREE.Vector3(light.target.x, light.target.y, light.target.z);
   const colour = new THREE.Color(light.color);
-  const length = Math.min(light.distance * 0.7, MAX_BEAM);
+  // (No longer than a little past what it lights: a beam running on into the
+  // air beyond its wall read as a hard-edged ray.)
+  const reach = from.distanceTo(to);
+  const length = Math.min(light.distance * 0.7, MAX_BEAM, reach * 1.5 + 0.5);
   // (A hanging bulb's visible rays are narrower than its light, so the cone's
   // edge does not show as a pale triangle on the walls.)
   const angle = (light.angle ?? 0.8) * (light.id.startsWith("bulb-") ? 0.5 : 1);

@@ -73,7 +73,7 @@ function tubeLamp(
     y: FLOOR + CEILING_TUBE_Y - 0.12,
     z,
     color: TUBE_COLOR,
-    intensity: 210,
+    intensity: 140,
     distance: 13,
     target,
     angle,

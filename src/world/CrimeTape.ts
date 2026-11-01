@@ -115,14 +115,30 @@ function face(
   points: THREE.Vector3[],
   length: number,
   flip: boolean,
+  textStart = 0,
+  flat = false,
 ): THREE.BufferGeometry {
   const positions: number[] = [];
   const uvs: number[] = [];
   const index: number[] = [];
   const up = new THREE.Vector3(0, 1, 0);
 
+  // A strip on its side (hanging, or on the floor) is as wide level, across its run.
+  if (flat) {
+    up.crossVectors(
+      points[SEGMENTS].clone().sub(points[0]).normalize(),
+      new THREE.Vector3(0, 1, 0),
+    );
+
+    if (up.lengthSq() < 1e-6) {
+      up.set(1, 0, 0);
+    }
+
+    up.normalize();
+  }
+
   points.forEach((point, i) => {
-    const u = ((i / SEGMENTS) * length) / TILE;
+    const u = textStart + ((i / SEGMENTS) * length) / TILE;
 
     for (const v of [0, 1]) {
       positions.push(
@@ -130,7 +146,7 @@ function face(
         point.y + up.y * (v - 0.5) * WIDTH,
         point.z + up.z * (v - 0.5) * WIDTH,
       );
-      uvs.push(flip ? length / TILE - u : u, v);
+      uvs.push(flip ? textStart * 2 + length / TILE - u : u, v);
     }
   });
 
@@ -194,7 +210,7 @@ export function createCrimeTape(
     const ordered = along.dot(right) >= 0 ? points : [...points].reverse();
 
     for (const flip of [false, true]) {
-      const geometry = face(ordered, length, flip);
+      const geometry = face(ordered, length, flip, run.textStart, run.flat);
       const normal = new THREE.Vector3();
       const a = new THREE.Vector3();
       const b = new THREE.Vector3();
@@ -208,7 +224,12 @@ export function createCrimeTape(
 
       // The measured normal is that of the unflipped winding: it must look at
       // the viewer (and the flipped face, its reverse, away from them).
-      const facesViewer = normal.dot(toward) > 0;
+      const facesViewer =
+        normal.dot(
+          run.flat
+            ? new THREE.Vector3(viewer[0], viewer[1], viewer[2]).sub(mid)
+            : toward,
+        ) > 0;
 
       if (!facesViewer) {
         // Wrong way round for this side: turn both windings.

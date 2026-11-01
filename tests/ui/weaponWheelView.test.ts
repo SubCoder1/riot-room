@@ -262,11 +262,7 @@ describe("WeaponWheelView", () => {
     expect(text(".ww-center-name")).toBe("GRENADE");
     expect(text(".ww-center-qty")).toBe("×1");
 
-    scroll(1);
-    expect(selected()).toEqual(["MOLOTOV"]);
-    expect(text(".ww-center-name")).toBe("MOLOTOV");
-    expect(text(".ww-center-qty")).toBe("×0");
-
+    // The Molotov (none left) cannot be selected: the wheel goes past it.
     scroll(1);
     expect(selected()).toEqual(["SMOKE"]);
     expect(text(".ww-center-name")).toBe("SMOKE");

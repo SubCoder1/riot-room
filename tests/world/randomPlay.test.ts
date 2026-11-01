@@ -131,6 +131,7 @@ it(
 
           if (
             !player.isVaulting &&
+            !inKnownSnag(player.position.x, player.position.z) &&
             world.isBlocked(
               player.position.x,
               player.position.z,

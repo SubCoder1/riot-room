@@ -1109,9 +1109,7 @@ export class ArenaCollision {
   ): number {
     const length = Math.hypot(bx - ax, by - ay, bz - az);
     const samples = Math.max(1, Math.ceil(length / 0.1));
-
-    for (let i = 0; i <= samples; i++) {
-      const t = i / samples;
+    const blockedAt = (t: number): boolean => {
       const x = ax + (bx - ax) * t;
       const y = ay + (by - ay) * t;
       const z = az + (bz - az) * t;
@@ -1125,7 +1123,7 @@ export class ArenaCollision {
           y >= (prop.bottom ?? 0) &&
           y <= prop.height
         ) {
-          return i === 0 ? 0 : (i - 1) / samples;
+          return true;
         }
       }
 
@@ -1147,9 +1145,40 @@ export class ArenaCollision {
                 y <= part.maxY,
             ))
         ) {
-          return i === 0 ? 0 : (i - 1) / samples;
+          return true;
         }
       }
+
+      return false;
+    };
+
+    for (let i = 0; i <= samples; i++) {
+      if (!blockedAt(i / samples)) {
+        continue;
+      }
+
+      if (i === 0) {
+        return 0;
+      }
+
+      // Somewhere between the last clear sample and this one: narrowed down
+      // by halving, so the answer moves smoothly as the line does (sampled
+      // alone it jumped a tenth of a metre at a time, and a hand held against
+      // a wall moved in steps as the view turned).
+      let clear = (i - 1) / samples;
+      let blocked = i / samples;
+
+      for (let n = 0; n < 7; n++) {
+        const mid = (clear + blocked) / 2;
+
+        if (blockedAt(mid)) {
+          blocked = mid;
+        } else {
+          clear = mid;
+        }
+      }
+
+      return clear;
     }
 
     return 1;

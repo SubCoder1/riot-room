@@ -38,7 +38,14 @@ describe("Arena meshes", () => {
     ).size +
     ARENA_LAYOUT.piles
       .filter((p) => p.animated)
-      .reduce((n, p) => n + new Set(p.elements.map((e) => e.shape)).size, 0);
+      .reduce(
+        (n, p) =>
+          n +
+          new Set(
+            p.elements.map((e) => (e.shape === "slab" ? "rock" : e.shape)),
+          ).size,
+        0,
+      );
 
   it("builds the floor, the perimeter walls, every solid, every roof and lintel, and every ladder", () => {
     const steps = ARENA_LAYOUT.stairs.reduce((n, s) => n + s.steps, 0);

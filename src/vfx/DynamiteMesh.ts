@@ -110,6 +110,7 @@ export function createDynamite(): THREE.Group {
 
   fuse.position.set(LENGTH / 2 + 0.002, mid, 0);
   fuse.rotation.z = -(Math.PI / 2 - 0.22);
+  fuse.name = "fuse";
   group.add(fuse);
 
   group.name = "dynamite";

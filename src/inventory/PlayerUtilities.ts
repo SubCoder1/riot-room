@@ -173,7 +173,9 @@ export class PlayerUtilities {
       return false;
     }
 
-    return !definition.missionItem || (this.quantities.get(type) ?? 0) > 0;
+    // Fists are always there; anything counted (a throwable, the dynamite)
+    // only while there is one left to take out.
+    return !definition.counted || (this.quantities.get(type) ?? 0) > 0;
   }
 
   /** How many the player has, or null for a slot without a quantity. */

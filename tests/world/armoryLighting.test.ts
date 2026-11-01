@@ -30,7 +30,7 @@ describe("The Armory's tube lighting", () => {
 
     // And bright, each: no weak ones among them.
     for (const lamp of lamps) {
-      expect(lamp.intensity).toBeGreaterThanOrEqual(180);
+      expect(lamp.intensity).toBeGreaterThanOrEqual(100);
       expect(lamp.intensity).toBeLessThan(450);
     }
   });

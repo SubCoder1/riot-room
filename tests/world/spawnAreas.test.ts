@@ -161,6 +161,13 @@ describe("Spawn areas: entry and staging, not a shop", () => {
 });
 
 describe("The sealed door", () => {
+  it("leaves no slot beside the door, in front of the stairs, for a body to stand in", () => {
+    for (let z = -17.7; z <= -15.1; z += 0.2) {
+      expect(world.isBlocked(-31.5, z, 0, 0.3), `z ${z}`).toBe(true);
+      expect(world.isBlocked(-31.6, z, 0, 0.1), `z ${z}`).toBe(true);
+    }
+  });
+
   const door = ARENA_LAYOUT.walls.find((w) => w.id === "fittings-gate-closed")!;
 
   it("is solid over its whole width and height, flush to the wall", () => {

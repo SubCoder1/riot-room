@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 import { CharacterModel } from "./CharacterModel";
 import { CharacterAnimator } from "./CharacterAnimator";
-import { limitArmReach, type ClearFraction } from "./ArmReach";
+import { limitArmReach, type ArmPose, type ClearFraction } from "./ArmReach";
 import { CHARACTER_ASSET_PATH } from "./CharacterConfig";
 import { ChainPullRig, type ChainPullShape } from "./ChainPullPose";
 import { ClimbRig } from "./ClimbPose";
@@ -309,6 +309,7 @@ export class Character {
     this.applyPunchReach();
 
     this.applyThrowPose();
+    this.applyIgnitionPose();
 
     this.applyClimbPose(dt);
     this.applyChainPull(dt);
@@ -322,7 +323,7 @@ export class Character {
 
     this.applyVaultPose(dt);
 
-    this.limitArmsToWorld();
+    this.limitArmsToWorld(dt);
 
     /**
      * Select animation.
@@ -1998,7 +1999,13 @@ export class Character {
    * After every other arm adjustment: if an arm (or a punch) would end up
    * inside cover or a wall, shorten it so the fist stops at the surface.
    */
-  private limitArmsToWorld(): void {
+  /** Per arm: how much of the wall limit is applied now (eased, so it never pops), and the pose it was. */
+  private readonly armLimit = {
+    Left: { weight: 0, pose: null as ArmPose | null },
+    Right: { weight: 0, pose: null as ArmPose | null },
+  };
+
+  private limitArmsToWorld(dt: number): void {
     if (!this.armProbe) {
       return;
     }
@@ -2019,11 +2026,37 @@ export class Character {
       const shoulder = upper.getWorldPosition(new THREE.Vector3());
       const elbow = fore.getWorldPosition(new THREE.Vector3());
       const wrist = hand.getWorldPosition(new THREE.Vector3());
-      const pose = limitArmReach(shoulder, elbow, wrist, probe);
+      const raw = limitArmReach(
+        shoulder,
+        elbow,
+        wrist,
+        probe,
+        side === "Right" && this.throwArm.isHolding ? 0.08 : 0,
+      );
+      const state = this.armLimit[side as "Left" | "Right"];
 
-      if (!pose) {
+      // Eased in and out: stepping up to a wall draws the hand back smoothly,
+      // and stepping away lets it come forward again, with no jump.
+      if (raw) {
+        state.pose = raw;
+      }
+
+      state.weight +=
+        ((raw ? 1 : 0) - state.weight) *
+        (1 - Math.exp(-14 * Math.min(dt, 0.05)));
+
+      const target = state.pose;
+
+      if (!target || state.weight < 0.01) {
+        state.weight = target ? state.weight : 0;
+
         continue;
       }
+
+      const pose: ArmPose = {
+        elbow: elbow.clone().lerp(target.elbow, state.weight),
+        wrist: wrist.clone().lerp(target.wrist, state.weight),
+      };
 
       // Swing the upper arm to the new elbow, then the forearm to the new wrist.
       this.rotateBoneBetween(
@@ -2095,6 +2128,22 @@ export class Character {
       this.throwArm.prepare();
       this.prepareCollarClip();
     }
+  }
+
+  /**
+   * Runs the chain-hauling pose once and lets go again, so the first real pull
+   * does not have to build its rig, compile its code and size its arms then.
+   * (Done while the loading screen is up: the game has not drawn it yet.)
+   */
+  public warmChainPull(): void {
+    if (!this.isLoaded) {
+      return;
+    }
+
+    this.setChainPull({ travel: 0 });
+    this.applyChainPull(1);
+    this.setChainPull(null);
+    this.applyChainPull(1);
   }
 
   /** The cut across the view, as (normal, constant): see `clipBodyBehindEye`. */
@@ -2228,6 +2277,27 @@ export class Character {
     this.throwArm.setHeld(held, lit, lighting, pinPull);
   }
 
+  private ignitionOn = false;
+
+  /**
+   * The dynamite's lighting (see ThrowArm.setIgnition): `progress` 0 to 1 and
+   * the fuse's world position, or null when not lighting.
+   */
+  public setIgnition(progress: number | null, target?: THREE.Vector3): void {
+    this.ignitionOn = progress !== null;
+    this.throwArm.setIgnition(progress, target);
+  }
+
+  /** Where the held dynamite is in the hand now (false when it is not). */
+  public getIgnitionBundle(out: THREE.Vector3): boolean {
+    return this.throwArm.getBundlePoint(out);
+  }
+
+  /** Where the held dynamite's spark is (false when it is not sparking). */
+  public getSparkPoint(out: THREE.Vector3): boolean {
+    return this.throwArm.getSparkPoint(out);
+  }
+
   /** Where the held lit Molotov's flame is (for its light). False if none is lit. */
   public getHeldFlame(out: THREE.Vector3): boolean {
     return this.throwArm.getHeldFlame(out);
@@ -2330,7 +2400,7 @@ export class Character {
     // as on a ladder, and come back as it turns back.
     if (this.upperBodyFollowsLook) {
       const wanted = THREE.MathUtils.clamp(
-        1 - (Math.abs(this.bodyYawOffset) - 0.3) / 0.35,
+        1 - (Math.abs(this.bodyYawOffset) - 0.25) / 0.2,
         0,
         1,
       );
@@ -2546,6 +2616,30 @@ export class Character {
         this.scaleArms(Math.max(wanted, 0.001));
       }
     }
+  }
+
+  private applyIgnitionPose(): void {
+    // (Also while the hands ease back after a lighting that was stopped.)
+    if (!this.ignitionOn && !this.throwArmInstance?.isIgnitionActive) {
+      return;
+    }
+
+    this.group.getWorldQuaternion(this.pitchQuat);
+    this.throwForward
+      .set(0, 0, 1)
+      .applyQuaternion(this.pitchQuat)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.bodyYawOffset);
+    this.throwForward.y = 0;
+    this.throwForward.normalize();
+
+    const pitch = THREE.MathUtils.clamp(this.aimPitch, -1.2, 1.2);
+
+    this.throwAim
+      .copy(this.throwForward)
+      .multiplyScalar(Math.cos(pitch))
+      .add(new THREE.Vector3(0, Math.sin(pitch), 0));
+    this.throwArm.firstPerson = this.upperBodyFollowsLook;
+    this.throwArm.applyIgnition(this.throwForward, this.throwAim);
   }
 
   private applyThrowPose(): void {
