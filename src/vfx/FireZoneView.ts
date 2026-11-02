@@ -351,21 +351,18 @@ export class FireZoneView {
         fx = lobe.x + Math.cos(a) * d - zone.position.x;
         fz = lobe.z + Math.sin(a) * d - zone.position.z;
       }
-      const ground = this.surfaceY
-        ? Math.min(
-            Math.max(
-              this.surfaceY(
-                zone.position.x + fx,
-                zone.position.z + fz,
-                zone.position.y + 0.5,
-              ) - zone.position.y,
-              -2,
-            ),
-            0.6,
-          )
+      const rawGround = this.surfaceY
+        ? this.surfaceY(
+            zone.position.x + fx,
+            zone.position.z + fz,
+            zone.position.y + 0.5,
+          ) - zone.position.y
         : 0;
-
-      const hidden = this.isHidden(zone, fx, fz);
+      const ground = Math.min(Math.max(rawGround, -2), 0.6);
+      // Fire does not burn in mid-air: where the floor falls away (a broken
+      // floor's edge over a drop) or climbs far above the fire, no tongue.
+      const hidden =
+        rawGround < -0.7 || rawGround > 1.2 || this.isHidden(zone, fx, fz);
 
       this.position.set(fx, ground, fz);
       this.euler.set(

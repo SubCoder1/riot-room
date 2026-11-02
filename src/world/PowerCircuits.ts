@@ -66,7 +66,8 @@ const INTERIOR_LAMPS: ReadonlySet<string> = new Set([
  * whatever the generators do.
  */
 const INDEPENDENT_LAMPS: ReadonlySet<string> = new Set([
-  "indicator-server-racks",
+  "indicator-ruins-pit",
+  "indicator-ruins-warm",
 ]);
 
 /** The circuit a lamp is on (null: independent, or not a known lamp). */

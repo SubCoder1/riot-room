@@ -4,6 +4,7 @@ import type {
   ElectricPuddleDefinition,
   PowerCutoffDefinition,
 } from "../world/ArenaLayout";
+import { onPuddle, outlineFactor } from "../world/PuddleOutline";
 
 /** A cheap, repeatable 0..1 number from two numbers. */
 function hash(a: number, b: number): number {
@@ -17,6 +18,9 @@ const ARCS = 34;
 const PIECES = 9;
 /** Arcs are held inside this share of the puddle's outline (never on dry floor). */
 const INSIDE = 0.78;
+/** Rings of rain on each open-air puddle, and how far a ring spreads (m). */
+const RIPPLES_PER_M2 = 1.7;
+const RIPPLE_REACH = 0.24;
 /** Seconds the effect takes to die away once the power is cut. */
 const FADE_OUT = 0.6;
 
@@ -58,6 +62,16 @@ interface Arc {
   next: number;
 }
 
+interface Ripple {
+  ring: THREE.Mesh;
+  puddle: ElectricPuddleDefinition;
+  index: number;
+  /** Seconds a ring takes to spread and fade, and where in that it starts. */
+  period: number;
+  phase: number;
+  cycle: number;
+}
+
 /**
  * The electrified puddle and the cutoff lever, drawn.
  *
@@ -74,6 +88,9 @@ export class ElectricPuddleView {
   public readonly group = new THREE.Group();
 
   private readonly arcs: Arc[] = [];
+  private readonly ripples: Ripple[] = [];
+  /** The water's materials, for the slow shimmer. */
+  private readonly waterMaterials: THREE.MeshStandardMaterial[] = [];
   /** The puddle the arc being laid belongs to. */
   private puddle: ElectricPuddleDefinition;
   private readonly waters: THREE.Mesh[] = [];
@@ -138,17 +155,18 @@ export class ElectricPuddleView {
       -17.1,
     );
 
+    // A thin flat ring, scaled up as it spreads.
+    const rippleGeometry = new THREE.RingGeometry(0.88, 1, 24);
+
+    rippleGeometry.rotateX(-Math.PI / 2);
+
     puddles.forEach((puddle, index) => {
       const shape = new THREE.Shape();
       const points = 56;
 
       for (let i = 0; i <= points; i++) {
         const a = (i / points) * Math.PI * 2;
-        const lump =
-          0.82 +
-          0.18 * Math.sin(a * 3 + 1.3 + index) +
-          0.1 * Math.sin(a * 5 + 0.4) +
-          0.06 * hash(i % points, 3 + index);
+        const lump = outlineFactor(a, index);
         const x = Math.cos(a) * puddle.rx * lump;
         const z = Math.sin(a) * puddle.rz * lump;
 
@@ -186,6 +204,45 @@ export class ElectricPuddleView {
         water.receiveShadow = true;
         this.group.add(water);
         this.waters.push(water);
+        this.waterMaterials.push(material as THREE.MeshStandardMaterial);
+      }
+
+      if (puddle.rain) {
+        const drops = Math.min(
+          Math.max(Math.round(puddle.rx * puddle.rz * RIPPLES_PER_M2), 12),
+          40,
+        );
+
+        for (let k = 0; k < drops; k++) {
+          const ring = new THREE.Mesh(
+            rippleGeometry,
+            new THREE.MeshBasicMaterial({
+              color: 0xa9bdd2,
+              transparent: true,
+              opacity: 0,
+              depthWrite: false,
+              polygonOffset: true,
+              polygonOffsetFactor: -4,
+              polygonOffsetUnits: -4,
+            }),
+          );
+
+          // A second, smaller ring inside the first: a drop's ripple is a pair.
+          const inner = new THREE.Mesh(rippleGeometry, ring.material);
+
+          inner.scale.setScalar(0.55);
+          ring.add(inner);
+          ring.visible = false;
+          this.group.add(ring);
+          this.ripples.push({
+            ring,
+            puddle,
+            index,
+            period: 0.7 + 0.6 * hash(k, 21 + index),
+            phase: hash(k, 22 + index) * 10,
+            cycle: -1,
+          });
+        }
       }
 
       for (let n = 0; n < 2; n++) {
@@ -488,8 +545,50 @@ export class ElectricPuddleView {
     return (1 - t) * (t > 0.4 && t < 0.55 ? 0.45 : 1);
   }
 
+  /** Raindrops landing on the open-air water: a ring spreads from each and fades. */
+  private rain(time: number): void {
+    for (const [k, r] of this.ripples.entries()) {
+      const t = time / r.period + r.phase;
+      const cycle = Math.floor(t);
+      const age = t - cycle;
+
+      if (cycle !== r.cycle) {
+        r.cycle = cycle;
+
+        // A new drop: somewhere on the water, pulled in until it is on it.
+        const a = hash(cycle, k + 40) * Math.PI * 2;
+        const d = Math.sqrt(hash(k + 70, cycle));
+        let x = r.puddle.x + Math.cos(a) * r.puddle.rx * d;
+        let z = r.puddle.z + Math.sin(a) * r.puddle.rz * d;
+
+        for (let i = 0; i < 8 && !onPuddle(r.puddle, r.index, x, z); i++) {
+          x = r.puddle.x + (x - r.puddle.x) * 0.8;
+          z = r.puddle.z + (z - r.puddle.z) * 0.8;
+        }
+
+        r.ring.position.set(x, r.puddle.y + 0.018 + r.index * 0.001, z);
+      }
+
+      const fade = (1 - age) * (1 - age);
+      const size = Math.max(age * RIPPLE_REACH, 0.001);
+
+      r.ring.visible = fade > 0.02 && age > 0.02;
+      r.ring.scale.set(size, 1, size);
+      (r.ring.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
+    }
+  }
+
   /** Draws the current state (`time` in seconds). */
   public update(time: number, live: boolean): void {
+    this.rain(time);
+
+    // The water is never still: its sheen swells and dims slowly, out of step
+    // from one puddle to the next.
+    this.waterMaterials.forEach((material, i) => {
+      material.opacity = 0.62 + 0.05 * Math.sin(time * 1.3 + i * 1.7);
+      material.roughness = 0.04 + 0.03 * (0.5 + 0.5 * Math.sin(time * 0.9 + i));
+    });
+
     if (live !== this.lastLive) {
       this.lastLive = live;
       this.setLive(live);
@@ -543,6 +642,11 @@ export class ElectricPuddleView {
       (arc.glow.material as THREE.Material).dispose();
     }
 
+    for (const r of this.ripples) {
+      (r.ring.material as THREE.Material).dispose();
+    }
+
+    this.ripples[0]?.ring.geometry.dispose();
     this.glowMap.dispose();
     this.lampMaterial.dispose();
     this.group.removeFromParent();

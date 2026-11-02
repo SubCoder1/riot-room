@@ -309,7 +309,6 @@ export class Character {
     this.applyPunchReach();
 
     this.applyThrowPose();
-    this.applyIgnitionPose();
 
     this.applyClimbPose(dt);
     this.applyChainPull(dt);
@@ -2277,27 +2276,6 @@ export class Character {
     this.throwArm.setHeld(held, lit, lighting, pinPull);
   }
 
-  private ignitionOn = false;
-
-  /**
-   * The dynamite's lighting (see ThrowArm.setIgnition): `progress` 0 to 1 and
-   * the fuse's world position, or null when not lighting.
-   */
-  public setIgnition(progress: number | null, target?: THREE.Vector3): void {
-    this.ignitionOn = progress !== null;
-    this.throwArm.setIgnition(progress, target);
-  }
-
-  /** Where the held dynamite is in the hand now (false when it is not). */
-  public getIgnitionBundle(out: THREE.Vector3): boolean {
-    return this.throwArm.getBundlePoint(out);
-  }
-
-  /** Where the held dynamite's spark is (false when it is not sparking). */
-  public getSparkPoint(out: THREE.Vector3): boolean {
-    return this.throwArm.getSparkPoint(out);
-  }
-
   /** Where the held lit Molotov's flame is (for its light). False if none is lit. */
   public getHeldFlame(out: THREE.Vector3): boolean {
     return this.throwArm.getHeldFlame(out);
@@ -2616,30 +2594,6 @@ export class Character {
         this.scaleArms(Math.max(wanted, 0.001));
       }
     }
-  }
-
-  private applyIgnitionPose(): void {
-    // (Also while the hands ease back after a lighting that was stopped.)
-    if (!this.ignitionOn && !this.throwArmInstance?.isIgnitionActive) {
-      return;
-    }
-
-    this.group.getWorldQuaternion(this.pitchQuat);
-    this.throwForward
-      .set(0, 0, 1)
-      .applyQuaternion(this.pitchQuat)
-      .applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.bodyYawOffset);
-    this.throwForward.y = 0;
-    this.throwForward.normalize();
-
-    const pitch = THREE.MathUtils.clamp(this.aimPitch, -1.2, 1.2);
-
-    this.throwAim
-      .copy(this.throwForward)
-      .multiplyScalar(Math.cos(pitch))
-      .add(new THREE.Vector3(0, Math.sin(pitch), 0));
-    this.throwArm.firstPerson = this.upperBodyFollowsLook;
-    this.throwArm.applyIgnition(this.throwForward, this.throwAim);
   }
 
   private applyThrowPose(): void {

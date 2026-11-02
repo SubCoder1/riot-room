@@ -9,7 +9,7 @@ import { spawnPlayer } from "./playerHarness";
 const world = new ArenaCollision();
 const room = layout.rooms.find((r) => r.id === "room-server")!;
 
-describe("The Server room, carried north over the old spawn yard", () => {
+describe("The Ruins, carried north over the old spawn yard", () => {
   it("is one room on the upper floor, 14 m deep, and the map has no second north-east room", () => {
     expect(layout.rooms.some((r) => r.id === "room-spawn-ne")).toBe(false);
     expect(room.floorY).toBe(4);
@@ -37,32 +37,26 @@ describe("The Server room, carried north over the old spawn yard", () => {
     expect(layout.posters.map((p) => p.here)).toEqual(["nw"]);
   });
 
-  it("holds the server racks and console, moved in whole and inside its walls", () => {
-    for (const id of [
-      "rack-server-1",
-      "rack-server-2",
-      "rack-server-3",
-      "console-server",
-    ]) {
-      const rack = layout.walls.find((w) => w.id === id)!;
-
-      expect(rack, id).toBeDefined();
-      expect(rack.minX).toBeGreaterThanOrEqual(room.minX + 0.29);
-      expect(rack.maxX).toBeLessThanOrEqual(room.maxX - 0.29);
-      expect(rack.minZ).toBeGreaterThanOrEqual(room.minZ + 0.29);
-      expect(rack.maxZ).toBeLessThanOrEqual(room.maxZ - 0.29);
-      expect(rack.bottom).toBe(4);
-    }
+  it("is called The Ruins and has no server equipment left", () => {
+    expect(room.name).toBe("The Ruins");
+    expect(
+      layout.walls.some((w) => /rack-server|console-server/.test(w.id)),
+    ).toBe(false);
+    expect(
+      layout.piles.some(
+        (p) => /server/.test(p.id) && p.id !== "occupation-server",
+      ),
+    ).toBe(false);
   });
 
-  it("has its doorway onto the loading dock shut by the collapse (the vault entrance)", () => {
+  it("has its doorway onto the loading dock open through the collapse (the vault entrance)", () => {
     const p = spawnPlayer(26.0, 4, -14.3, Math.PI / 2);
 
     p.input.keys.add("KeyW");
     p.step(3);
 
-    // It cannot get out: it stops at the rubble, inside the doorway.
-    expect(p.player.position.x).toBeGreaterThan(22);
+    // It gets out through the opening and onto the dock.
+    expect(p.player.position.x).toBeLessThan(21);
     expect(p.feet()).toBeCloseTo(4, 2);
   });
 
@@ -71,9 +65,19 @@ describe("The Server room, carried north over the old spawn yard", () => {
       layout.platforms.some((p) => p.id.startsWith("room-server-roof")),
     ).toBe(true);
 
-    // The floor under it is solid down to the ground.
-    expect(world.groundHeight(27, -20, 4)).toBe(4);
-    expect(world.groundHeight(27, -11, 4)).toBe(4);
+    // Two levels: the walkway (and the solid wing south of it) on the upper
+    // floor, the fallen north half down on the ground.
+    expect(world.groundHeight(27, -14.3, 4.05)).toBe(4);
+    expect(world.groundHeight(27, -11, 4.05)).toBe(4);
+    expect(world.groundHeight(29, -22.3, 4.05)).toBeLessThan(0.5);
+    // The tilted slab, joined to the walkway and sloping down: its ground is
+    // part way, higher near the walkway than near its foot.
+    const high = world.groundHeight(24.6, -16.6, 4.05);
+    const low = world.groundHeight(24.6, -21.2, 4.05);
+
+    expect(high).toBeGreaterThan(3.4);
+    expect(low).toBeGreaterThan(1);
+    expect(low).toBeLessThan(high - 1.5);
   });
 });
 
@@ -283,42 +287,6 @@ describe("Shots and throws stop at what was added", () => {
     expect(stops([26.3, 5.8, -8], [26.3, 5.8, -6])).toBe(false);
     // A knee brace at the south end.
     expect(stops([26.55, 7.1, -11], [26.55, 7.1, -9])).toBe(true);
-  });
-
-  it("the Server room's overhead beams, duct and trays block", () => {
-    const blocks = layout.shotSolids!.filter((b) =>
-      b.id.startsWith("fittings-server-trays-shot"),
-    );
-
-    expect(blocks.length).toBeGreaterThan(10);
-
-    for (const b of blocks) {
-      // Inside the room, under its ceiling.
-      expect(b.minX).toBeGreaterThanOrEqual(room.minX);
-      expect(b.maxX).toBeLessThanOrEqual(room.maxX);
-      expect(b.minZ).toBeGreaterThanOrEqual(room.minZ);
-      expect(b.maxZ).toBeLessThanOrEqual(room.maxZ);
-      expect(b.height).toBeLessThanOrEqual(10.6);
-    }
-
-    // A shot along the room at the height of the beams is stopped by one.
-    const beam = blocks.find((b) => b.maxX - b.minX > 5)!;
-
-    expect(beam).toBeDefined();
-    expect(
-      stops(
-        [
-          beam.minX - 1,
-          (beam.bottom! + beam.height) / 2,
-          (beam.minZ + beam.maxZ) / 2,
-        ],
-        [
-          beam.maxX + 1,
-          (beam.bottom! + beam.height) / 2,
-          (beam.minZ + beam.maxZ) / 2,
-        ],
-      ),
-    ).toBe(true);
   });
 
   it("the roof wall over the Server room's west edge stops a shot across it", () => {

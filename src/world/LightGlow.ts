@@ -90,7 +90,10 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   // (No longer than a little past what it lights: a beam running on into the
   // air beyond its wall read as a hard-edged ray.)
   const reach = from.distanceTo(to);
-  const length = Math.min(light.distance * 0.7, MAX_BEAM, reach * 1.5 + 0.5);
+  // (The vault entrance's floodlight shines at an opening now: its beam stops
+  // at the wall's face, or it would show as a pale disc hung in the doorway.)
+  const run = light.id.startsWith("halogen-scene") ? reach : reach * 1.5 + 0.5;
+  const length = Math.min(light.distance * 0.7, MAX_BEAM, run);
   // (A hanging bulb's visible rays are narrower than its light, so the cone's
   // edge does not show as a pale triangle on the walls.)
   const angle = (light.angle ?? 0.8) * (light.id.startsWith("bulb-") ? 0.5 : 1);

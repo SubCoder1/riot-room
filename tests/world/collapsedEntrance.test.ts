@@ -127,13 +127,22 @@ describe("The collapse", () => {
   });
 });
 
-describe("The doorway stays shut, and nothing else is shut with it", () => {
+describe("The doorway is open, and the rubble beside it is solid", () => {
   const z0 = entrance.centre - entrance.width / 2;
   const z1 = entrance.centre + entrance.width / 2;
 
-  it("cannot be walked through: not at the heap, not in the doorway, not just inside", () => {
-    for (let z = z0 + 0.1; z <= z1 - 0.1; z += 0.2) {
-      for (const x of [20.9, 21.5, 22.1, 22.6]) {
+  it("can be walked through down its middle, from the dock into the room and back", () => {
+    for (let x = 17; x <= 25; x += 0.2) {
+      expect(
+        world.isBlocked(x, entrance.centre, F, 0.35),
+        `x ${x.toFixed(1)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("is blocked at its edges: the rubble and the wall beside the opening stand", () => {
+    for (const z of [z0 + 0.15, z1 - 0.15]) {
+      for (const x of [21.2, 21.8]) {
         expect(world.isBlocked(x, z, F, 0.35), `${x},${z}`).toBe(true);
       }
     }
@@ -178,7 +187,7 @@ describe("The crime-scene tape", () => {
   const tape = layout.tapes![0];
 
   it("is strung across the approach to the heap, sagging, never in it", () => {
-    expect(tape.runs.length).toBeGreaterThanOrEqual(3);
+    expect(tape.runs.length).toBeGreaterThanOrEqual(2);
 
     for (const run of tape.runs) {
       expect(run.sag).toBeGreaterThan(0);

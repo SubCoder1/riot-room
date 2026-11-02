@@ -40,8 +40,8 @@ describe("The two lighting circuits", () => {
     }
 
     // Emergency and equipment indicators stay on whatever happens.
-    expect(circuitOfLamp("indicator-server-racks")).toBeNull();
-    expect(isIndependentLamp("indicator-server-racks")).toBe(true);
+    expect(circuitOfLamp("indicator-ruins-pit")).toBeNull();
+    expect(isIndependentLamp("indicator-ruins-pit")).toBe(true);
   });
 
   it("the two generators run the two circuits and stand where a player can reach their panels", () => {
@@ -151,7 +151,7 @@ describe("The lamps follow their circuit", () => {
 
   it("switching the roof generator off darkens the outdoor lamps and only those", () => {
     const inside = brightness("bulb-junk-a");
-    const indicator = brightness("indicator-server-racks");
+    const indicator = brightness("indicator-ruins-pit");
 
     arena.setCircuitPower("exterior", false);
     settle();
@@ -162,7 +162,7 @@ describe("The lamps follow their circuit", () => {
 
     expect(brightness("bulb-junk-a")).toBeCloseTo(inside);
     expect(brightness("tube-armory-1")).toBeGreaterThan(0.5);
-    expect(brightness("indicator-server-racks")).toBeCloseTo(indicator);
+    expect(brightness("indicator-ruins-pit")).toBeCloseTo(indicator);
     // Still in the scene: no shader change when a lamp goes out.
     expect(lamp("halogen-roof-east").visible).toBe(true);
   });
@@ -229,7 +229,7 @@ describe("The lamps follow their circuit", () => {
     }
 
     expect(brightness("halogen-roof-east")).toBeGreaterThan(0.5);
-    expect(brightness("indicator-server-racks")).toBeGreaterThan(0.1);
+    expect(brightness("indicator-ruins-pit")).toBeGreaterThan(0.1);
   });
 
   it("a halogen head goes black when its circuit is off (no white lens left)", () => {

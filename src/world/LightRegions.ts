@@ -55,6 +55,15 @@ export interface LightRegions {
   glsl: string;
 }
 
+/**
+ * Rooms whose lit volume reaches below their floor: the Ruins' north half has
+ * no floor and the ground is its lower level (y 0), so its lamps light that too.
+ */
+const LOWER_FLOOR: Record<string, number> = { "room-server": 0 };
+
+const floorOf = (room: RoomDefinition): number =>
+  LOWER_FLOOR[room.id] ?? room.floorY;
+
 /** Where a room's ceiling is: the top of its tallest wall. */
 function ceilingOf(layout: ArenaLayout, room: RoomDefinition): number {
   let top = room.floorY + 3.8;
@@ -71,7 +80,7 @@ function ceilingOf(layout: ArenaLayout, room: RoomDefinition): number {
 /** The inside of a room: what its lamp may light. */
 function inside(layout: ArenaLayout, room: RoomDefinition): Box {
   return {
-    min: [room.minX + WALL, room.floorY - 0.05, room.minZ + WALL],
+    min: [room.minX + WALL, floorOf(room) - 0.05, room.minZ + WALL],
     max: [room.maxX - WALL, ceilingOf(layout, room) + 0.02, room.maxZ - WALL],
   };
 }
@@ -161,7 +170,7 @@ export function buildLightRegions(
         light.x < r.maxX &&
         light.z > r.minZ &&
         light.z < r.maxZ &&
-        light.y > r.floorY &&
+        light.y > floorOf(r) &&
         light.y < ceilingOf(layout, r),
     );
 

@@ -222,12 +222,15 @@ export function furnishDebris(map: MapBuilder): void {
       const pieces = 3 + Math.floor(random() * 4);
 
       for (let i = 0; i < pieces; i++) {
-        scrap(
-          p,
-          random,
-          x + (random() - 0.5) * 1.3,
-          z + (random() - 0.5) * 1.3,
-        );
+        const px = x + (random() - 0.5) * 1.3;
+        const pz = z + (random() - 0.5) * 1.3;
+
+        // Each piece needs the floor under it: the scatter reaches a little
+        // past the spot, and over a broken edge or a drop it would hang in
+        // the air.
+        if (openAt(solids, px, pz, level, 0)) {
+          scrap(p, random, px, pz);
+        }
       }
 
       made++;

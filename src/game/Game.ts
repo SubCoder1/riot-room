@@ -68,6 +68,7 @@ import {
   UPPER_FLOOR_Y,
 } from "../world/ArenaLayout";
 import { ARENA_LAYOUT, VAULT_BREACH } from "../world/UpperFloorMap";
+import { EXTRACTION_POINT } from "../world/VaultCase";
 import {
   inTunnel,
   ventCeilingY,
@@ -108,12 +109,8 @@ import { ElectricPuddleView } from "../vfx/ElectricPuddleView";
 import { HitFeedback } from "../ui/HitFeedback";
 import { EquippedHud } from "../ui/EquippedHud";
 import { ObjectivesView } from "../ui/ObjectivesView";
-import { BREACH_TIMING, Breach } from "../mission/Breach";
-import { CORE_PILE_ID } from "../world/CollapsedEntrance";
-import { ObstructionView } from "../vfx/ObstructionView";
-import { PlantedCharge } from "../vfx/PlantedCharge";
 import { OBJECTIVE_ID, ObjectiveLog, OBJECTIVES } from "../mission/Objectives";
-import { createDynamite } from "../vfx/DynamiteMesh";
+import { createComponentCase } from "../world/VaultCase";
 import { Minimap } from "../ui/Minimap";
 import { PlayerHealthBar } from "../ui/PlayerHealthBar";
 import { PlayerUtilities } from "../inventory/PlayerUtilities";
@@ -139,16 +136,6 @@ const THROWABLE_TYPE: Record<HeldKind, UtilityType> = {
 };
 
 /** A pickup is taken only when the view's middle is this close to it (cosine of about 25 degrees). */
-/** How far through the lighting sequence the bundle is set on the heap (see ThrowArm). */
-const SET_DOWN_AT = 0.8;
-/** The breach blast: certain death within the first radius, slight damage (falling off) out to the second (m). */
-const BLAST_KILL_RADIUS = 3.5;
-const BLAST_HURT_RADIUS = 7.5;
-const BLAST_NEAR_DAMAGE = 30;
-const BLAST_FAR_DAMAGE = 6;
-/** How far (m) from the eye the ruins can be reached to plant on, and how wide the heap is (half, m). */
-const PLACE_REACH = 1.7;
-const OBSTRUCTION_HALF_WIDTH = 1.1;
 const PICKUP_LOOK_DOT = 0.9;
 
 /** While hauling the chain: the most the view may turn from it, and tip up or down (rad). */
@@ -283,23 +270,8 @@ export class Game {
   /** The Generator Room's wooden slab: one state for the round (see CeilingSlab). */
   private readonly ceilingSlab = new CeilingSlabState();
   private readonly slabDebris = new SlabDebris();
-  /** The dynamite breach of the vault entrance (its steps, in order, once each). */
-  private readonly breach = new Breach();
-  private readonly plantedCharge = new PlantedCharge();
-  /** The rubble that blocks the vault passage, and where the blast was (for the way out of it). */
-  private readonly obstructionView = new ObstructionView(
-    VAULT_BREACH.obstruction,
-  );
-  private readonly blastCentre = new THREE.Vector3();
-  private readonly breachFlash = document.createElement("div");
-  /** Seconds of camera shake left after the blast, and the flash's strength. */
-  private breachShake = 0;
-  private breachFlashLevel = 0;
-  /** Where the bundle is set down, and whether it has been (and from where it left the hand). */
-  private placement: { point: THREE.Vector3; normal: THREE.Vector3 } | null =
-    null;
-  private readonly placeFrom = new THREE.Vector3();
-  private placed = false;
+  /** The mission's extraction marker (shown while the last objective is current). */
+  private readonly extractionMarker = new THREE.Group();
   /** Whether each generator runs (and so each lighting circuit): see PowerCircuits. */
   private readonly power = new PowerState();
   private readonly generatorView = new GeneratorView();
@@ -778,12 +750,10 @@ export class Game {
     this.arena.group.add(this.junkBulbs.group);
     this.arena.group.add(this.ventDrips.group);
     this.arena.group.add(this.slabDebris.group);
-    this.arena.group.add(this.plantedCharge.group);
-    this.arena.group.add(this.obstructionView.group);
-    // (The vault entrance as it is before the blast: the wreck of its lamp and the torn tape hidden.)
-    this.arena.setBreached(false);
-    this.breachFlash.className = "breach-flash";
-    document.body.append(this.breachFlash);
+    // The vault entrance is collapsed from the start: its tape is torn and its
+    // floodlight smashed and dark.
+    this.arena.setBreached(true);
+    this.buildExtractionMarker();
     this.generatorView.attach(this.arena.group, ARENA_LAYOUT.generators);
     this.arena.group.add(this.generatorSmoke.group);
     this.renderer.scene.add(
@@ -947,7 +917,7 @@ export class Game {
     this.updateHatches(dt);
     this.updateGrates(dt);
     this.updateThrowStance(dt);
-    this.updateBreach(dt);
+    this.updateMission(dt);
 
     // Holding F guards. Sprinting wins only when it changes the
     // animation to a run: Shift + W / S while standing. Fast strafing keeps the
@@ -964,7 +934,7 @@ export class Game {
     this.updatePunchState(dt);
 
     // Hauling the chain: no walking about, only looking round.
-    this.player.movementLocked = this.chainHeld || this.breach.isIgniting;
+    this.player.movementLocked = this.chainHeld;
     this.player.update(dt, this.input);
 
     this.resolveDummyCollision();
@@ -1241,10 +1211,7 @@ export class Game {
   private updateWeaponWheel(dt: number): void {
     const steps = this.input.consumeWheelSteps();
 
-    // (While the dynamite is being lit the hands are busy: no switching.)
-    if (!this.breach.isIgniting) {
-      this.weaponWheel.scroll(steps);
-    }
+    this.weaponWheel.scroll(steps);
 
     this.weaponWheel.update(dt);
     this.weaponWheelView.render();
@@ -1312,8 +1279,6 @@ export class Game {
         }
       } else if (this.breakCeilingSlabIfOn()) {
         // Broke through the Generator Room's wooden slab from the roof.
-      } else if (this.breachAction()) {
-        // Planted the dynamite at the vault entrance, or began to light it.
       } else if (this.slideCoverIfNear()) {
         // Slid an Armory roof vent's cover open or shut.
       } else if (this.liftVentGrilleIfNear()) {
@@ -1372,23 +1337,21 @@ export class Game {
             ? "PRESS {E} TO ENTER VENT"
             : this.ceilingSlabInReach()
               ? "PRESS {E} TO BREAK THROUGH"
-              : this.breachPrompt()
-                ? this.breachPrompt()
-                : this.slideCoverPrompt()
-                  ? this.slideCoverPrompt()
-                  : this.ventGrilleInReach()
-                    ? "PRESS {E} TO LIFT GRILLE"
-                    : this.pickupPrompt()
-                      ? this.pickupPrompt()
-                      : this.cutoffPrompt()
-                        ? this.cutoffPrompt()
-                        : this.powerPrompt()
-                          ? this.powerPrompt()
-                          : this.noticePrompt()
-                            ? this.noticePrompt()
-                            : this.player.ladderInReach()
-                              ? "PRESS {E} TO CLIMB"
-                              : "";
+              : this.slideCoverPrompt()
+                ? this.slideCoverPrompt()
+                : this.ventGrilleInReach()
+                  ? "PRESS {E} TO LIFT GRILLE"
+                  : this.pickupPrompt()
+                    ? this.pickupPrompt()
+                    : this.cutoffPrompt()
+                      ? this.cutoffPrompt()
+                      : this.powerPrompt()
+                        ? this.powerPrompt()
+                        : this.noticePrompt()
+                          ? this.noticePrompt()
+                          : this.player.ladderInReach()
+                            ? "PRESS {E} TO CLIMB"
+                            : "";
 
     // A key in braces, {E}, is drawn in the key colour.
     if (this.climbPrompt.dataset.text !== text) {
@@ -1914,358 +1877,97 @@ export class Game {
   }
 
   // ============================================================
-  // THE VAULT BREACH: plant, light, run, blast
+  // THE VAULT MISSION: find it, go in, take the component, get out
   // ============================================================
 
-  /** Planting is allowed: the step is current, the dynamite is in hand, here, looked at. */
-  private plantInReach(): boolean {
-    return (
-      this.breach.phase === "idle" &&
-      this.objectives.stateOf(OBJECTIVE_ID.CLEAR) === "current" &&
-      this.utilities.selected === "DYNAMITE" &&
-      (this.utilities.quantityOf("DYNAMITE") ?? 0) > 0 &&
-      this.throwStance.state === "THROW_EQUIPPED" &&
-      this.aimedPlacement() !== null
-    );
-  }
-
-  /**
-   * Settles the planned spot onto the rocks themselves: a ray along the view
-   * finds the first piece of rubble it meets, and the bundle goes on that, a
-   * hair off it, turned to its face, so it lies over the rocks and never sunk
-   * into them. The planned spot (the heap's face) if the ray finds none.
-   */
-  private restOnRocks(
-    plan: { point: THREE.Vector3; normal: THREE.Vector3 } | null,
-  ): { point: THREE.Vector3; normal: THREE.Vector3 } | null {
-    const site = VAULT_BREACH.site;
-
-    if (!plan || !site) {
-      return null;
-    }
-
-    const camera = this.renderer.camera;
-    const ray = new THREE.Raycaster(
-      camera.position.clone(),
-      camera.getWorldDirection(new THREE.Vector3()),
-      0,
-      PLACE_REACH + 0.8,
-    );
-
-    ray.camera = camera;
-
-    // Only the obstruction counts: the charge goes on the blocking rubble,
-    // never on a wall or the permanent ruins.
-    const hit = ray.intersectObject(this.obstructionView.group, true)[0];
-
-    if (!hit?.face) {
-      return null;
-    }
-
-    const normal = hit.face.normal
-      .clone()
-      .transformDirection(hit.object.matrixWorld);
-
-    // Facing the player, however the face was wound.
-    if (normal.dot(ray.ray.direction) > 0) {
-      normal.negate();
-    }
-
-    return {
-      point: hit.point.clone().addScaledVector(normal, 0.03),
-      normal,
-    };
-  }
-
-  /**
-   * Where the crosshair meets the face of the ruins, if that is within arm's
-   * reach: anywhere over the width and height of the heap (not only its
-   * middle), so the charge can go on any rock one can reach. The point and
-   * the surface's facing; null when looking elsewhere or too far.
-   */
-  private aimedPlacement(): {
-    point: THREE.Vector3;
-    normal: THREE.Vector3;
-  } | null {
-    const site = VAULT_BREACH.site;
-
-    if (!site || this.player.isClimbing || this.player.isInVent) {
-      return null;
-    }
-
-    const camera = this.renderer.camera;
-    const eye = camera.position;
-    const direction = camera.getWorldDirection(this.pickupAim);
-    // Toward the wall: the heap's face is the plane x = site.x.
-    const run = -site.normal[0] * direction.x;
-
-    if (run < 0.05) {
-      return null;
-    }
-
-    const t = ((site.x - eye.x) * -site.normal[0]) / run;
-
-    if (t < 0 || t > PLACE_REACH) {
-      return null;
-    }
-
-    const floor = site.y - 1.0;
-    const y = eye.y + direction.y * t;
-    const z = eye.z + direction.z * t;
-
-    if (
-      Math.abs(z - site.z) > OBSTRUCTION_HALF_WIDTH ||
-      y < floor + 0.1 ||
-      y > floor + 2.25 ||
-      Math.abs(this.player.position.y - this.player.eyeHeight - floor) > 0.7
-    ) {
-      return null;
-    }
-
-    return this.restOnRocks({
-      point: new THREE.Vector3(site.x, y, z),
-      normal: new THREE.Vector3(site.normal[0], 0, site.normal[1]),
-    });
-  }
-
-  private breachPrompt(): string {
-    return this.plantInReach() ? "HOLD {E} TO LIGHT AND PLANT DYNAMITE" : "";
-  }
-
-  /**
-   * E at the site: the one sequence (light the bundle, set it on the heap,
-   * step back). It starts once; a press while it runs does nothing else.
-   */
-  private breachAction(): boolean {
-    const site = VAULT_BREACH.site;
-
-    if (!site) {
-      return false;
-    }
-
-    if (this.breach.isIgniting) {
-      return true;
-    }
-
-    if (this.plantInReach()) {
-      if (this.breach.plant() && this.breach.startIgnition()) {
-        // The dynamite stays in the hand until it is set down (see updateBreach).
-        this.placement = this.aimedPlacement();
-        this.placed = false;
-      }
-
-      return true;
-    }
-
-    return false;
-  }
-
-  private updateBreach(dt: number): void {
-    const site = VAULT_BREACH.site;
-
-    // Hold E to light it: let go before the wire is lit and it stops, the
-    // dynamite still in hand.
-    if (
-      this.breach.isIgniting &&
-      !this.input.isPressed("KeyE") &&
-      this.breach.cancel()
-    ) {
-      this.placement = null;
-      this.placed = false;
-      this.character.setIgnition(null);
-    }
-
-    if (site && this.placement && this.breach.isIgniting) {
-      const progress = this.breach.ignitionProgress;
-
-      // Until it is set down, remember where the bundle is in the hand.
-      if (!this.placed) {
-        this.character.getIgnitionBundle(this.placeFrom);
-      }
-
-      this.character.setIgnition(progress, this.placement.point);
-
-      if (progress >= SET_DOWN_AT && !this.placed) {
-        // Set down: the dynamite is spent, and it sits lit on the heap.
-        this.placed = true;
-        this.utilities.remove("DYNAMITE");
-        this.plantedCharge.plant(this.placement.point, this.placement.normal);
-        this.plantedCharge.ignite();
-      }
-
-      if (this.placed) {
-        this.plantedCharge.settle(
-          this.placeFrom,
-          (progress - SET_DOWN_AT) / 0.1,
-        );
-      }
-    } else {
-      this.character.setIgnition(null);
-    }
-
-    for (const event of this.breach.update(dt)) {
-      if (event === "ignited") {
-        // The flame has touched the fuse: it burns, and it is time to go.
-        this.plantedCharge.ignite();
-      } else {
-        this.detonateBreach();
-      }
-    }
-
-    if (site && this.breach.phase === "blown") {
-      // Out of the blast's danger area (the reach of its damage): only then is
-      // the way in the next thing to do.
-      if (
-        this.objectives.stateOf(OBJECTIVE_ID.GET_CLEAR) === "current" &&
-        this.player.position.distanceTo(this.blastCentre) > BLAST_HURT_RADIUS
-      ) {
-        this.objectives.complete(OBJECTIVE_ID.GET_CLEAR);
-      }
-
-      // Through the cleared passage and into the vault (0.6 m past the old
-      // wall face, which is 1.4 m behind the charge).
-      if (
-        this.objectives.stateOf(OBJECTIVE_ID.ENTER) === "current" &&
-        this.player.position.x > site.x + 2.0 &&
-        Math.abs(this.player.position.z - site.z) < 2.2
-      ) {
-        this.objectives.complete(OBJECTIVE_ID.ENTER);
-      }
-    }
-
-    if (this.breach.phase === "fuse" || this.breach.isIgniting) {
-      this.plantedCharge.burn(
-        this.breach.sinceSpark / BREACH_TIMING.FUSE_SECONDS,
-      );
-    }
-
-    this.obstructionView.update(dt);
-    this.plantedCharge.update(performance.now() / 1000);
-    this.breachShake = Math.max(this.breachShake - dt, 0);
-    this.breachFlashLevel = Math.max(this.breachFlashLevel - dt * 2.4, 0);
-    this.breachFlash.style.opacity = this.breachFlashLevel.toFixed(3);
-  }
-
-  /** The charge goes off (once): the blast, and the heap is gone. */
-  private detonateBreach(): void {
-    const site = VAULT_BREACH.site;
-
-    if (!site) {
-      return;
-    }
-
-    this.plantedCharge.hide();
-    this.arena.setBreached(true);
-    this.explosionView.spawn(
-      this.explosionPoint.set(
-        site.x + site.normal[0] * 0.4,
-        site.y - 0.8,
-        site.z + site.normal[1] * 0.4,
+  /** The extraction point: a flat ring and a faint column, drawn only. */
+  private buildExtractionMarker(): void {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(
+        EXTRACTION_POINT.radius - 0.18,
+        EXTRACTION_POINT.radius,
+        48,
       ),
-      // A dusty concrete blast, not a fireball: a grenade's size at most,
-      // with half its puffs and little fire (the pieces breaking apart are
-      // the show), so it stays light for the graphics card close to the player.
-      0.95,
-      0.55,
-      0.2,
+      new THREE.MeshBasicMaterial({
+        color: 0x78be86,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
     );
-    // The obstruction breaks apart: each piece thrown to its own resting place.
-    this.obstructionView.detonate();
-    this.blastLight.position.set(site.x + site.normal[0] * 0.6, site.y, site.z);
-    this.blastLight.decay = dynamicDecayAt(site.x, site.y, site.z);
-    this.blastAge = 0;
-    this.breachShake = 1.6;
-    this.breachFlashLevel = 0.7;
-    this.setCollapseOpen(true);
-    this.blastCentre.set(site.x + site.normal[0] * 0.4, site.y, site.z);
-    this.blastHurts(this.blastCentre);
-    // The way is open: the breach is done (and only now).
-    this.objectives.complete(OBJECTIVE_ID.CLEAR);
+    const column = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        EXTRACTION_POINT.radius,
+        EXTRACTION_POINT.radius,
+        4,
+        32,
+        1,
+        true,
+      ),
+      new THREE.MeshBasicMaterial({
+        color: 0x78be86,
+        transparent: true,
+        opacity: 0.08,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.04;
+    column.position.y = 2;
+    this.extractionMarker.add(ring, column);
+    this.extractionMarker.position.set(
+      EXTRACTION_POINT.x,
+      EXTRACTION_POINT.y,
+      EXTRACTION_POINT.z,
+    );
+    this.extractionMarker.visible = false;
+    this.extractionMarker.name = "extraction-marker";
+    this.arena.group.add(this.extractionMarker);
   }
 
   /**
-   * The blast hurts whoever is near: anyone very close is killed outright, and
-   * the shock is felt, falling off, out to a wider radius.
+   * The mission's steps from where the player is (the log only lets them
+   * complete in order, each once): near the collapsed entrance, through it,
+   * and, carrying the component, at the extraction point.
    */
-  private blastHurts(centre: THREE.Vector3): void {
-    const at = new THREE.Vector3();
+  private updateMission(dt: number): void {
+    void dt;
 
-    for (const target of this.combat.getCombatants()) {
-      if (target.isDead()) {
-        continue;
-      }
+    const site = VAULT_BREACH.site;
 
-      target.getPosition(at);
-      // (From the middle of the body, not the feet.)
-      at.y += 0.9;
-
-      const distance = at.distanceTo(centre);
-
-      if (distance > BLAST_HURT_RADIUS) {
-        continue;
-      }
-
-      const damage =
-        distance <= BLAST_KILL_RADIUS
-          ? 1000
-          : Math.round(
-              BLAST_FAR_DAMAGE +
-                (BLAST_NEAR_DAMAGE - BLAST_FAR_DAMAGE) *
-                  (1 -
-                    (distance - BLAST_KILL_RADIUS) /
-                      (BLAST_HURT_RADIUS - BLAST_KILL_RADIUS)),
-            );
-
-      this.combat.applyHazardDamage({
-        sourceId: "breach-blast",
-        attackerId: target.id,
-        targetId: target.id,
-        hurtbox: "torso",
-        damage,
-        knockback: distance <= BLAST_KILL_RADIUS ? 6 : 2,
-        hitstun: 0.4,
-        direction: at.clone().sub(centre).setY(0),
-      });
-    }
-  }
-
-  /** The obstruction's blocking collision: off once it is blasted clear, back for a new round. */
-  private setCollapseOpen(open: boolean): void {
-    const pile = ARENA_LAYOUT.piles.find((p) => p.id === CORE_PILE_ID);
-
-    for (const id of pile?.solids ?? []) {
-      this.collision.setOpen(id, open);
-    }
-  }
-
-  /** A new round: nothing planted, nothing lit, the entrance shut again. */
-  private resetBreach(): void {
-    this.breach.reset();
-    this.plantedCharge.hide();
-    this.obstructionView.reset();
-    this.arena.setBreached(false);
-    this.placement = null;
-    this.placed = false;
-    this.character.setIgnition(null);
-    this.breachShake = 0;
-    this.breachFlashLevel = 0;
-    this.breachFlash.style.opacity = "0";
-    this.setCollapseOpen(false);
-  }
-
-  /** The blast shakes the view for a moment (small, dying away). */
-  private shakeCamera(): void {
-    if (this.breachShake <= 0) {
+    if (!site || this.player.isInVent) {
       return;
     }
 
-    const k = Math.min(this.breachShake / 1.3, 1);
-    const amount = 0.05 * k * k;
-    const position = this.renderer.camera.position;
+    const p = this.player.position;
+    const feetY = p.y - this.player.eyeHeight;
+    const onFloor = Math.abs(feetY - (site.y - 1.0)) < 1.5;
+    const near = Math.hypot(p.x - site.x, p.z - site.z) < 7;
+    const inside = p.x > site.x + 2.0 && Math.abs(p.z - site.z) < 4.5;
 
-    position.x += (Math.random() - 0.5) * amount;
-    position.y += (Math.random() - 0.5) * amount;
-    position.z += (Math.random() - 0.5) * amount;
+    if (onFloor && (near || inside)) {
+      this.objectives.complete(OBJECTIVE_ID.LOCATE);
+    }
+
+    if (onFloor && inside) {
+      this.objectives.complete(OBJECTIVE_ID.ENTER);
+    }
+
+    const extract = this.objectives.stateOf(OBJECTIVE_ID.EXTRACT) === "current";
+
+    this.extractionMarker.visible = extract;
+
+    if (
+      extract &&
+      Math.abs(feetY - EXTRACTION_POINT.y) < 1.5 &&
+      Math.hypot(p.x - EXTRACTION_POINT.x, p.z - EXTRACTION_POINT.z) <
+        EXTRACTION_POINT.radius
+    ) {
+      this.objectives.complete(OBJECTIVE_ID.EXTRACT);
+    }
   }
 
   /**
@@ -2399,8 +2101,8 @@ export class Game {
       let mesh: THREE.Object3D;
       let lift: number;
 
-      if (pickup.type === "DYNAMITE") {
-        mesh = createDynamite();
+      if (pickup.type === "COMPONENT") {
+        mesh = createComponentCase();
         lift = 0;
       } else if (pickup.type === "SMOKE") {
         mesh = createSmokeCanister(parts);
@@ -2424,11 +2126,11 @@ export class Game {
       }
 
       mesh.position.set(pickup.x, pickup.y + lift, pickup.z);
-      // (The dynamite lies square to the table's edge; the rest are turned by
+      // (The case lies square to the table's edge; the rest are turned by
       // where they are, so no two lie the same way.)
       mesh.rotation.set(
         0,
-        pickup.type === "DYNAMITE" ? 0.12 : pickup.x * 3.1,
+        pickup.type === "COMPONENT" ? 0.12 : pickup.x * 3.1,
         0,
       );
       mesh.name = pickup.id;
@@ -2500,11 +2202,9 @@ export class Game {
       return "";
     }
 
-    // The dynamite is a mission item: one is all there is to carry.
-    if (pickup.type === "DYNAMITE") {
-      return (this.utilities.quantityOf("DYNAMITE") ?? 0) > 0
-        ? ""
-        : "PRESS {E} TO TAKE DYNAMITE";
+    // The target component is a mission item: one is all there is.
+    if (pickup.type === "COMPONENT") {
+      return "PRESS {E} TO TAKE THE TARGET COMPONENT";
     }
 
     const have = this.utilities.quantityOf(pickup.type) ?? 0;
@@ -2529,14 +2229,8 @@ export class Game {
       return false;
     }
 
-    if (pickup.type === "DYNAMITE") {
-      // Already carried (this cannot happen with the one bundle, which is
-      // hidden once taken): nothing to take, nothing to complete again.
-      if ((this.utilities.quantityOf("DYNAMITE") ?? 0) > 0) {
-        return true;
-      }
-
-      this.utilities.add("DYNAMITE", 1);
+    if (pickup.type === "COMPONENT") {
+      // Carried by the mission state alone (no slot, nothing to throw).
     } else {
       const have = this.utilities.quantityOf(pickup.type) ?? 0;
 
@@ -2968,8 +2662,7 @@ export class Game {
       click &&
       !this.throwStance.consumedClick &&
       this.throwStance.canPunch &&
-      !this.utilities.missionSelected &&
-      !this.breach.isIgniting;
+      !this.utilities.missionSelected;
   }
 
   /**
@@ -3110,42 +2803,10 @@ export class Game {
     this.arena.setHeldLight(this.flameLight.position, 0.5 * flicker);
   }
 
-  private readonly sparkAt = new THREE.Vector3();
-
-  /** Moves the blast light to the spark that is burning now, if one is. */
-  private sparkLight(): boolean {
-    if (!(
-      this.plantedCharge.sparkPoint(this.sparkAt) ||
-      this.character.getSparkPoint(this.sparkAt)
-    )) {
-      return false;
-    }
-
-    this.blastLight.position.copy(this.sparkAt);
-    this.blastLight.color.setRGB(1, 0.72, 0.4);
-    this.blastLight.decay = dynamicDecayAt(
-      this.sparkAt.x,
-      this.sparkAt.y,
-      this.sparkAt.z,
-    );
-
-    return true;
-  }
-
-  private sparkFlicker(): number {
-    const t = performance.now() / 1000;
-
-    return 0.8 + 0.2 * Math.sin(t * 47) * Math.sin(t * 13);
-  }
-
   /** The blast's flash: a hard white-orange spike that dies away quickly. */
   private updateBlastLight(dt: number): void {
     if (this.blastAge > 1.1) {
-      // No blast: the lighter's and the wire's spark give a little light (the
-      // blast's own light, always in the scene, so no new light is added).
-      this.blastLight.intensity = this.sparkLight()
-        ? 6 * this.sparkFlicker()
-        : 0;
+      this.blastLight.intensity = 0;
 
       return;
     }
@@ -3885,14 +3546,13 @@ export class Game {
     // The stash is full again (and the mission starts over): the dynamite
     // goes back on its table, so it is no longer carried (the wheel locks it).
     this.objectives.reset();
-    this.resetBreach();
     this.utilities.remove(
       "DYNAMITE",
       this.utilities.quantityOf("DYNAMITE") ?? 0,
     );
 
     for (const [id, state] of this.pickupState) {
-      if (id.startsWith("armory-")) {
+      if (id.startsWith("armory-") || id.startsWith("vault-")) {
         state.readyAt = 0;
         state.mesh.visible = true;
       }
@@ -4132,7 +3792,6 @@ export class Game {
     }
 
     this.updateFirstPersonCamera();
-    this.shakeCamera();
     // (The collar and shoulder never show in the corner of the view.)
     this.character.clipBodyBehindEye(
       this.renderer.camera.position,
@@ -4382,9 +4041,7 @@ export class Game {
     this.healthBar.dispose();
     this.equippedHud.dispose();
     this.objectivesView.dispose();
-    this.obstructionView.dispose();
-    this.plantedCharge.dispose();
-    this.breachFlash.remove();
+    this.extractionMarker.removeFromParent();
     this.hudCluster.remove();
     this.tubeGlow.dispose();
     this.hangingTubes.dispose();

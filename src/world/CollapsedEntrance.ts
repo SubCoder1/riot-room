@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import type { PileElement, TapeRun } from "./ArenaLayout";
+import type { BoxSolid, PileElement, TapeRun } from "./ArenaLayout";
 import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
 
@@ -875,10 +875,10 @@ export function siteOf(e: Entrance): Site {
   const X = (dx: number): number => e.face + e.out * dx;
   const Z = (u: number): number => e.centre + u;
   const f = e.floor;
-  // The tape's line, two metres out from the wall (so close to the heap that
+  // The tape's line, 2.2 m out from the wall (so close to the heap that
   // no body can get between them, far enough from it that nothing is hidden).
-  const left: [number, number] = [X(2.0), Z(-2.6)];
-  const right: [number, number] = [X(2.0), Z(2.4)];
+  const left: [number, number] = [X(2.2), Z(-2.6)];
+  const right: [number, number] = [X(2.2), Z(2.4)];
   // Where the side runs are tied to the wall, a little past each jamb.
   const hookL = Z(-2.6);
   const hookR = Z(2.4);
@@ -900,45 +900,22 @@ export function siteOf(e: Entrance): Site {
         to: [hookX, f + 1.05, hookR],
         sag: 0.09,
       },
-      {
-        from: [left[0], f + 1.0, left[1]],
-        to: [left[0] + e.out * 0.1, f + 0.62, left[1] + 1.1],
-        sag: 0.05,
-      },
-      {
-        from: [right[0], f + 1.0, right[1]],
-        to: [right[0] + e.out * 0.1, f + 0.62, right[1] - 1.0],
-        sag: 0.05,
-      },
     ],
     torn: [
-      // Hanging loose from each post.
+      // Hanging loose from each post's top, down to the floor, a different
+      // length and drift each side.
       {
-        from: [left[0], f + 1.22, left[1]],
-        to: [left[0] + e.out * 0.12, f + 0.52, left[1] + 0.18],
-        sag: 0.02,
+        from: [left[0], f + 1.18, left[1]],
+        to: [left[0] + e.out * 0.35, f + 0.03, left[1] + 0.5],
+        sag: 0.04,
         flat: true,
         textStart: 0.05,
       },
       {
-        from: [right[0], f + 1.2, right[1]],
-        to: [right[0] - e.out * 0.1, f + 0.78, right[1] - 0.55],
-        sag: 0.06,
+        from: [right[0], f + 1.15, right[1]],
+        to: [right[0] - e.out * 0.2, f + 0.03, right[1] - 0.85],
+        sag: 0.07,
         textStart: 0.4,
-      },
-      // Caught on the rubble.
-      {
-        from: [X(0.45), f + 1.12, Z(-1.75)],
-        to: [X(1.35), f + 0.78, Z(-1.1)],
-        sag: 0.08,
-        textStart: 0.7,
-      },
-      {
-        from: [X(0.9), f + 0.95, Z(1.7)],
-        to: [X(1.55), f + 0.58, Z(2.35)],
-        sag: 0.05,
-        flat: true,
-        textStart: 0.15,
       },
       // Lying on the ground.
       {
@@ -982,11 +959,10 @@ export function siteOf(e: Entrance): Site {
 /** The heap that stays after the blast: the sides, the lintel and the broken edges. */
 export const COLLAPSE_PILE_ID = "fittings-vault-collapse";
 /** The heap's middle, the part the charge clears (drawn as a group of its own). */
-export const CORE_PILE_ID = "fittings-vault-core";
 /** The smashed floodlight's pieces on the floor (a group of its own, shown by the blast). */
 export const VAULT_WRECK_ID = "fittings-vault-wreck";
 /** The cleared passage: half its width (m) and its height above the floor. */
-export const CORE_HALF_WIDTH = 0.95;
+export const CORE_HALF_WIDTH = 1.5;
 export const CORE_HEIGHT = 2.2;
 
 /**
@@ -1011,373 +987,593 @@ export function chargeSiteOf(e: Entrance): ChargeSite {
   };
 }
 
-/** One piece of the rubble obstruction: where it lies now, and where the blast leaves it. */
-export interface ObstructionPiece {
-  kind: "slab" | "rock" | "bit" | "rebar";
-  /** Its size (m), world axes. */
-  size: [number, number, number];
-  /** Position (world x, y, z) and turn (rad) before the blast, and after it. */
-  from: { p: [number, number, number]; r: [number, number, number] };
-  to: { p: [number, number, number]; r: [number, number, number] };
-  /** Seconds before it moves, how long it takes, and how high it is thrown (m). */
-  delay: number;
-  duration: number;
-  arc: number;
-  color: number;
+/**
+ * The wall round the vault doorway, broken by hand. The room cuts its west
+ * wall with a clean 4 m doorway: straight jambs and a flat header, which stood
+ * out as a rectangle however much rubble sat in front. Here those three
+ * pieces (the two wall ends and the lintel) are taken out and the wall is
+ * rebuilt in slices about half a metre wide, each broken off at its own
+ * height: stumps of different heights stepping up away from the opening on
+ * both sides, and a header hanging down over it at different depths, with
+ * dark gaps between. Nothing is cut inside the way through (the middle 1.9 m
+ * stays open), and the heap's own collision already fills the rest.
+ */
+/** One slice of the broken wall: its span along it and where the hole's edges are (m above the floor). */
+interface RingSlice {
+  z0: number;
+  z1: number;
+  /** Top of the stump below the hole (0: none), and underside of the header above it. */
+  lo: number;
+  hi: number;
 }
 
-/**
- * The obstruction that blocks the passage: a big broken slab in two halves
- * with its supporting chunks round it and small debris at its base, standing
- * in front of the collapsed doorway on the dock side. Everything is set out
- * from the entrance, and the same every run. `to` is where each piece comes to
- * rest after the blast (all predetermined, out in the dock, clear of the tape
- * posts and the fallen lamp, and out of the middle of the way in).
- */
-export function obstructionOf(e: Entrance): ObstructionPiece[] {
-  const random = rng(6602);
-  const X = (dx: number): number => e.face + e.out * dx;
-  const Z = (u: number): number => e.centre + u;
-  const f = e.floor;
-  const pieces: ObstructionPiece[] = [];
-  // The weathered concrete of the walls, a little warmer and lighter than the
-  // old rubble so a broken face never reads as a black hole.
-  const concrete = [0x4a4a48, 0x52504c, 0x46443f, 0x585550, 0x4d4b46];
-  const pick = (): number => concrete[Math.floor(random() * concrete.length)];
-  const tilt = (a: number): number => (random() - 0.5) * a;
+function breakWall(map: MapBuilder, e: Entrance): RingSlice[] {
+  const removed = map.replaceWalls(
+    ["room-server-wall-w-1", "room-server-wall-w-2", "room-server-lintel-1"],
+    [],
+  );
+  const old = removed.find((w) => w.id === "room-server-wall-w-1");
+  const old2 = removed.find((w) => w.id === "room-server-wall-w-2");
+  const lintel = removed.find((w) => w.id === "room-server-lintel-1");
 
-  // dx from the wall, u across, height of the middle, size (x thick, y, z wide),
-  // turn about the length (rz) and about the width (rx), and where it ends up
-  // after the blast (dx, u). Few and heavy: four broken slabs that stand and
-  // lean on one another, with a handful of chunks lodged under and between.
-  const big: Array<{
-    kind: "slab" | "rock";
-    at: [number, number, number];
-    size: [number, number, number];
-    lean: [number, number];
-    end: [number, number];
-    arc: number;
-  }> = [
-    // The two that stand on the floor, one each side, leaning in.
-    {
-      kind: "slab",
-      at: [0.62, -0.55, 0.66],
-      size: [0.6, 1.3, 0.95],
-      lean: [0.1, 0.16],
-      end: [1.9, -1.6],
-      arc: 1.1,
-    },
-    {
-      kind: "slab",
-      at: [0.58, 0.5, 0.7],
-      size: [0.5, 1.4, 1.05],
-      lean: [-0.08, -0.12],
-      end: [1.6, 1.55],
-      arc: 0.9,
-    },
-    // The one that came down across the top, resting on both.
-    {
-      kind: "slab",
-      at: [0.5, -0.05, 1.7],
-      size: [0.5, 0.75, 1.65],
-      lean: [0.0, 0.1],
-      end: [2.6, -1.1],
-      arc: 1.5,
-    },
-    // And one that slid off it, leaning on the right-hand slab.
-    {
-      kind: "slab",
-      at: [0.9, 0.62, 1.05],
-      size: [0.42, 0.85, 0.7],
-      lean: [-0.3, -0.35],
-      end: [2.3, 1.2],
-      arc: 1.3,
-    },
-    // Chunks: at the foot, and lodged behind and between the slabs.
-    {
-      kind: "rock",
-      at: [1.0, -0.1, 0.3],
-      size: [0.55, 0.5, 0.6],
-      lean: [0.2, 0.1],
-      end: [2.9, -0.95],
-      arc: 0.8,
-    },
-    {
-      kind: "rock",
-      at: [0.98, 0.95, 0.28],
-      size: [0.5, 0.45, 0.55],
-      lean: [0.3, 0.2],
-      end: [3.1, 0.95],
-      arc: 0.9,
-    },
-    {
-      kind: "rock",
-      at: [0.95, -1.0, 0.3],
-      size: [0.5, 0.45, 0.5],
-      lean: [0.1, 0.4],
-      end: [1.5, -1.9],
-      arc: 0.9,
-    },
-    {
-      kind: "rock",
-      at: [0.32, 0.0, 1.1],
-      size: [0.5, 0.9, 0.8],
-      lean: [0.1, 0.1],
-      end: [1.3, 1.8],
-      arc: 1.1,
-    },
-    {
-      kind: "rock",
-      at: [0.55, 0.05, 0.35],
-      size: [0.5, 0.45, 0.55],
-      lean: [0.2, 0.0],
-      end: [2.0, 1.9],
-      arc: 0.9,
-    },
-  ];
-
-  for (const r of big) {
-    pieces.push({
-      kind: r.kind,
-      size: r.size,
-      from: {
-        p: [X(r.at[0]), f + r.at[2], Z(r.at[1])],
-        r: [r.lean[0] + tilt(0.1), tilt(0.3), r.lean[1]],
-      },
-      to: {
-        p: [
-          X(r.end[0]),
-          f + (r.kind === "slab" ? r.size[0] / 2 + 0.03 : r.size[1] * 0.3),
-          Z(r.end[1]),
-        ],
-        r: [
-          r.kind === "slab" ? 0 : random() * 3,
-          random() * 3,
-          r.kind === "slab" ? e.out * (Math.PI / 2 + tilt(0.3)) : random() * 3,
-        ],
-      },
-      delay: 0.02 + random() * 0.1,
-      duration: 0.8 + random() * 0.4,
-      arc: r.arc,
-      color: pick(),
-    });
+  if (!old || !old2 || !lintel) {
+    throw new Error("The Server room's west wall is not as expected.");
   }
 
-  // Small debris: heaped at the foot and spilling into the dock.
-  for (let i = 0; i < 14; i++) {
-    const size = 0.08 + random() * 0.13;
-    const u = (random() * 2 - 1) * 1.05;
-    const side = u < 0 ? -1 : 1;
-    let toU = side * (0.9 + random() * 1.2);
-    const toDx = 1.0 + random() * 2.2;
+  const random = rng(2209);
+  const half = e.width / 2;
+  const reach = half + 0.9;
+  const top = lintel.height - e.floor;
+  const added: BoxSolid[] = [];
+  const ring: RingSlice[] = [];
+  const box = (
+    id: string,
+    minZ: number,
+    maxZ: number,
+    bottom: number,
+    height: number,
+    pushIn: number,
+  ): BoxSolid => ({
+    kind: "box",
+    id,
+    role: "wall",
+    minX: old.minX - pushIn,
+    maxX: old.maxX,
+    minZ,
+    maxZ,
+    // Drawn from the slice's own underside, not from the floor (a wall's `base`
+    // is where its drawing starts: a header given the floor as its base was
+    // drawn all the way down, a solid wall across the opening).
+    base: bottom,
+    bottom,
+    height,
+  });
 
-    // Clear of the fallen lamp's stand (dx 3.0, u -2.0).
-    if (toDx > 2.7 && toU < -1.6) {
-      toU = -1.2;
+  // The wall as far as the broken part, whole.
+  added.push(
+    { ...old, maxZ: e.centre - reach },
+    { ...old2, minZ: e.centre + reach },
+  );
+
+  const width = 0.4;
+  const slices = Math.ceil((reach * 2) / width);
+  const step = (reach * 2) / slices;
+
+  for (let i = 0; i < slices; i++) {
+    const z0 = e.centre - reach + i * step;
+    const z1 = z0 + step;
+    const u = Math.abs((z0 + z1) / 2 - e.centre);
+    const into = 0;
+    // The hole is a rough ring, wider at the middle height than at the floor
+    // or the top: at this slice its upper and lower edge are `hi` and `lo`
+    // (each slice with its own ragged depth), and the middle of the floor is
+    // always open. Beyond the ring the wall stands whole.
+    const reachHalf = 2.4;
+    const dy =
+      u < reachHalf + 0.3
+        ? Math.sqrt(Math.max(reachHalf * reachHalf - u * u, 0.05)) *
+          (0.82 + random() * 0.36)
+        : 0;
+    const lo = u < CORE_HALF_WIDTH + 0.05 ? 0 : Math.max(0, 1.75 - dy);
+    const hi = Math.min(top, 1.75 + dy);
+
+    if (dy > 0) {
+      ring.push({ z0, z1, lo, hi });
     }
 
-    pieces.push({
-      kind: "bit",
-      size: [size * (0.8 + random() * 0.8), size * 0.7, size],
-      from: {
-        p: [X(0.75 + random() * 0.55), f + size * 0.3, Z(u)],
-        r: [tilt(0.8), random() * 3, tilt(0.8)],
-      },
-      to: {
-        p: [X(toDx), f + size * 0.3, Z(toU)],
-        r: [random() * 6, random() * 6, random() * 6],
-      },
-      delay: random() * 0.12,
-      duration: 0.55 + random() * 0.5,
-      arc: 0.7 + random() * 1.4,
-      color: pick(),
-    });
+    if (dy === 0) {
+      added.push(
+        box(`vault-break~stump-${i}`, z0, z1, e.floor, e.floor + top, into),
+      );
+
+      continue;
+    }
+
+    if (lo > 0.05) {
+      added.push(
+        box(`vault-break~stump-${i}`, z0, z1, e.floor, e.floor + lo, into),
+      );
+    }
+
+    if (hi < top - 0.05) {
+      added.push(
+        box(
+          `vault-break~header-${i}`,
+          z0,
+          z1,
+          e.floor + hi,
+          e.floor + top,
+          into,
+        ),
+      );
+    }
   }
 
-  // A few bars, each running out of one of the big pieces (rooted inside it).
-  for (const [dx, u, y] of [
-    [0.75, -0.55, 0.9],
-    [0.7, 0.5, 1.05],
-    [0.6, -0.05, 1.75],
-  ] as const) {
-    pieces.push({
-      kind: "rebar",
-      size: [0.035, 0.035, 0.5 + random() * 0.25],
-      from: {
-        p: [X(dx), f + y, Z(u)],
-        r: [tilt(0.4), e.out * (0.5 + random() * 0.5), tilt(0.5)],
-      },
-      to: {
-        p: [X(1.6 + random() * 1.0), f + 0.05, Z(u * 2.6)],
-        r: [0, random() * 3, 0],
-      },
-      delay: 0.04 + random() * 0.08,
-      duration: 0.7 + random() * 0.3,
-      arc: 1.0 + random() * 0.8,
-      color: random() < 0.4 ? REBAR_BARE : REBAR,
-    });
-  }
+  map.replaceWalls([], added);
 
-  return pieces;
+  return ring;
 }
 
 /**
- * The heap's outer layer: what the eye meets first. Lighter, fresher pieces of
- * concrete and plaster with the dark old rubble showing between them, chips
- * and bricks sitting on every ledge of the face, rust-stained lumps, bent
- * rebar sticking out, and a spill of gravel and broken brick across the floor
- * at the foot. All small, all on the face or the floor (the collision does not
- * change), and the same every run.
+ * The collapse, built from a few large sections instead of a ring of stones.
+ * Every earlier version laid hundreds of rounded rocks along the rim, and
+ * however they were arranged they read as a border of stones round a
+ * doorway. This one is built the way a wall actually fails:
+ *
+ *  - two broken side sections, each a tall fractured plate standing out of
+ *    the wall's own thickness (half inside it, half out), with a second,
+ *    shorter plate leaning in front of it, each at its own turn and width;
+ *  - five or six large plates hanging along the underside of the header,
+ *    overlapping, one or two reaching down into the upper part of the
+ *    opening (never below 2.35 m over the way through);
+ *  - a few big slabs that have fallen and lean on the side sections;
+ *  - courses of exposed brick in the cut faces of the stumps;
+ *  - bent bars rooted in the plates;
+ * and small loose debris (bricks, chips, stones) only at ground level, dense
+ * at the feet of the sections and thinning across the threshold. The plates
+ * are the fractured-slab shape (corners cut, faces uneven), never boxes.
  */
-function outerLayer(e: Entrance, base: readonly PileElement[]): PileElement[] {
-  const random = rng(5521);
-  const X = (dx: number): number => e.face + e.out * dx;
-  const Z = (u: number): number => e.centre + u;
+function wallSections(e: Entrance, ring: readonly RingSlice[]): PileElement[] {
+  const random = rng(6412);
   const out: PileElement[] = [];
-  const LIGHT = [0x6e7075, 0x7b7d82, 0x5f6166, 0x84868a, 0x696b70];
-  const STAINED = [0x5b4a3e, 0x66523f, 0x4d3f35];
-  const turn = (): number => random() * Math.PI * 2;
-  const tinted = (hex: number): number => {
-    const c = new THREE.Color(hex);
-    const hsl = { h: 0, s: 0, l: 0 };
-
-    c.getHSL(hsl);
-    c.setHSL(
-      hsl.h + (random() - 0.5) * 0.03,
-      hsl.s * (0.7 + random() * 0.6),
-      Math.min(0.9, hsl.l * (0.8 + random() * 0.4)),
-    );
-
-    return c.getHex();
-  };
-  const piece = (
-    shape: "rock" | "slab" | "brick",
-    dx: number,
+  // The wall's own concrete, a little lighter than the old rubble so a plate reads.
+  const greys = [0x474a4e, 0x404246, 0x4f5155, 0x4a4745, 0x3c3e42];
+  const grey = (): number => greys[Math.floor(random() * greys.length)];
+  // x just off the wall's face: positive `into` goes into the wall.
+  const wallX = (into: number): number => e.face + e.out * -into;
+  const OPEN = CORE_HALF_WIDTH;
+  const plate = (
+    into: number,
     y: number,
     u: number,
-    size: [number, number, number],
-    color: number,
+    thick: number,
+    high: number,
+    wide: number,
+    lean: number,
+    shape: "slab" | "rock" = "slab",
   ): void => {
     out.push({
       shape,
-      x: X(dx),
+      x: wallX(into),
       y,
-      z: Z(u),
-      sx: size[0],
-      sy: size[1],
-      sz: size[2],
-      rx: (random() - 0.5) * 0.8,
-      ry: turn(),
-      rz: (random() - 0.5) * 0.8,
-      color: tinted(color),
+      z: e.centre + u,
+      sx: thick,
+      sy: high,
+      sz: wide,
+      rx: (random() - 0.5) * 0.25,
+      ry: (random() - 0.5) * 0.4,
+      rz: lean,
+      color: grey(),
     });
   };
-
-  // Chips, plaster and brick on the face: each sits on one of the heap's own
-  // pieces, on its dock side, half sunk into it, so nothing hangs in the air.
-  const front = base.filter(
-    (el) => e.out * (el.x - e.face) > 0.55 && el.y > 0.2 && el.sx > 0.12,
-  );
-
-  for (let i = 0; i < 130 && front.length > 0; i++) {
-    const host = front[Math.floor(random() * front.length)];
-    const r = random();
-    const size = 0.06 + random() * 0.12;
-    const at: [number, number, number] = [
-      e.out * (host.x - e.face) + 0.0,
-      host.y + (random() - 0.5) * host.sy * 0.8,
-      host.z - e.centre + (random() - 0.5) * host.sz * 0.8,
-    ];
-    // On the dock-facing side of the host, a third of the chip sunk in.
-    const dx = at[0] + host.sx * 0.22;
-
-    if (r < 0.5) {
-      piece(
-        "rock",
-        dx,
-        at[1],
-        at[2],
-        [size, size * 0.7, size],
-        LIGHT[i % LIGHT.length],
-      );
-    } else if (r < 0.72) {
-      piece(
-        "slab",
-        dx,
-        at[1],
-        at[2],
-        [0.05 + random() * 0.04, size, size * 1.4],
-        LIGHT[(i + 2) % LIGHT.length],
-      );
-    } else if (r < 0.9) {
-      piece(
-        "brick",
-        dx,
-        at[1],
-        at[2],
-        [0.2, 0.07, 0.1],
-        BRICK[i % BRICK.length],
-      );
-    } else {
-      piece(
-        "rock",
-        dx,
-        at[1],
-        at[2],
-        [size, size, size * 0.8],
-        STAINED[i % STAINED.length],
-      );
-    }
-  }
-
-  // Bent rebar out of the heap's pieces, rust-coloured, a few bare at the tips.
-  for (let i = 0; i < 9 && front.length > 0; i++) {
-    const host = front[Math.floor(random() * front.length)];
-    const length = 0.3 + random() * 0.3;
-
+  const bar = (
+    into: number,
+    y: number,
+    u: number,
+    length: number,
+    turn: number,
+    droop: number,
+  ): void => {
     out.push({
       shape: "plank",
-      x: host.x + e.out * (host.sx * 0.1 + length * 0.3),
-      y: host.y + (random() - 0.5) * host.sy * 0.6,
-      z: host.z + (random() - 0.5) * host.sz * 0.6,
+      x: wallX(into) + e.out * length * 0.4,
+      y,
+      z: e.centre + u,
       sx: length,
       sy: 0.03,
       sz: 0.03,
       rx: 0,
-      ry: (random() - 0.5) * 0.7,
-      rz: (random() - 0.5) * 0.7,
-      color: i % 3 === 0 ? REBAR_BARE : REBAR,
+      ry: turn,
+      rz: droop,
+      color: random() < 0.4 ? REBAR_BARE : REBAR,
     });
-  }
+  };
 
-  // Gravel and broken brick spilled across the floor at the foot of the heap.
-  for (let i = 0; i < 70; i++) {
-    const u = (random() * 2 - 1) * (e.width / 2 + 0.6);
-    const dx = 1.2 + Math.pow(random(), 1.6) * 1.2;
-    const size = 0.04 + random() * 0.08;
+  // Two broken side sections, each a different stack of fractured pieces
+  // that has slid and shifted (so no straight vertical edge): [centre across
+  // from the opening's edge, width, height, base, lean, thickness, into the wall].
+  const stacks: Record<
+    number,
+    Array<[number, number, number, number, number, number, number]>
+  > = {
+    [-1]: [
+      [0.5, 0.95, 1.05, 0, 0.1, 0.55, 0.05],
+      [0.85, 0.7, 0.8, 0.9, -0.2, 0.4, 0.15],
+      [0.3, 0.8, 0.9, 1.65, 0.32, 0.45, 0.0],
+      [0.95, 1.0, 0.85, 2.15, -0.42, 0.38, 0.2],
+    ],
+    [1]: [
+      [0.75, 1.25, 0.9, 0, -0.08, 0.5, 0.0],
+      [0.3, 0.65, 0.7, 0.6, 0.38, 0.36, 0.25],
+      [1.05, 0.9, 0.95, 1.1, 0.22, 0.52, 0.1],
+    ],
+  };
 
-    if (random() < 0.3) {
-      piece(
-        "brick",
-        dx,
-        0.03,
-        u,
-        [0.15 + random() * 0.07, 0.05, 0.08],
-        BRICK[i % BRICK.length],
-      );
-    } else {
-      piece(
+  for (const side of [-1, 1]) {
+    for (const [at, w, h, base, lean, thick, into] of stacks[side]) {
+      plate(into, base + h / 2, side * (OPEN + at), thick, h, w, lean * side);
+    }
+
+    // The outer layer: chips, broken concrete and bricks lodged on the dock
+    // face of each section (half sunk into it, so each has its contact),
+    // filling the dark gaps between the plates. Thickest on the lower part.
+    for (const [at, w, h, base, , thick, into] of stacks[side]) {
+      const count = Math.round(w * h * 11);
+
+      for (let n = 0; n < count; n++) {
+        const low = Math.pow(random(), 1.4);
+        const size = 0.09 + random() * 0.2;
+        const brick = random() < 0.2;
+        const faceInto = into - thick / 2 - (brick ? 0.03 : size * 0.22);
+
+        if (brick) {
+          out.push({
+            shape: "brick",
+            x: wallX(faceInto),
+            y: base + 0.08 + low * (h - 0.16),
+            z: e.centre + side * (OPEN + at) + (random() - 0.5) * (w - 0.1),
+            sx: 0.14,
+            sy: 0.075,
+            sz: 0.22,
+            rx: (random() - 0.5) * 0.5,
+            ry: (random() - 0.5) * 0.6,
+            rz: (random() - 0.5) * 0.7,
+            color: BRICK[Math.floor(random() * BRICK.length)],
+          });
+        } else {
+          plate(
+            faceInto,
+            base + size * 0.4 + low * (h - size * 0.8),
+            side * (OPEN + at) + (random() - 0.5) * (w - 0.1),
+            size * (0.7 + random() * 0.6),
+            size * (0.7 + random() * 0.6),
+            size * (0.9 + random() * 0.7),
+            (random() - 0.5) * 1.5,
+            "rock",
+          );
+        }
+      }
+    }
+
+    // Bars bent out of the broken edge.
+    bar(
+      0.05,
+      0.9 + random() * 1.2,
+      side * (OPEN + 0.25),
+      0.5,
+      side * 0.4,
+      -0.35,
+    );
+    bar(
+      0.05,
+      1.8 + random() * 0.9,
+      side * (OPEN + 0.9),
+      0.45,
+      -side * 0.3,
+      -0.5,
+    );
+    // Rubble banked at the foot, blending the section into the floor.
+    for (let q = 0; q < 6; q++) {
+      const size = 0.18 + random() * 0.3;
+
+      plate(
+        -0.25 - random() * 0.6,
+        size * 0.3,
+        side * (OPEN + 0.2 + random() * 1.5),
+        size * 1.2,
+        size * 0.7,
+        size * 1.1,
+        (random() - 0.5) * 1.2,
         "rock",
-        dx,
-        size * 0.4,
-        u,
-        [size, size * 0.6, size],
-        LIGHT[i % LIGHT.length],
       );
     }
   }
 
-  return out;
+  // Along the header: plates hanging from its underside, overlapping.
+  const upper = ring.filter((r) => r.hi < 4.7);
+  const per = Math.max(2, Math.floor(upper.length / 6));
+  let k = 0;
+
+  for (let i = 0; i < upper.length; i += per) {
+    const r = upper[i];
+    const zc = (r.z0 + r.z1) / 2;
+    const u = zc - e.centre;
+    const wide = 1.0 + random() * 0.6;
+    // Each its own depth below the header, so the lower edge is ragged, but
+    // never under 2.35 m over the way in.
+    const low = Math.max(
+      r.hi - 0.2 - random() * 0.55,
+      Math.abs(u) < OPEN + 0.4 ? 2.35 : 1.9,
+    );
+    // Tall enough to run up into the header (so it hangs from it, not in air).
+    const high = Math.max(0.7 + random() * 0.55, r.hi + 0.15 - low);
+
+    const into = 0.06 + random() * 0.1;
+    const thick = 0.42 + random() * 0.2;
+
+    plate(into, low + high / 2, u, thick, high, wide, (random() - 0.5) * 1.3);
+
+    // Its outer layer: chips and broken concrete lodged on the dock face,
+    // half sunk in, and a few bricks, filling the dark seams round it.
+    for (let n = 0; n < Math.round(wide * high * 9); n++) {
+      const size = 0.08 + random() * 0.17;
+      const y = low + size * 0.4 + random() * Math.max(high - size * 0.8, 0.05);
+      const across = u + (random() - 0.5) * (wide - 0.1);
+      const into2 = into - thick / 2 - size * 0.2;
+
+      if (random() < 0.2) {
+        out.push({
+          shape: "brick",
+          x: wallX(into - thick / 2 - 0.03),
+          y,
+          z: e.centre + across,
+          sx: 0.14,
+          sy: 0.075,
+          sz: 0.22,
+          rx: (random() - 0.5) * 0.5,
+          ry: (random() - 0.5) * 0.6,
+          rz: (random() - 0.5) * 0.7,
+          color: BRICK[Math.floor(random() * BRICK.length)],
+        });
+      } else {
+        plate(
+          into2,
+          y,
+          across,
+          size * 0.9,
+          size * 0.8,
+          size,
+          (random() - 0.5) * 1.5,
+          "rock",
+        );
+      }
+    }
+
+    if (k++ % 2 === 0) {
+      bar(
+        0.05,
+        low + high * 0.6,
+        u + 0.2,
+        0.4 + random() * 0.2,
+        (random() - 0.5) * 0.8,
+        -0.3,
+      );
+    }
+  }
+
+  // Slabs that have fallen: on the floor, leaning on the side sections.
+  for (const [u, dx, h, w, lean] of [
+    [-(OPEN + 0.55), 1.0, 1.0, 0.8, 0.95],
+    [OPEN + 0.7, 0.95, 0.85, 1.1, -1.1],
+    [OPEN + 1.9, 1.3, 0.6, 0.9, -0.45],
+  ] as const) {
+    plate(-dx, h * 0.3, u, 0.3, h, w, lean);
+  }
+
+  // Exposed brick in the cut faces of the stumps: short runs of courses.
+  const stumps = ring.filter((r) => r.lo > 0.5);
+
+  for (let i = 0; i < stumps.length; i += 3) {
+    const r = stumps[i];
+    const zc = (r.z0 + r.z1) / 2;
+
+    for (let c = 0; c < 4; c++) {
+      if (random() < 0.12) continue;
+
+      out.push({
+        shape: "brick",
+        x: wallX(0.0 + random() * 0.04),
+        y: r.lo - 0.1 - c * 0.085,
+        z: zc + (c % 2 ? 0.08 : -0.08),
+        sx: 0.14,
+        sy: 0.075,
+        sz: 0.22 + random() * 0.08,
+        rx: 0,
+        ry: 0,
+        rz: 0,
+        color: BRICK[Math.floor(random() * BRICK.length)],
+      });
+    }
+  }
+
+  // Loose debris at ground level only: dense at the feet of the sections,
+  // thinning across the threshold; bricks, chips and small stones.
+  for (let i = 0; i < 44; i++) {
+    const reach = Math.pow(random(), 1.7);
+    const side = random() < 0.5 ? -1 : 1;
+    const u = side * (OPEN + 0.1 + random() * (1.4 + reach * 1.2));
+    const size = 0.05 + random() * 0.15 * (1 - reach * 0.55);
+    const brick = i % 3 === 0;
+
+    out.push({
+      shape: brick ? "brick" : "rock",
+      x: wallX(-0.15) + e.out * reach * 2.4,
+      y: brick ? 0.035 : size * 0.3,
+      z: e.centre + u,
+      sx: brick ? 0.17 : size,
+      sy: brick ? 0.06 : size * 0.65,
+      sz: brick ? 0.09 : size * 1.15,
+      rx: brick ? 0 : random() * 0.6,
+      ry: random() * Math.PI * 2,
+      rz: brick ? 0 : random() * 0.6,
+      color: brick ? BRICK[Math.floor(random() * BRICK.length)] : grey(),
+    });
+  }
+
+  // ---- Mid-scale fragments, so large sections are not left bare.
+  // Jammed against each side stack's edges, at different depths (some deep in
+  // the wall's thickness, some well out toward the player), and half sunk in.
+  for (const side of [-1, 1]) {
+    for (const [at, w, h, base] of stacks[side]) {
+      for (let n = 0; n < 2; n++) {
+        const size = 0.2 + random() * 0.3;
+        const edge = (n === 0 ? -1 : 1) * (w / 2 + size * 0.1);
+
+        plate(
+          -0.35 + random() * 0.65,
+          base + size * 0.4 + random() * (h - size * 0.4),
+          side * (OPEN + at) + edge * (random() < 0.5 ? 1 : -1) * 0.8,
+          size * (0.8 + random() * 0.8),
+          size * (0.8 + random() * 0.6),
+          size * (0.9 + random() * 0.8),
+          (random() - 0.5) * 1.6,
+          "rock",
+        );
+      }
+    }
+
+    // A few broken bricks wedged between the sections.
+    for (let n = 0; n < 5; n++) {
+      out.push({
+        shape: "brick",
+        x: wallX(-0.1 + random() * 0.3),
+        y: 0.3 + random() * 2.2,
+        z: e.centre + side * (OPEN + 0.2 + random() * 1.1),
+        sx: 0.14,
+        sy: 0.075,
+        sz: 0.22,
+        rx: (random() - 0.5) * 0.8,
+        ry: (random() - 0.5) * 1.2,
+        rz: (random() - 0.5) * 1.2,
+        color: BRICK[Math.floor(random() * BRICK.length)],
+      });
+    }
+  }
+
+  // Between the hanging plates: medium fragments jammed up under the header.
+  for (let i = 1; i < upper.length; i += Math.max(1, per - 1)) {
+    const r = upper[i];
+    const u = (r.z0 + r.z1) / 2 - e.centre;
+    const size = 0.2 + random() * 0.32;
+    const low = Math.abs(u) < OPEN + 0.4 ? 2.35 : 1.9;
+
+    plate(
+      -0.2 + random() * 0.5,
+      Math.max(r.hi - size * 0.35, low + size * 0.5),
+      u + (random() - 0.5) * 0.5,
+      size * (0.8 + random() * 0.7),
+      size * (0.8 + random() * 0.5),
+      size * (0.9 + random() * 0.9),
+      (random() - 0.5) * 1.6,
+      "rock",
+    );
+  }
+
+  // A couple of broken pieces that reach into the upper part of the opening:
+  // each wedged into the header's underside (found from the wall's own slice
+  // at that spot), so it hangs from the wall and rests on its neighbours.
+  for (const [u, size] of [
+    [-0.55, 0.45],
+    [0.8, 0.38],
+  ] as const) {
+    const z = e.centre + u;
+    const slice = ring.find((r) => z >= r.z0 && z < r.z1);
+
+    if (!slice) continue;
+
+    const high = size * 0.9;
+
+    plate(
+      0.05,
+      slice.hi - high * 0.3,
+      u,
+      size * 1.2,
+      high,
+      size * 1.3,
+      (random() - 0.5) * 1.2,
+      "rock",
+    );
+  }
+
+  // ---- The pile at the base: broken concrete and bricks that fell and
+  // banked up at the threshold, medium chunks leaning on the sides, smaller
+  // pieces scattered round them, thinning into the dock, and a little spilled
+  // into the room. Never in the middle strip.
+  for (const side of [-1, 1]) {
+    // Medium chunks resting against the lower sides.
+    for (let n = 0; n < 4; n++) {
+      const size = 0.3 + random() * 0.25;
+
+      plate(
+        -0.2 - random() * 0.9,
+        size * 0.32,
+        side * (OPEN + 0.15 + n * 0.5 + random() * 0.25),
+        size * 1.1,
+        size * 0.75,
+        size * (1.0 + random() * 0.5),
+        (random() - 0.5) * 1.4,
+        n % 2 ? "slab" : "rock",
+      );
+    }
+
+    // Small broken pieces and bricks scattered round them.
+    for (let n = 0; n < 16; n++) {
+      const reach = Math.pow(random(), 1.4);
+      const size = 0.06 + random() * 0.14;
+      const brick = n % 4 === 0;
+
+      out.push({
+        shape: brick ? "brick" : "rock",
+        x: wallX(-0.15) + e.out * reach * 2.2,
+        y: brick ? 0.035 : size * 0.3,
+        z: e.centre + side * (OPEN + 0.08 + random() * (1.2 + reach * 1.3)),
+        sx: brick ? 0.17 : size,
+        sy: brick ? 0.06 : size * 0.65,
+        sz: brick ? 0.09 : size * 1.15,
+        rx: brick ? 0 : random() * 0.6,
+        ry: random() * Math.PI * 2,
+        rz: brick ? 0 : random() * 0.6,
+        color: brick ? BRICK[Math.floor(random() * BRICK.length)] : grey(),
+      });
+    }
+
+    // Spilled through into the room: a few pieces on the vault side.
+    for (let n = 0; n < 3; n++) {
+      const size = 0.08 + random() * 0.16;
+
+      out.push({
+        shape: n === 0 ? "brick" : "rock",
+        x: wallX(0.45 + random() * 1.1),
+        y: size * 0.3,
+        z: e.centre + side * (OPEN + 0.1 + random() * 0.9),
+        sx: n === 0 ? 0.17 : size,
+        sy: n === 0 ? 0.06 : size * 0.65,
+        sz: n === 0 ? 0.09 : size * 1.1,
+        rx: random() * 0.6,
+        ry: random() * Math.PI * 2,
+        rz: random() * 0.6,
+        color: n === 0 ? BRICK[Math.floor(random() * BRICK.length)] : grey(),
+      });
+    }
+  }
+
+  // Pieces spilled onto the vault side lie on the floor there. Past the
+  // walkway's broken edge there is no floor at that height (the ground is
+  // below, and the tilted slab), so nothing is left lying in the air.
+  return out.filter(
+    (el) =>
+      !(el.y < 0.5 && e.out * (el.x - e.face) < -0.4 && el.z < e.centre - 1.6),
+  );
 }
 
 export function furnishCollapsedEntrance(map: MapBuilder, e: Entrance): Site {
@@ -1386,118 +1582,16 @@ export function furnishCollapsedEntrance(map: MapBuilder, e: Entrance): Site {
   const Z = (u: number): number => e.centre + u;
   const half = e.width / 2;
 
-  // The permanent ruins: the doorway as it stands after the collapse, in its
-  // final state. The heap's pieces in the middle of the passage are left out:
-  // that is where the separate obstruction stands (see `obstructionOf`).
-  const inCore = (el: PileElement): boolean =>
-    Math.abs(el.z - e.centre) < CORE_HALF_WIDTH + 0.1 &&
-    el.y < CORE_HEIGHT - 0.25;
-  const built = buildCollapse(e).elements.filter((el) => !inCore(el));
-  const dressed = [...built, ...outerLayer(e, built)];
-  const rest: PileElement[] = dressed.map((el) =>
-    // What stays is broken, not squared: big slabs are drawn as fractured rock.
-    el.shape === "slab" ? { ...el, shape: "rock" as const } : el,
-  );
-  const wall = rng(3307);
-
-  // Backing: the wall's own broken concrete in its thickness, behind the heap,
-  // in the walls' dark concrete (never bright brick or flat panels), with each
-  // course stopping at a different distance from the passage: a fractured
-  // cross-section with visible thickness, and nothing to see through.
-  for (const side of [-1, 1]) {
-    let y = 0;
-
-    while (y < e.height - 0.1) {
-      const h = Math.min(0.35 + wall() * 0.5, e.height - y);
-      const inner = CORE_HALF_WIDTH + 0.05 + wall() * 0.35;
-      const outer = half + 0.15;
-
-      rest.push({
-        shape: "plank",
-        x: X(-0.15 + (wall() - 0.5) * 0.05),
-        y: y + h / 2,
-        z: Z(side * ((inner + outer) / 2)),
-        sx: 0.26,
-        sy: h * 1.02,
-        sz: outer - inner,
-        rx: 0,
-        ry: 0,
-        rz: 0,
-        color: OLD[Math.floor(wall() * OLD.length)],
-      });
-      y += h;
-    }
-  }
-
-  // Over the passage: a broken lintel of the same concrete, ragged underneath.
-  for (let k = 0; k < 4; k++) {
-    const width = (CORE_HALF_WIDTH * 2 + 0.3) / 4;
-    const low = CORE_HEIGHT + wall() * 0.45;
-
-    rest.push({
-      shape: "plank",
-      x: X(-0.15),
-      y: (low + e.height) / 2,
-      z: Z(-CORE_HALF_WIDTH - 0.15 + (k + 0.5) * width),
-      sx: 0.26,
-      sy: e.height - low,
-      sz: width * 1.04,
-      rx: 0,
-      ry: 0,
-      rz: 0,
-      color: OLD[Math.floor(wall() * OLD.length)],
-    });
-  }
-
-  // Reinforcement bars standing out of the broken edges of the opening.
-  for (let i = 0; i < 6; i++) {
-    const side = i % 2 ? 1 : -1;
-
-    rest.push({
-      shape: "plank",
-      x: X(-0.1 + wall() * 0.2),
-      y: 0.4 + wall() * 1.9,
-      z: Z(side * (CORE_HALF_WIDTH + 0.05 - 0.2 * wall())),
-      sx: 0.03,
-      sy: 0.03,
-      sz: 0.4 + wall() * 0.5,
-      rx: 0,
-      ry: side * wall() * 0.5,
-      rz: (wall() - 0.5) * 0.7,
-      color: i % 3 === 0 ? REBAR_BARE : REBAR,
-    });
-  }
-
-  const minX = Math.min(X(1.3), X(-0.8));
-  const maxX = Math.max(X(1.3), X(-0.8));
-
-  // A few more broken pieces biting into the passage from the sides and the
-  // top, so its edge is ragged however the core clears (they stay, like the rest).
-  const jag = rng(4471);
-
-  for (const [u, y, sx, sy, sz] of [
-    [-1.05, 0.55, 0.5, 0.8, 0.55],
-    [-0.98, 1.5, 0.42, 0.55, 0.5],
-    [1.04, 0.7, 0.55, 0.9, 0.5],
-    [0.98, 1.65, 0.4, 0.6, 0.45],
-    [-0.4, 2.45, 0.5, 0.45, 0.85],
-    [0.45, 2.55, 0.55, 0.4, 0.9],
-  ] as const) {
-    rest.push({
-      // (Fractured rock, not a squared slab: what stays round a blast is broken.)
-      shape: "rock",
-      x: X(0.25 + jag() * 0.7),
-      y,
-      z: Z(u + (jag() - 0.5) * 0.12),
-      sx,
-      sy,
-      sz,
-      rx: (jag() - 0.5) * 0.6,
-      ry: (jag() - 0.5) * 0.8,
-      rz: (jag() - 0.5) * 0.9 * e.out,
-      color: OLD[Math.floor(jag() * OLD.length)],
-    });
-  }
+  // The collapse round the opening: a few large fractured wall sections,
+  // with small debris only on the floor (see `wallSections`). The opening
+  // itself is cut in the wall (see `breakWall`).
+  const ring = breakWall(map, e);
+  const rest: PileElement[] = wallSections(e, ring);
+  // The solid sides are narrow beams beside the way in: 0.6 m out on
+  // the dock (the leaning slabs at the feet of the stacks) and 0.6 m into the
+  // wall, and only 0.5 m across (the stumps beyond them are the wall's own).
+  const minX = Math.min(X(0.6), X(-0.6));
+  const maxX = Math.max(X(0.6), X(-0.6));
 
   const side = (
     minZ: number,
@@ -1511,44 +1605,48 @@ export function furnishCollapsedEntrance(map: MapBuilder, e: Entrance): Site {
     exact: true;
   } => ({ minX, maxX, minZ, maxZ, top: 2.9, exact: true });
 
+  // The upper corners and the plates hanging over the opening are solid to a
+  // shot or a throw: they were drawn only, and grenades flew through them.
+  // One thin box per wall slice, from the foot of what hangs there up to the
+  // header (over the way in only from 2.35 m, so nobody is stopped walking in).
+  const corners: Array<{
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    bottom: number;
+    top: number;
+    exact: true;
+  }> = [];
+
+  for (const r of ring) {
+    const u = Math.abs((r.z0 + r.z1) / 2 - e.centre);
+    // Only the lip that shows below the header: the hanging plates are sunk
+    // into it and hang about 0.5 m, so the box is that deep and no more.
+    const bottom = Math.max(
+      u < CORE_HALF_WIDTH ? 2.35 : u < half + 0.2 ? 2.9 : Math.max(r.lo, 0),
+      r.hi - 0.5,
+    );
+
+    if (r.hi - bottom > 0.15) {
+      corners.push({
+        minX: X(0.4),
+        maxX: X(-0.1),
+        minZ: r.z0,
+        maxZ: r.z1,
+        bottom,
+        top: r.hi,
+        exact: true,
+      });
+    }
+  }
+
   map.createFitting(COLLAPSE_PILE_ID, e.floor, rest, [
     // The broken sides of the heap, to the jambs.
-    side(Z(-half - 0.2), Z(-CORE_HALF_WIDTH)),
-    side(Z(CORE_HALF_WIDTH), Z(half + 0.1)),
-    // The rubble over the passage: it stays, a low ragged roof.
-    {
-      minX,
-      maxX,
-      minZ: Z(-CORE_HALF_WIDTH),
-      maxZ: Z(CORE_HALF_WIDTH),
-      bottom: CORE_HEIGHT,
-      top: 2.9,
-      exact: true,
-    },
+    side(Z(-CORE_HALF_WIDTH - 0.55), Z(-CORE_HALF_WIDTH)),
+    side(Z(CORE_HALF_WIDTH), Z(CORE_HALF_WIDTH + 0.5)),
+    ...corners,
   ]);
-
-  // The obstruction's collision: one solid across the passage (its pieces are
-  // drawn by `ObstructionView`, which moves them apart on the blast). A group
-  // of its own, switched off when the blast clears it.
-  const middle = map.createFitting(
-    CORE_PILE_ID,
-    e.floor,
-    [],
-    [
-      {
-        // (A hair in from the heap's face: the gap to the tape post beside it
-        // stays wider than the map's narrow-gap rule.)
-        minX: minX + 0.07,
-        maxX,
-        minZ: Z(-CORE_HALF_WIDTH),
-        maxZ: Z(CORE_HALF_WIDTH),
-        top: CORE_HEIGHT,
-        exact: true,
-      },
-    ],
-  );
-
-  middle.animated = true;
 
   // Posts for the tape, one by one.
   for (const [x, z] of site.posts) {

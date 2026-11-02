@@ -50,7 +50,7 @@ describe("Player on the map", () => {
     expect(airborne).toBeLessThan(6);
   });
 
-  it("sprints from the Server room toward its doorway and is stopped by the collapse, level and grounded", () => {
+  it("sprints from the Server room out through the collapsed doorway, level and grounded", () => {
     const p = spawnPlayer(26.0, UPPER, -14.3, WEST);
     let airborne = 0;
 
@@ -60,8 +60,8 @@ describe("Player on the map", () => {
 
     expect(p.feet()).toBeCloseTo(UPPER, 2);
     expect(p.player.isGrounded).toBe(true);
-    // Nowhere near the dock: it stops at the rubble inside the doorway.
-    expect(p.player.position.x).toBeGreaterThan(22);
+    // Out through the opening and onto the dock.
+    expect(p.player.position.x).toBeLessThan(21);
     expect(airborne).toBe(0);
   });
 
@@ -468,7 +468,7 @@ describe("Props you can step up on", () => {
     expect(p.feet()).toBeCloseTo(platform.height, 1);
   });
 
-  it("a crate can be jumped onto from the floor, a 2 m rack cannot", () => {
+  it("a crate can be jumped onto from the floor", () => {
     const jumpOnto = (x: number, z: number, feet: number, yaw: number) => {
       const p = spawnPlayer(x, feet, z, yaw);
 
@@ -481,18 +481,13 @@ describe("Props you can step up on", () => {
 
       return p.feet();
     };
-    // The north-west spawn yard's crate (1 m) from the east, and a Server room rack (2 m).
+    // The north-west spawn yard's crate (1 m) from the east.
     const crate = layout.walls.find((w) => w.id === "crate-spawn-nw")!;
-    const rack = layout.walls.find((w) => w.id === "rack-server-3")!;
     const crateTop = crate.height;
-    const rackTop = rack.height;
 
     expect(
       jumpOnto(crate.maxX + 1.4, (crate.minZ + crate.maxZ) / 2, 0, WEST),
     ).toBeCloseTo(crateTop, 1);
-    expect(
-      jumpOnto((rack.minX + rack.maxX) / 2, rack.maxZ + 1.4, UPPER, NORTH),
-    ).toBeLessThan(rackTop - 0.5);
   });
 });
 

@@ -2,8 +2,6 @@ import * as THREE from "three";
 
 import type { HeldKind, ThrowPose } from "../inventory/ThrowStance";
 import { createDynamite } from "../vfx/DynamiteMesh";
-import { BREACH_TIMING } from "../mission/Breach";
-import { IgnitionSpark } from "../vfx/IgnitionSpark";
 import {
   BOTTLE_SCALE,
   createBottle,
@@ -35,23 +33,6 @@ const CARRY_LEAN = 0.3;
 const CARRY_TURN = 0.2;
 /** Half the bundle's height: its centre is this far above its base (model space). */
 const BUNDLE_MID = 0.0355;
-/** The wire's tip in the bundle's own space (see createDynamite). */
-const WIRE_TIP = new THREE.Vector3(0.2, 0.056, 0);
-/** The lighter is drawn larger than life so it reads in the hand. */
-const LIGHTER_SCALE = 1.8;
-/** The flame's middle, in the lighter's own space: where it should meet the wire. */
-const FLAME_MID = new THREE.Vector3(0, 0.06, 0);
-/** The lighting sequence's beats, as fractions of its length. */
-const BEAT = {
-  /** The lighter is flicked twice: the first only sparks, the second lights. */
-  FLICK_1: 0.12,
-  FLICK_2: 0.24,
-  SPARK: 0.42,
-  LIGHTER_OFF: 0.62,
-  PLACED: 0.8,
-} as const;
-/** Seconds the hands take to ease back after the lighting is stopped. */
-const RELEASE_SECONDS = 0.45;
 /** A held bundle is drawn a little smaller than it lies on the table. */
 const HELD_DYNAMITE = 0.78;
 
@@ -89,31 +70,8 @@ export class ThrowArm {
   private canister: THREE.Group | null = null;
   private bottle: THREE.Group | null = null;
   private dynamite: THREE.Group | null = null;
-  /** A small lighter, in the hand only while the dynamite is being lit. */
-  private lighterProp: THREE.Group | null = null;
-  private lighterFlame: THREE.Group | null = null;
-  private ignition: { progress: number; target: THREE.Vector3 } | null = null;
-  /** The lighter's own hand: the left, holding it for the sequence. */
-  private lighterHand: THREE.Group | null = null;
-  private spark: IgnitionSpark | null = null;
-  /** Easing back to rest after a lighting that was stopped: 1 to 0 over RELEASE_SECONDS. */
-  private releasing = false;
-  private releaseLeft = 0;
-  private releaseAt = 0;
-  /** Sparks at the lighter's wheel at each flick. */
-  private lighterSpark: IgnitionSpark | null = null;
-  private readonly jerkTurn = new THREE.Quaternion();
-  private wireFlame: THREE.Mesh | null = null;
-  /** Nudges the lighter hand until the flame is on the wire, whatever the arm does. */
-  private readonly lighterNudge = new THREE.Vector3();
-  private readonly tip = new THREE.Vector3();
-  private readonly flameAt = new THREE.Vector3();
-  private readonly tilt = new THREE.Quaternion();
   private readonly carryTurn = new THREE.Quaternion();
   private readonly carryLean = new THREE.Quaternion();
-  private readonly ignitionGoal = new THREE.Vector3();
-  private readonly ignitionFrom = new THREE.Vector3();
-  private readonly ignitionTo = new THREE.Vector3();
   private bottleParts: BottleParts | null = null;
   private grenadeParts: GrenadeParts | null = null;
   /** A small flame at the left hand's fingers: the lighter that lights the rag. */
@@ -605,343 +563,9 @@ export class ThrowArm {
 
   private readonly carryFacing = new THREE.Quaternion();
 
-  /**
-   * The dynamite's lighting and placing: `progress` runs 0 to 1 through the
-   * sequence and `target` is where the bundle ends up on the breach surface.
-   * Null when not under way. The lighter is a prop of this sequence only:
-   * nothing else can show or use it.
-   */
-  public setIgnition(progress: number | null, target?: THREE.Vector3): void {
-    if (progress === null || !target) {
-      if (this.releasing) {
-        return;
-      }
-
-      // Stopped part-way (the key was let go): the hands ease back to rest
-      // rather than snapping (see applyIgnition). Done, or never started: gone.
-      if (this.ignition && this.ignition.progress < 0.9) {
-        this.releasing = true;
-        this.releaseLeft = 1;
-        this.releaseAt = performance.now();
-      } else {
-        this.ignition = null;
-        this.lighterNudge.set(0, 0, 0);
-
-        if (this.lighterProp) {
-          this.lighterProp.visible = false;
-        }
-      }
-
-      this.spark?.update(null);
-      this.lighterSpark?.update(null);
-
-      if (this.wireFlame) {
-        this.wireFlame.visible = false;
-      }
-
-      return;
-    }
-
-    this.releasing = false;
-    this.ignition ??= { progress: 0, target: new THREE.Vector3() };
-    this.ignition.progress = progress;
-    this.ignition.target.copy(target);
-  }
-
   /** Something is held in the throwing hand. */
   public get isHolding(): boolean {
     return this.heldKind !== null;
-  }
-
-  /** The lighting is under way, or the hands are still easing back from it. */
-  public get isIgnitionActive(): boolean {
-    return this.ignition !== null;
-  }
-
-  /** Where the held bundle's spark is (false when it is not sparking). */
-  public getSparkPoint(out: THREE.Vector3): boolean {
-    if (!this.spark?.group.visible || !this.dynamite?.visible) {
-      return false;
-    }
-
-    this.spark.group.getWorldPosition(out);
-
-    return true;
-  }
-
-  /** The held bundle's middle in the world (false when it is not in the hand). */
-  public getBundlePoint(out: THREE.Vector3): boolean {
-    if (!this.dynamite?.visible) {
-      return false;
-    }
-
-    this.dynamite.getWorldPosition(out);
-
-    return true;
-  }
-
-  /**
-   * One sequence through the right hand and the left: the right brings the
-   * upright bundle up in front of the chest and tips it only as far as it takes
-   * to show the wire; the left brings the lighter up from the hip, flicks it
-   * and puts the flame on the wire; the wire sparks; the lighter drops away and
-   * the right hand sets the bundle against the surface, lets go and withdraws.
-   * Call after the animation and the look aiming.
-   */
-  public applyIgnition(forward: THREE.Vector3, aim: THREE.Vector3): void {
-    const ignition = this.ignition;
-    const holder = this.ensureHolder();
-    const dynamite = this.dynamite;
-    const lighter = this.lighterProp;
-    const flame = this.lighterFlame;
-
-    if (!ignition || !holder || !dynamite || !lighter || !flame) {
-      return;
-    }
-
-    const rightUpper = this.root.getObjectByName("RightArm");
-    const leftUpper = this.root.getObjectByName("LeftArm");
-    const hips = this.root.getObjectByName("Hips");
-
-    if (!rightUpper || !leftUpper || !hips) {
-      return;
-    }
-
-    // After a stop the pose is held where it was and eased out: the arms'
-    // weights fall away to nothing, the bundle straightens, the lighter goes.
-    let ease = 1;
-
-    if (this.releasing) {
-      const now = performance.now();
-
-      this.releaseLeft -=
-        Math.min((now - this.releaseAt) / 1000, 0.05) / RELEASE_SECONDS;
-      this.releaseAt = now;
-
-      if (this.releaseLeft <= 0) {
-        this.releasing = false;
-        this.ignition = null;
-        this.lighterNudge.set(0, 0, 0);
-        lighter.visible = false;
-        flame.visible = false;
-
-        return;
-      }
-
-      ease = this.releaseLeft * this.releaseLeft * (3 - 2 * this.releaseLeft);
-    }
-
-    const p = ignition.progress;
-    const smooth = (a: number, b: number, x: number): number => {
-      const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
-
-      return t * t * (3 - 2 * t);
-    };
-
-    this.root.updateMatrixWorld(true);
-
-    const frame = this.frame;
-
-    rightUpper.getWorldPosition(frame.shoulder);
-    hips.getWorldPosition(frame.hips);
-    leftUpper.getWorldPosition(this.leftShoulder);
-    frame.right
-      .subVectors(frame.shoulder, this.leftShoulder)
-      .setY(0)
-      .normalize();
-    frame.forward.copy(forward);
-    frame.aim.copy(aim);
-
-    const ahead = this.firstPerson ? aim : forward;
-    const up = this.firstPerson
-      ? this.lookUp.crossVectors(frame.right, aim).normalize()
-      : UP;
-
-    // ---- the right hand: the bundle.
-    // Held low in front of the chest, off the crosshair; the wire end tips
-    // toward the lighter's side only while it is being lit.
-    const work = this.ignitionFrom
-      .copy(frame.shoulder)
-      .addScaledVector(ahead, 0.5)
-      .addScaledVector(up, 0.0)
-      .addScaledVector(frame.right, -0.1);
-    const rest = this.goal
-      .copy(frame.hips)
-      .addScaledVector(frame.right, 0.2)
-      .addScaledVector(UP, -0.02)
-      .addScaledVector(frame.forward, 0.04);
-    // The surface: the arm's reach toward it, a hand's length short.
-    const place = this.ignitionTo.copy(ignition.target).sub(frame.shoulder);
-    const reach = Math.min(Math.max(place.length() - 0.14, 0.3), 0.72);
-
-    place
-      .normalize()
-      .multiplyScalar(reach)
-      .add(frame.shoulder)
-      .addScaledVector(UP, -0.03);
-
-    const goal = this.ignitionGoal;
-
-    goal.copy(rest).lerp(work, smooth(0, 0.18, p));
-    goal.lerp(place, smooth(0.6, 0.8, p));
-    goal.lerp(rest, smooth(0.9, 1, p));
-
-    const weight = smooth(0, 0.1, p) * (1 - smooth(0.93, 1, p)) * ease;
-
-    this.pole
-      .copy(frame.right)
-      .multiplyScalar(0.55)
-      .addScaledVector(UP, -0.85)
-      .addScaledVector(frame.forward, -0.2);
-    this.solve("Right", goal, weight, this.pole);
-
-    // ---- the bundle: upright, tipped to show the wire, then set down.
-    const tipped = smooth(0.1, 0.26, p) * (1 - smooth(0.58, 0.78, p)) * ease;
-
-    holder.visible = true;
-
-    for (const item of [this.grenade, this.canister, this.bottle]) {
-      if (item) {
-        item.visible = false;
-      }
-    }
-
-    dynamite.visible = p < BEAT.PLACED;
-    this.carryDynamite(
-      holder,
-      dynamite,
-      CARRY_LEAN + (0.85 - CARRY_LEAN) * tipped,
-      CARRY_TURN + (0.85 - CARRY_TURN) * tipped,
-    );
-    this.root.updateMatrixWorld(true);
-    this.tip.copy(WIRE_TIP);
-    dynamite.localToWorld(this.tip);
-
-    // ---- the left hand: the lighter.
-    const leftWeight = smooth(0.06, 0.2, p) * (1 - smooth(0.6, 0.76, p)) * ease;
-
-    lighter.visible = leftWeight > 0.02;
-
-    if (leftWeight > 0.002 && this.lighterHand) {
-      // Held upright, leaning a little toward the wire.
-      this.tilt.setFromUnitVectors(
-        UP,
-        this.pole
-          .copy(UP)
-          .addScaledVector(frame.right, 0.5)
-          .addScaledVector(ahead, 0.1)
-          .normalize(),
-      );
-      this.lighterHand.parent?.getWorldQuaternion(this.carryFacing);
-      // A thumb's flick at each strike: the lighter jerks a little.
-      const jerk =
-        Math.max(0, 1 - Math.abs(p - BEAT.FLICK_1 - 0.01) / 0.025) +
-        Math.max(0, 1 - Math.abs(p - BEAT.FLICK_2 - 0.01) / 0.025);
-
-      lighter.quaternion
-        .copy(this.carryFacing)
-        .invert()
-        .multiply(this.tilt)
-        .multiply(this.jerkTurn.setFromAxisAngle(Z_AXIS, 0.28 * jerk));
-
-      // From the hip up to the wire: the hand goes where puts the flame on it.
-      const flameAbove = this.flameAt
-        .copy(FLAME_MID)
-        .multiplyScalar(LIGHTER_SCALE)
-        .applyQuaternion(this.tilt);
-      const toWire = this.target
-        .copy(this.tip)
-        .sub(flameAbove)
-        .add(this.lighterNudge)
-        .addScaledVector(
-          this.axis.copy(this.tip).sub(this.leftShoulder).normalize(),
-          -HELD_OFFSET,
-        );
-      const start = this.current
-        .copy(frame.hips)
-        .addScaledVector(frame.right, -0.22)
-        .addScaledVector(frame.forward, 0.05)
-        .addScaledVector(UP, 0.05);
-
-      this.elbowNew.copy(start).lerp(toWire, smooth(0.06, 0.3, p));
-      this.pole
-        .copy(frame.right)
-        .multiplyScalar(-0.5)
-        .addScaledVector(UP, -0.85);
-      this.solve("Left", this.elbowNew, leftWeight, this.pole);
-
-      // Where the flame really is now: close the gap by the next frame.
-      if (p > BEAT.FLICK_2 && p < BEAT.LIGHTER_OFF) {
-        this.root.updateMatrixWorld(true);
-        this.flameAt.copy(FLAME_MID);
-        lighter.localToWorld(this.flameAt);
-        this.lighterNudge
-          .addScaledVector(this.target.copy(this.tip).sub(this.flameAt), 0.5)
-          .clampLength(0, 0.2);
-      }
-    }
-
-    // ---- the flame, the spark and the burning wire.
-    // The first flick only throws sparks (a flame that does not catch); the
-    // second catches and stays lit until the lighter is put away.
-    const missed =
-      !this.releasing && p > BEAT.FLICK_1 && p < BEAT.FLICK_1 + 0.03;
-    const lit = !this.releasing && p > BEAT.FLICK_2 && p < BEAT.LIGHTER_OFF;
-
-    flame.visible = lit || missed;
-
-    if (lit || missed) {
-      flame.scale
-        .copy(flickerScale(performance.now() / 1000))
-        .multiplyScalar(
-          lit ? smooth(BEAT.FLICK_2, BEAT.FLICK_2 + 0.06, p) : 0.35,
-        );
-    }
-
-    if (this.lighterSpark) {
-      const seconds = BREACH_TIMING.IGNITE_SECONDS;
-      const since =
-        p >= BEAT.FLICK_2
-          ? (p - BEAT.FLICK_2) * seconds
-          : (p - BEAT.FLICK_1) * seconds;
-      // A few frames of sparks at each flick.
-      const on = since >= 0 && since < 0.14 && leftWeight > 0.02;
-
-      if (on) {
-        lighter.getWorldQuaternion(this.carryFacing).invert();
-        this.lighterSpark.setDown(
-          this.target.set(0, -1, 0).applyQuaternion(this.carryFacing),
-        );
-      }
-
-      this.lighterSpark.update(on ? since : null);
-    }
-
-    // Sparking from the moment the flame meets the wire, without a break, until
-    // the bundle is set down (the planted one carries on, see PlantedCharge).
-    if (this.spark) {
-      const sparking = p >= BEAT.SPARK && dynamite.visible;
-
-      if (sparking) {
-        dynamite.getWorldQuaternion(this.carryFacing).invert();
-        this.spark.setDown(
-          this.target.set(0, -1, 0).applyQuaternion(this.carryFacing),
-        );
-      }
-
-      this.spark.update(
-        sparking ? (p - BEAT.SPARK) * BREACH_TIMING.IGNITE_SECONDS : null,
-      );
-    }
-
-    if (this.wireFlame) {
-      this.wireFlame.visible = p >= BEAT.SPARK && dynamite.visible;
-      this.wireFlame.scale.set(
-        1,
-        0.9 + 0.3 * Math.sin(performance.now() * 0.04),
-        1,
-      );
-    }
   }
 
   /** Counter-rotates `item` so it stays upright in the world, whatever the hand does. */
@@ -1066,61 +690,6 @@ export class ThrowArm {
     this.dynamite.scale.setScalar(HELD_DYNAMITE);
     this.dynamite.visible = false;
 
-    this.lighterProp = new THREE.Group();
-
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.024, 0.052, 0.013),
-      new THREE.MeshStandardMaterial({
-        color: 0x8c9199,
-        emissive: 0x2a2d33,
-        roughness: 0.45,
-        metalness: 0.6,
-      }),
-    );
-    const cap = new THREE.Mesh(
-      new THREE.BoxGeometry(0.024, 0.014, 0.014),
-      new THREE.MeshStandardMaterial({
-        color: 0x5d636b,
-        emissive: 0x202226,
-        roughness: 0.5,
-        metalness: 0.6,
-      }),
-    );
-
-    cap.position.y = 0.033;
-    this.lighterProp.add(body, cap);
-    this.lighterFlame = createFlame(this.bottleParts, 0.011, 0.04);
-    this.lighterFlame.position.y = 0.04;
-    this.lighterFlame.visible = false;
-    this.lighterProp.add(this.lighterFlame);
-    this.lighterProp.visible = false;
-    this.lighterProp.scale.setScalar(LIGHTER_SCALE);
-    this.lighterSpark = new IgnitionSpark(0.007);
-    this.lighterSpark.group.position.set(0, 0.045, 0);
-    this.lighterSpark.group.scale.setScalar(0.35);
-    this.lighterProp.add(this.lighterSpark.group);
-
-    // A spark and a small flame on the wire's tip, for the lighting.
-    this.spark = new IgnitionSpark();
-    this.spark.group.position.copy(WIRE_TIP);
-    this.dynamite.add(this.spark.group);
-
-    const wireGeometry = new THREE.ConeGeometry(0.008, 0.04, 8);
-
-    wireGeometry.translate(0, 0.02, 0);
-    this.wireFlame = new THREE.Mesh(
-      wireGeometry,
-      new THREE.MeshBasicMaterial({
-        color: 0xffa83a,
-        transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
-      }),
-    );
-    this.wireFlame.position.copy(WIRE_TIP);
-    this.wireFlame.visible = false;
-    this.dynamite.add(this.wireFlame);
-
     holder.add(this.grenade, this.canister, this.bottle, this.dynamite);
 
     // Parent it to the hand: it follows every animation. The offset is worked
@@ -1140,51 +709,11 @@ export class ThrowArm {
 
     hand.add(holder);
     this.holder = holder;
-    this.attachLighter();
 
     return holder;
   }
 
-  /** The lighter goes in the left hand (hidden until the dynamite is lit). */
-  private attachLighter(): void {
-    const hand = this.root.getObjectByName("LeftHand");
-    const fore = this.root.getObjectByName("LeftForeArm");
-
-    if (!hand || !fore || !this.lighterProp) {
-      return;
-    }
-
-    const group = new THREE.Group();
-    const wrist = hand.getWorldPosition(new THREE.Vector3());
-    const elbow = fore.getWorldPosition(new THREE.Vector3());
-    const beyond = wrist
-      .clone()
-      .add(wrist.clone().sub(elbow).normalize().multiplyScalar(HELD_OFFSET));
-
-    group.position.copy(hand.worldToLocal(beyond));
-
-    const scale = hand.getWorldScale(new THREE.Vector3());
-
-    group.scale.set(1 / scale.x, 1 / scale.y, 1 / scale.z);
-    group.add(this.lighterProp);
-    hand.add(group);
-    this.lighterHand = group;
-  }
-
   public dispose(): void {
-    this.lighterHand?.removeFromParent();
-    this.lighterHand = null;
-    this.spark?.dispose();
-    this.spark = null;
-    this.lighterSpark?.dispose();
-    this.lighterSpark = null;
-
-    if (this.wireFlame) {
-      this.wireFlame.geometry.dispose();
-      (this.wireFlame.material as THREE.Material).dispose();
-      this.wireFlame = null;
-    }
-
     if (!this.holder) {
       return;
     }
@@ -1202,16 +731,6 @@ export class ThrowArm {
       disposeBottleParts(this.bottleParts);
     }
 
-    this.lighterProp?.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-
-      if (mesh.isMesh && mesh.material !== this.bottleParts?.flame) {
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
-      }
-    });
-    this.lighterProp = null;
-    this.lighterFlame = null;
     this.dynamite?.traverse((object) => {
       const mesh = object as THREE.Mesh;
 

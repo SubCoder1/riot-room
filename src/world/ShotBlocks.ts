@@ -16,8 +16,6 @@ const BLOCKS: ReadonlyArray<
   // Break room
   ["shot-stool-break", 28.62, 6.7, 0.2, 0.2, 0.55],
   ["shot-chair-break-fallen", 30.15, 9.6, 0.35, 0.3, 0.45],
-  // Server room
-  ["shot-stool-server", 30.35, -8.45, 0.18, 0.18, 0.45],
   // Barracks
   ["shot-seat-barracks-1", -25.5, -11.1, 0.22, 0.22, 0.42],
   ["shot-seat-barracks-2", -23.3, -11.1, 0.22, 0.22, 0.42],

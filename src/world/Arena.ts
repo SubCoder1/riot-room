@@ -303,8 +303,6 @@ export class Arena {
 
   /** Whether the fallen floodlight is showing as lit (it blinks). */
   private blinkLit = true;
-  /** The vault entrance has been blown: its tape is torn and its floodlight smashed and dark. */
-  private breached = false;
   private readonly tapeWhole: THREE.Group[] = [];
   private readonly tapeTorn: THREE.Group[] = [];
   private readonly headHome = new Map<
@@ -315,14 +313,13 @@ export class Arena {
   /**
    * The vault entrance after the blast (or before it, on a new round): the
    * tape across the approach is gone and torn pieces lie about; the fallen
-   * floodlight stays dark for good, its visor off and its frame bent, the bits
-   * of it on the floor shown. Only that one lamp is touched.
+   * floodlight has its visor off and its frame bent, the bits of it on the
+   * floor shown, and keeps blinking. Only that one lamp is touched.
    */
   public setBreached(breached: boolean): void {
-    this.breached = breached;
-
+    // (The tape tied from the posts to the wall stays up either way.)
     for (const tape of this.tapeWhole) {
-      tape.visible = !breached;
+      tape.visible = true;
     }
 
     for (const tape of this.tapeTorn) {
@@ -338,15 +335,6 @@ export class Arena {
     const id = BLINKING_LAMP.id;
     const glow = this.group.getObjectByName(`glow-${id}`);
     const head = glow?.children[0];
-
-    this.blinkLit = !breached;
-    this.setLampBroken(id, breached);
-
-    if (glow) {
-      // The smashed head stays where it lies, dark (no beam, no lens glow).
-      glow.visible = true;
-      glow.userData.setPower?.(breached ? 0 : 1);
-    }
 
     if (!glow || !head || head.children.length < 3) {
       return;
@@ -386,7 +374,7 @@ export class Arena {
 
     const lit = Math.floor(this.time / BLINKING_LAMP.period) % 2 === 0;
 
-    if (!this.breached && lit !== this.blinkLit) {
+    if (lit !== this.blinkLit) {
       this.blinkLit = lit;
       this.setLampBroken(BLINKING_LAMP.id, !lit);
     }

@@ -473,6 +473,20 @@ export class MapBuilder {
     return this.layout;
   }
 
+  /**
+   * Takes the wall boxes with these ids out of the layout (returned) and puts
+   * `added` in their place: for a wall that is broken by hand rather than
+   * cut by a clean doorway.
+   */
+  public replaceWalls(ids: readonly string[], added: BoxSolid[]): BoxSolid[] {
+    const removed = this.layout.walls.filter((w) => ids.includes(w.id));
+
+    this.layout.walls = this.layout.walls.filter((w) => !ids.includes(w.id));
+    this.layout.walls.push(...added);
+
+    return removed.filter((w): w is BoxSolid => w.kind === "box");
+  }
+
   // ---------------------------------------------------------------- floors
 
   /** A floor slab at `floorY`, solid down to the ground. */

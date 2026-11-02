@@ -10,15 +10,29 @@ import type { ArenaLayout, LightDefinition } from "./ArenaLayout";
 const HALOGEN = 0xfff0d6;
 
 export const EXTRA_LAMPS: LightDefinition[] = [
-  // The server racks' status lights: a small cool pool, not a blue room.
+  // A dim cool emergency light low in the Ruins' pit, so the lower floor is
+  // not black under the walkway: a small pool, not a lit room.
   {
-    id: "indicator-server-racks",
-    x: 27,
-    y: 5.3,
-    z: -20.1,
-    color: 0x4f86e8,
-    intensity: 3,
-    distance: 4.5,
+    id: "indicator-ruins-pit",
+    // Over the pit's middle, toward the east: it reaches the lower-right
+    // corner and still catches the slab and the leaning beam. Cool blue-grey.
+    x: 28.6,
+    y: 2.6,
+    z: -20.2,
+    color: 0x6f94d6,
+    intensity: 8,
+    distance: 10,
+  },
+  // One dim warm amber lamp on the north wall's foot, for the lower floor's
+  // rubble and the wall behind it.
+  {
+    id: "indicator-ruins-warm",
+    x: 23.3,
+    y: 2.2,
+    z: -23.2,
+    color: 0xffa850,
+    intensity: 2.2,
+    distance: 5,
   },
   {
     id: "halogen-wall-room-armory",

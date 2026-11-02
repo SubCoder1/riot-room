@@ -519,6 +519,8 @@ export interface ElectricPuddleDefinition {
   rz: number;
   /** A strip across it (z from, to) with no water and no current: a vent grate's way stays open. */
   gap?: { minZ: number; maxZ: number };
+  /** Open to the sky: raindrops land on it (rings on the water). */
+  rain?: boolean;
 }
 
 /** Where the cutoff lever is: on a wall at (x, y, z), facing out along (nx, nz). */
@@ -632,11 +634,11 @@ export interface PosterDefinition {
 export interface PickupDefinition {
   id: string;
   /**
-   * Which of the player's utilities it adds to. DYNAMITE is not a utility
+   * Which of the player's utilities it adds to. COMPONENT is not a utility
    * (it is not in the inventory or the weapon wheel): taking it is a mission
    * event only.
    */
-  type: "GRENADE" | "SMOKE" | "MOLOTOV" | "DYNAMITE";
+  type: "GRENADE" | "SMOKE" | "MOLOTOV" | "COMPONENT";
   x: number;
   y: number;
   z: number;

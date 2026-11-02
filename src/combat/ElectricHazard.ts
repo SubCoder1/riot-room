@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { ElectricPuddleDefinition } from "../world/ArenaLayout";
+import { onPuddle } from "../world/PuddleOutline";
 import type { CombatSystem } from "./CombatSystem";
 
 /** Damage of one shock (a quarter of a full health bar). */
@@ -48,17 +49,12 @@ export class ElectricHazard {
     }
   }
 
-  /** Whether (x, z) at feet height `y` is in a puddle. */
+  /** Whether (x, z) at feet height `y` is in a puddle (on the drawn water, no further). */
   public inWater(x: number, z: number, y: number): boolean {
-    return this.puddles.some((p) => {
-      const dx = (x - p.x) / p.rx;
-      const dz = (z - p.z) / p.rz;
-      const inGap = p.gap !== undefined && z >= p.gap.minZ && z <= p.gap.maxZ;
-
-      return (
-        !inGap && dx * dx + dz * dz <= 1 && Math.abs(y - p.y) <= FLOOR_REACH
-      );
-    });
+    return this.puddles.some(
+      (p, index) =>
+        Math.abs(y - p.y) <= FLOOR_REACH && onPuddle(p, index, x, z),
+    );
   }
 
   /** Call once a frame. */

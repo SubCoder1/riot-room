@@ -260,8 +260,6 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     tally(p, "z", 1, -23.7, 29.3, 1.3, 3);
     scrawl(p, "z", 1, -23.7, 30.7, 1.5, 0.3);
     crudeX(p, "z", 1, -23.7, 23.3, 1.5, 0.3, PAINT_RED);
-    // A taped warning and a handwritten label on the console's wall panel.
-    scrawl(p, "x", -1, 31.7, -18.8, 1.2, 0.26);
     map.createFitting("occupation-server", F, p.elements, []);
     map.addLight({
       id: "light-room-server",

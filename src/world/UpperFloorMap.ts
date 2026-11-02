@@ -19,16 +19,12 @@ import {
   entranceOf,
   furnishCollapsedEntrance,
   type ChargeSite,
-  type ObstructionPiece,
-  obstructionOf,
 } from "./CollapsedEntrance";
 
 /** Where the vault breach charge is planted (set when the map is built). */
 export const VAULT_BREACH: {
   site: ChargeSite | null;
-  /** The rubble that blocks the passage, piece by piece (see `obstructionOf`). */
-  obstruction: ObstructionPiece[];
-} = { site: null, obstruction: [] };
+} = { site: null };
 import { addWeathering } from "./Weathering";
 import { furnishHall, furnishStorageRoom, furnishYard } from "./StorageRoom";
 import { furnishDebris } from "./Debris";
@@ -57,7 +53,8 @@ import {
 import { furnishBarracks } from "./Barracks";
 import { furnishConstructionSite } from "./ConstructionSite";
 import { furnishBreakRoom } from "./BreakRoom";
-import { furnishServerRoom } from "./ServerRoom";
+import { furnishRuins } from "./RuinsRoom";
+import { furnishVaultCase } from "./VaultCase";
 import { furnishSpawnAreas } from "./SpawnAreas";
 import { furnishShotBlocks } from "./ShotBlocks";
 import { furnishStairDetails } from "./StairDetails";
@@ -597,10 +594,10 @@ function createUpperFloor(): ArenaLayout {
   // end and open floor at its south. It opens west onto the loading dock
   // through the 4 m doorway the yard's staircase used to climb to. It is not a
   // spawn area: the only spawn yard is the north-west one, with its stairs.
-  map.createFloorSection("floor-server", bounds(22, X, -Z, -12), F);
+  furnishRuins(map, F);
   const serverRoom = map.createRoom({
     id: "room-server",
-    name: "Server room (rack lanes)",
+    name: "The Ruins",
     bounds: bounds(22, X, -Z, SPAWN_SOUTH),
     floorY: F,
     wallHeight: WALL_TO_HIGH,
@@ -614,7 +611,7 @@ function createUpperFloor(): ArenaLayout {
     const site = furnishCollapsedEntrance(map, entrance);
 
     VAULT_BREACH.site = chargeSiteOf(entrance);
-    VAULT_BREACH.obstruction = obstructionOf(entrance);
+    furnishVaultCase(map, F);
 
     map.addTape({
       id: "tape-vault",
@@ -825,6 +822,20 @@ function createUpperFloor(): ArenaLayout {
     y: F,
     rx: 3.4,
     rz: 1.8,
+    // Open to the sky outside the Power Room's door: the rain lands on it.
+    rain: true,
+  });
+  // The same live water lies on the dock in front of the vault's collapsed
+  // entrance, across its approach: 9.6 m long, and wide enough at the wall (7 m) that nobody can jump it from the side either (the same cutoff stops it). Clear of the tape
+  // posts, the fallen floodlight and the way along the walkway.
+  map.addElectricPuddle({
+    id: "puddle-vault-entrance",
+    x: 17.2,
+    z: -14.3,
+    y: F,
+    rx: 4.8,
+    rz: 3.6,
+    rain: true,
   });
   map.setPowerCutoff({
     id: "cutoff-power-room",
@@ -841,10 +852,6 @@ function createUpperFloor(): ArenaLayout {
 
   // North-east spawn area: bare floor in the middle; a crate stack in the
   // north-east corner and a crate against the east wall.
-
-  // Server room: two rows of racks with gaps (narrow 1.5 m lanes), see ServerRoom.
-  // (Moved into the unified spawn room's north end, against its north wall.)
-  map.translateZ(SERVER_SHIFT, () => furnishServerRoom(map, F));
 
   // Break room: a table and chairs, a sofa, a kitchen run, lockers and a vending
   // machine (see BreakRoom).

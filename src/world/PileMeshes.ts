@@ -625,6 +625,28 @@ const extentSources = new Map<string, THREE.BufferGeometry>();
 export function meshExtent(
   element: PileElement,
 ): { low: number; high: number } | null {
+  const vertices = meshVertices(element);
+
+  if (!vertices) {
+    return null;
+  }
+
+  let low = Infinity;
+  let high = -Infinity;
+
+  for (const v of vertices) {
+    low = Math.min(low, v.y);
+    high = Math.max(high, v.y);
+  }
+
+  return { low, high };
+}
+
+/**
+ * The vertices of a rock, slab or chunk as drawn, relative to its centre
+ * (scaled and turned like the piece). Null for shapes that fill their box.
+ */
+export function meshVertices(element: PileElement): THREE.Vector3[] | null {
   const solid =
     element.shape === "rock" ||
     element.shape === "slab" ||
@@ -658,17 +680,15 @@ export function meshExtent(
     ),
     new THREE.Vector3(element.sx, element.sy, element.sz),
   );
-  const v = new THREE.Vector3();
-  let low = Infinity;
-  let high = -Infinity;
+  const out: THREE.Vector3[] = [];
 
   for (let i = 0; i < position.count; i++) {
-    v.fromBufferAttribute(position, i).applyMatrix4(matrix);
-    low = Math.min(low, v.y);
-    high = Math.max(high, v.y);
+    out.push(
+      new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(matrix),
+    );
   }
 
-  return { low, high };
+  return out;
 }
 
 /** The pieces of every pile, merged by kind of piece. */

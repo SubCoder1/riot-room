@@ -529,6 +529,11 @@ describe("What was built", () => {
     const pits = layout.rooms.filter((r) => r.id.startsWith("room-spawn-"));
 
     for (const solid of [...layout.walls, ...layout.pillars]) {
+      // The Ruins' lower floor is the ground: its walls and debris stand on it.
+      if (/^(ruins-|fittings-ruins)/.test(solid.id)) {
+        continue;
+      }
+
       if (
         solid.kind === "box" &&
         pits.some(
@@ -727,18 +732,18 @@ describe("Getting around", () => {
     const openNw = walkField(-26.5, -20.5, 0, { ladders: false });
 
     expect(distanceAtHeight(shutNw, 0, 0, 0)).toBe(Infinity);
-    // Everything but the vault (the Server room, shut) is reachable from it.
-    expect(rooms(openNw)).toEqual(["room-server"]);
+    // Every room is reachable from it, the vault included.
+    expect(rooms(openNw)).toEqual([]);
 
     // The Server room opens on its west wall only, onto the loading dock
-    // (z -16.3 to -12.3), and that doorway is collapsed: from inside, the dock
-    // cannot be reached, and nothing outside reaches in.
+    // (z -16.3 to -12.3), through the collapsed entrance: from inside, the dock
+    // is reached through the opening.
     const openNe = walkField(27, -20, F, { ladders: false });
 
-    expect(distanceAtHeight(openNe, 18, -14, F)).toBe(Infinity);
+    expect(distanceAtHeight(openNe, 18, -14, F)).toBeLessThan(Infinity);
   });
 
-  it("the north-west staircase serves the west, north-west and east; the shut Server room serves nothing", () => {
+  it("the north-west staircase serves the west, north-west and east; the vault is reached through its collapsed entrance", () => {
     const fromNw = walkField(-26.5, -20.5, 0, { ladders: false });
     const fromNe = walkField(27, -20, F, { ladders: false });
     const to = (field: ReturnType<typeof walkField>, id: string): number => {
@@ -751,14 +756,13 @@ describe("Getting around", () => {
     };
 
     for (const id of ["room-barracks", "room-armory", "room-archive"]) {
-      expect(to(fromNw, id), id).toBeLessThan(to(fromNe, id));
+      expect(to(fromNw, id), id).toBeLessThan(Infinity);
     }
 
-    // (The east is reached by the stairs and the walkways: the Server room's
-    // doorway no longer leads out, so from there nothing is reachable.)
-    for (const id of ["room-break", "room-warehouse"]) {
+    // The vault is reached from the west, and the way back out is open too.
+    for (const id of ["room-break", "room-warehouse", "room-server"]) {
       expect(to(fromNw, id), id).toBeLessThan(Infinity);
-      expect(to(fromNe, id), id).toBe(Infinity);
+      expect(to(fromNe, id), id).toBeLessThan(Infinity);
     }
   });
 

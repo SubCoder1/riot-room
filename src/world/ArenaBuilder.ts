@@ -586,7 +586,9 @@ export function createPlatform(
               : solid.role && solid.role !== "floor"
                 ? roleMaterials[solid.role]
                 : industrialMaterials.floor(
-                    industrialMaterials.floorVariantFor(solid.id),
+                    // (The slices of one floor share its look: a seam of two textures runs
+                    // between neighbours otherwise.)
+                    industrialMaterials.floorVariantFor(solid.id.split("~")[0]),
                   ),
     solid.base ?? solid.bottom ?? 0,
     !solid.glass &&

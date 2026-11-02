@@ -35,6 +35,7 @@ describe("Piles of building material", () => {
       if (
         /spawn/.test(pile.id) ||
         pile.id === "fittings-gate-closed" ||
+        /^fittings-ruins/.test(pile.id) ||
         pile.id.startsWith("debris-") ||
         pile.id.startsWith("messy-wiring-") ||
         pile.id === "power-feeds"
@@ -245,7 +246,9 @@ describe("Broken walls and barriers", () => {
     const bases = new Set<string>();
 
     for (const w of layout.walls) {
-      if (w.id.includes("~")) {
+      // (The vault breach is broken by hand and open by design: a gap down the
+      // middle and a header hanging at different depths. See breakWall.)
+      if (w.id.includes("~") && !w.id.startsWith("vault-break~")) {
         bases.add(w.id.split("~")[0]);
       }
     }

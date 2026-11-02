@@ -26,29 +26,30 @@ export type ObjectiveListener = (change: ObjectiveChange) => void;
 
 /** The ids of the mission's objectives, in order. */
 export const OBJECTIVE_ID = {
-  COLLECT: "collect-dynamite",
-  /** The rubble blocking the vault passage is blown clear. */
-  CLEAR: "clear-passage",
-  /** The player has left the blast's danger area. */
-  GET_CLEAR: "get-clear",
-  /** The player is in the Chemical Vault. */
+  /** Find the collapsed entrance of The Ruins. */
+  LOCATE: "locate-vault",
+  /** Go in through the opening. */
   ENTER: "enter-vault",
+  /** Take the target component from inside. */
+  RETRIEVE: "retrieve-component",
+  /** Carry it to the extraction point. */
+  EXTRACT: "reach-extraction",
 } as const;
 
 /**
  * The mission as the player sees it: four short lines, all shown together.
- * How to do each (plant, light, get clear) is found in the world, by the
- * prompts at the place, not listed here.
+ * How to do each is found in the world, by the prompts at the place, not
+ * listed here.
  */
 export const OBJECTIVES: readonly ObjectiveDefinition[] = [
+  { id: OBJECTIVE_ID.LOCATE, label: "Locate The Ruins" },
+  { id: OBJECTIVE_ID.ENTER, label: "Enter The Ruins" },
   {
-    id: OBJECTIVE_ID.COLLECT,
-    label: "Collect dynamites from Armory",
-    completesOnPickup: "DYNAMITE",
+    id: OBJECTIVE_ID.RETRIEVE,
+    label: "Retrieve the target component",
+    completesOnPickup: "COMPONENT",
   },
-  { id: OBJECTIVE_ID.CLEAR, label: "Clear the blocked passage" },
-  { id: OBJECTIVE_ID.GET_CLEAR, label: "Get clear of the blast" },
-  { id: OBJECTIVE_ID.ENTER, label: "Enter the Chemical Vault" },
+  { id: OBJECTIVE_ID.EXTRACT, label: "Reach the extraction point" },
 ];
 
 export class ObjectiveLog {

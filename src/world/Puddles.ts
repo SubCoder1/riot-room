@@ -143,6 +143,15 @@ export function createPuddles(
     ...ventBlocks(layout.upperVents),
   ];
   const spots: Spot[] = [];
+  // Where the electrified water lies: no rainwater patch on top of it.
+  const electric = layout.electricPuddles ?? [];
+  const onElectric = (x: number, z: number, margin: number): boolean =>
+    electric.some(
+      (p) =>
+        ((x - p.x) / (p.rx + margin)) ** 2 +
+          ((z - p.z) / (p.rz + margin)) ** 2 <
+        1,
+    );
   // Ground, first floor, the balconies (2.8 and 5.2) and the three roof layers.
   const levels = [0, 4, 2.8, 8.1, 5.2, 9.3, 10.8];
   const lit = lights.filter((l) => l.target && !l.id.startsWith("tube-"));
@@ -201,6 +210,7 @@ export function createPuddles(
     if (
       !openAt(solids, x, z, y) ||
       ventBlocksNear(grates, x, z, radius + 0.3).length > 0 ||
+      onElectric(x, z, radius * 1.4) ||
       // Not touching another puddle.
       spots.some((s) => Math.hypot(s.x - x, s.z - z) < s.radius + radius + 0.8)
     ) {
@@ -240,7 +250,7 @@ export function createPuddles(
       }
     }
 
-    if (flat) {
+    if (flat && !onElectric(drip.x, drip.z, radius * 1.4)) {
       spots.push({
         x: drip.x,
         z: drip.z,

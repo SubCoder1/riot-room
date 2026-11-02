@@ -15,14 +15,19 @@ const TWO: readonly ObjectiveDefinition[] = [
 describe("The mission", () => {
   it("is four short objectives, in order, with none of the steps spelled out", () => {
     expect(OBJECTIVES.map((o) => o.label)).toEqual([
-      "Collect dynamites from Armory",
-      "Clear the blocked passage",
-      "Get clear of the blast",
-      "Enter the Chemical Vault",
+      "Locate The Ruins",
+      "Enter The Ruins",
+      "Retrieve the target component",
+      "Reach the extraction point",
     ]);
     expect(OBJECTIVES.map((o) => o.id)).toEqual(Object.values(OBJECTIVE_ID));
-    expect(OBJECTIVES[0].completesOnPickup).toBe("DYNAMITE");
-    expect(OBJECTIVES.slice(1).every((o) => !o.completesOnPickup)).toBe(true);
+    // Only the retrieval is a pickup, and it is the component, not dynamite.
+    expect(OBJECTIVES.map((o) => o.completesOnPickup)).toEqual([
+      undefined,
+      undefined,
+      "COMPONENT",
+      undefined,
+    ]);
   });
 
   it("lists all four at once and moves on one at a time, only in order", () => {
@@ -32,18 +37,27 @@ describe("The mission", () => {
     expect(states()).toEqual(["current", "upcoming", "upcoming", "upcoming"]);
 
     // Out of order does nothing.
+    expect(log.complete(OBJECTIVE_ID.EXTRACT)).toBe(false);
     expect(log.complete(OBJECTIVE_ID.ENTER)).toBe(false);
-    expect(log.complete(OBJECTIVE_ID.GET_CLEAR)).toBe(false);
+    log.pickupTaken("COMPONENT");
+    expect(states()).toEqual(["current", "upcoming", "upcoming", "upcoming"]);
 
-    log.pickupTaken("DYNAMITE");
+    expect(log.complete(OBJECTIVE_ID.LOCATE)).toBe(true);
+    expect(log.complete(OBJECTIVE_ID.LOCATE)).toBe(false);
     expect(states()).toEqual(["completed", "current", "upcoming", "upcoming"]);
 
-    expect(log.complete(OBJECTIVE_ID.CLEAR)).toBe(true);
-    expect(log.complete(OBJECTIVE_ID.CLEAR)).toBe(false);
-    expect(states()).toEqual(["completed", "completed", "current", "upcoming"]);
-
-    expect(log.complete(OBJECTIVE_ID.GET_CLEAR)).toBe(true);
+    // The old dynamite pickup no longer means anything.
+    log.pickupTaken("DYNAMITE");
     expect(log.complete(OBJECTIVE_ID.ENTER)).toBe(true);
+    log.pickupTaken("COMPONENT");
+    expect(states()).toEqual([
+      "completed",
+      "completed",
+      "completed",
+      "current",
+    ]);
+
+    expect(log.complete(OBJECTIVE_ID.EXTRACT)).toBe(true);
     expect(states()).toEqual([
       "completed",
       "completed",
@@ -129,17 +143,16 @@ describe("ObjectiveLog", () => {
   it("walks the whole mission in order, each step once", () => {
     const log = new ObjectiveLog(OBJECTIVES);
 
-    log.pickupTaken("DYNAMITE");
     expect(log.complete(OBJECTIVE_ID.ENTER)).toBe(false);
 
-    for (const id of [
-      OBJECTIVE_ID.CLEAR,
-      OBJECTIVE_ID.GET_CLEAR,
-      OBJECTIVE_ID.ENTER,
-    ]) {
+    for (const id of [OBJECTIVE_ID.LOCATE, OBJECTIVE_ID.ENTER]) {
       expect(log.complete(id)).toBe(true);
       expect(log.complete(id)).toBe(false);
     }
+
+    log.pickupTaken("COMPONENT");
+    expect(log.complete(OBJECTIVE_ID.EXTRACT)).toBe(true);
+    expect(log.complete(OBJECTIVE_ID.EXTRACT)).toBe(false);
 
     expect(log.entries().map((e) => e.state)).toEqual([
       "completed",

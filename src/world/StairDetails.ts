@@ -442,6 +442,11 @@ function doorPlates(map: MapBuilder, floorY: number): void {
     if (color === undefined) continue;
 
     for (const door of room.doors) {
+      // The vault's west doorway is a collapsed breach in a broken wall: no sign
+      // plate over it and no steel frame round it (that was a straight lintel
+      // and jambs across the opening: a doorway, not a collapse).
+      if (room.id === "room-server" && door.side === "w") continue;
+
       const half = door.width / 2;
       let x = door.at;
       let z = door.at;
