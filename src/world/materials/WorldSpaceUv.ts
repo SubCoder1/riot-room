@@ -131,6 +131,109 @@ ${macro ? "varying vec3 vWorldMacro;\nvarying vec3 vWorldFlat;" : ""}`,
                    mix( macroHash( i + vec3( 0, 1, 1 ) ), macroHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ),
               f.z );
           }
+          // Wall damage, as damaged concrete rather than lines drawn on it.
+          // Sites are scattered over a coarse grid, a few cells in each part
+          // of the wall and none in most. A site is one of: an impact (a
+          // ragged chip, a stain round it and a few short, separate fractures
+          // running out of it), a single longer fracture (a few straight,
+          // kinked stretches along a structural direction, broken by gaps and
+          // bitten wider in places) or a spalled patch (a larger missing piece).
+          // Nothing joins or forks: no branches. x is a fracture, y a chip
+          // (missing concrete), z the pale broken rim, w discolouration.
+          float cHash( vec2 p ) {
+            return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
+          }
+          vec2 cHash2( vec2 p ) {
+            return vec2( cHash( p ), cHash( p + vec2( 41.3, 17.7 ) ) );
+          }
+          float segDist( vec2 p, vec2 a, vec2 b, out float t ) {
+            vec2 pa = p - a;
+            vec2 ba = b - a;
+            t = clamp( dot( pa, ba ) / dot( ba, ba ), 0.0, 1.0 );
+            return length( pa - ba * t );
+          }
+          // A ragged bite of radius r: its edge steps in six sectors.
+          vec3 chipAt( vec2 d, float r, float seed ) {
+            float sector = floor( ( atan( d.y, d.x ) / 6.2832 + 0.5 ) * 6.0 );
+            float edge = r * ( 0.65 + 0.6 * cHash( vec2( sector, seed ) ) );
+            // A ragged edge: blocky noise on the distance, so it is no disc.
+            float dist = length( d ) + ( cHash( floor( d * 110.0 ) + seed ) - 0.5 ) * edge * 0.55;
+            float chip = 1.0 - smoothstep( edge * 0.9, edge, dist );
+            float rim = max( ( 1.0 - smoothstep( edge, edge * 1.4, dist ) ) - chip, 0.0 );
+            float stain = 1.0 - smoothstep( edge * 1.3, edge * 3.5, dist );
+            return vec3( chip, rim, stain );
+          }
+          vec4 wallDamage( vec2 q, float density ) {
+            vec2 cell = floor( q / 1.7 );
+            float crack = 0.0;
+            float chip = 0.0;
+            float rim = 0.0;
+            float stain = 0.0;
+            for ( int y = -1; y <= 1; y++ ) {
+              for ( int x = -1; x <= 1; x++ ) {
+                vec2 c = cell + vec2( float( x ), float( y ) );
+                vec2 h = cHash2( c );
+                if ( h.x > density ) continue;
+                vec2 g = cHash2( c + vec2( 7.7, 3.3 ) );
+                vec2 d = q - ( c + 0.15 + 0.7 * vec2( h.y, g.x ) ) * 1.7;
+                // Jagged edges: the point is nudged by blocky noise.
+                vec2 cellN = floor( d * 70.0 );
+                vec2 jag = ( vec2( cHash( cellN + c ), cHash( cellN + c + 9.0 ) ) - 0.5 ) * 0.007;
+                float kind = g.y;
+                if ( kind < 0.62 ) {
+                  float R = 0.045 + 0.11 * cHash( c + 1.3 );
+                  vec3 cp = chipAt( d, R, c.x * 3.1 + c.y );
+                  chip = max( chip, cp.x );
+                  rim = max( rim, cp.y );
+                  stain = max( stain, cp.z );
+                  for ( int j = 0; j < 4; j++ ) {
+                    float fj = float( j );
+                    float ang = 6.2832 * cHash( c + fj * 3.7 );
+                    vec2 dir = vec2( cos( ang ), sin( ang ) );
+                    float len = R * ( 1.3 + 2.6 * cHash( c + fj * 5.1 ) );
+                    float t;
+                    float dd = segDist( d + jag, dir * R * 0.7, dir * len, t );
+                    float w = 0.0032 * ( 1.0 - 0.6 * t ) + 0.0008;
+                    float whole = step( 0.2, cHash( vec2( floor( t * 5.0 ), fj ) + c ) ) * step( 0.25, cHash( c + fj * 9.1 ) );
+                    crack = max( crack, ( 1.0 - smoothstep( w * 0.5, w, dd ) ) * whole );
+                  }
+                } else if ( kind < 0.9 ) {
+                  float flip = cHash( c + 4.4 ) < 0.55 ? 0.0 : 1.0;
+                  float ang = flip < 0.5
+                    ? 1.5708 + ( cHash( c + 2.2 ) - 0.5 ) * 0.3
+                    : ( cHash( c + 5.5 ) < 0.5 ? 0.75 : 2.39 ) + ( cHash( c + 6.1 ) - 0.5 ) * 0.3;
+                  vec2 dir = vec2( cos( ang ), sin( ang ) );
+                  vec2 perp = vec2( -dir.y, dir.x );
+                  float L = 0.45 + 0.6 * cHash( c + 8.8 );
+                  vec2 p0 = -dir * L * 0.5;
+                  vec2 p1 = p0 + dir * L * 0.3 + perp * ( cHash( c + 1.9 ) - 0.5 ) * 0.08;
+                  vec2 p2 = p1 + dir * L * 0.35 + perp * ( cHash( c + 2.9 ) - 0.5 ) * 0.09;
+                  vec2 p3 = p2 + dir * L * 0.35 + perp * ( cHash( c + 3.9 ) - 0.5 ) * 0.08;
+                  float w0 = 0.0035 + 0.006 * cHash( c + 3.3 );
+                  float t;
+                  float s0 = segDist( d + jag, p0, p1, t );
+                  float s1 = segDist( d + jag, p1, p2, t );
+                  float s2 = segDist( d + jag, p2, p3, t );
+                  // One stretch is missing in about half of them.
+                  float gap = step( 0.5, cHash( c + 6.6 ) );
+                  float fr = max( 1.0 - smoothstep( w0 * 0.5, w0, s0 ), max( ( 1.0 - smoothstep( w0 * 0.5, w0, s1 ) ) * gap, 1.0 - smoothstep( w0 * 0.5, w0 * 0.8, s2 ) ) );
+                  crack = max( crack, fr );
+                  // Chipped wider where the stretches meet.
+                  vec3 b1 = chipAt( d - p1, 0.022 + 0.03 * cHash( c + 7.1 ), c.x + 11.0 );
+                  vec3 b2 = chipAt( d - p2, 0.02 + 0.03 * cHash( c + 7.9 ), c.y + 23.0 );
+                  chip = max( chip, max( b1.x, b2.x * step( 0.4, cHash( c + 9.9 ) ) ) );
+                  rim = max( rim, max( b1.y, b2.y ) );
+                } else {
+                  float R = 0.1 + 0.2 * cHash( c + 2.7 );
+                  vec3 cp = chipAt( d, R, c.x * 1.7 + c.y * 2.3 );
+                  chip = max( chip, cp.x );
+                  rim = max( rim, cp.y );
+                  stain = max( stain, cp.z );
+                }
+              }
+            }
+            return vec4( crack, chip, rim, stain );
+          }
           `,
         )
         .replace(
@@ -159,14 +262,24 @@ ${macro ? "varying vec3 vWorldMacro;\nvarying vec3 vWorldFlat;" : ""}`,
               diffuseColor.rgb *= 1.0 - 0.4 * seam;
               float contact = 1.0 - smoothstep( 0.0, 0.05, storey );
               diffuseColor.rgb *= 1.0 - 0.28 * contact;
-              // Cracks: hairlines where a noise field crosses its middle, in
-              // patches (a long fault with finer ones branching from it).
-              float faultMask = smoothstep( 0.42, 0.66, macroNoise( mp * 0.3 + vec3( 7.0, 2.0, 5.0 ) ) );
-              float fault = 1.0 - smoothstep( 0.0, 0.014, abs( macroNoise( mp * 0.8 + vec3( 31.0 ) ) - 0.5 ) );
-              float twigMask = smoothstep( 0.5, 0.72, macroNoise( mp * 0.55 + vec3( 3.0, 9.0, 1.0 ) ) );
-              float twig = 1.0 - smoothstep( 0.0, 0.022, abs( macroNoise( mp * 2.4 + vec3( 11.0 ) ) - 0.5 ) );
-              float crack = clamp( fault * faultMask + twig * twigMask * 0.8, 0.0, 1.0 );
-              diffuseColor.rgb *= 1.0 - 0.6 * crack;
+              // Damage, only where this part of the wall is hurt, and more
+              // of it near the entrance and the collapse (see wallDamage);
+              // the rest of a wall is whole. Faded with distance: far off it
+              // would only shimmer.
+              float nearCrack = 1.0 - smoothstep( 12.0, 26.0, length( vViewPosition ) );
+              float hurt = smoothstep( 0.5, 0.78, macroNoise( mp * 0.17 + vec3( 7.0, 2.0, 5.0 ) ) );
+              float collapse = 1.0 - smoothstep( 1.5, 11.0, distance( mp.xz, vec2( 23.0, -15.0 ) ) );
+              float density = 0.006 + 0.14 * hurt + 0.45 * collapse;
+              if ( nearCrack > 0.0 ) {
+                vec2 wq = abs( vWorldFlat.x ) > abs( vWorldFlat.z ) ? mp.zy : mp.xy;
+                vec4 dmg = wallDamage( wq, density );
+                float speck = step( 0.97, cHash( floor( wq * 90.0 ) ) );
+                float darken = clamp( 0.55 * dmg.x + 0.3 * dmg.y + 0.07 * dmg.w, 0.0, 0.8 ) * nearCrack;
+                diffuseColor.rgb *= 1.0 - darken;
+                // Rough aggregate showing in what is missing, and a pale rim.
+                diffuseColor.rgb += dmg.y * speck * 0.09 * nearCrack;
+                diffuseColor.rgb += dmg.z * ( 1.0 - dmg.y ) * 0.035 * nearCrack;
+              }
             }`
                 : ""
             }

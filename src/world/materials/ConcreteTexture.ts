@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { buildFractures } from "./ConcreteCracks";
+
 /** Pixels along one side of the (square, seamless) concrete textures. */
 export const CONCRETE_TEXTURE_SIZE = 1024;
 
@@ -103,57 +105,6 @@ const smooth = (a: number, b: number, x: number): number => {
  * scuffs and the odd oil spot. All of them wrap at the edges, so the tile
  * still repeats without a seam, and all are mild.
  */
-/** Hairline cracks: thin wandering lines, now and then a short branch. */
-function addCracks(
-  marks: Float32Array,
-  size: number,
-  random: () => number,
-  count: number,
-): void {
-  const walk = (
-    x0: number,
-    y0: number,
-    angle0: number,
-    length: number,
-    depth: number,
-  ): void => {
-    let x = x0;
-    let y = y0;
-    let angle = angle0;
-
-    for (let t = 0; t < length; t++) {
-      angle += (random() - 0.5) * 0.45;
-      x += Math.cos(angle);
-      y += Math.sin(angle);
-
-      const ix = ((Math.round(x) % size) + size) % size;
-      const iy = ((Math.round(y) % size) + size) % size;
-
-      marks[iy * size + ix] -= 0.12;
-
-      if (depth < 2 && random() < 0.025) {
-        walk(
-          x,
-          y,
-          angle + (random() < 0.5 ? 1 : -1) * 0.9,
-          18 + random() * 40,
-          depth + 1,
-        );
-      }
-    }
-  };
-
-  for (let n = 0; n < count; n++) {
-    walk(
-      random() * size,
-      random() * size,
-      random() * Math.PI * 2,
-      50 + random() * 150,
-      0,
-    );
-  }
-}
-
 function weathering(
   size: number,
   random: () => number,
@@ -215,7 +166,17 @@ function weathering(
     }
   }
 
-  addCracks(marks, size, random, Math.round(cracks * scale * scale));
+  // Structural cracks, only in the damaged parts of the tile.
+  const fractures = buildFractures(
+    size,
+    random,
+    Math.round(cracks * scale * scale),
+    tileableNoise(size, 3, random),
+  );
+
+  for (let i = 0; i < marks.length; i++) {
+    marks[i] += fractures.light[i] * 0.07 - fractures.dark[i] * 0.2;
+  }
 
   return marks;
 }

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 
+import { buildFractures } from "./ConcreteCracks";
 import { mulberry32, normalLength, tileableNoise } from "./ConcreteTexture";
 
 /** Pixels along one side of the (square, seamless) painted-concrete textures. */
@@ -21,8 +22,8 @@ export interface PaintedConcreteTextures {
 
 /**
  * A quiet painted-concrete surface: soft large blotches, a fine paint stipple,
- * and faint vertical streaks where paint has run. No cracks, stains or joints:
- * it only breaks up a flat colour, and tiles seamlessly.
+ * and faint vertical streaks where paint has run, with structural cracks in
+ * the damaged parts of the wall. It tiles seamlessly.
  */
 export function createPaintedConcreteTextures(
   size = PAINTED_TEXTURE_SIZE,
@@ -160,29 +161,29 @@ export function createPaintedConcreteTextures(
     );
   }
 
-  // Hairline cracks: thin dark wandering lines.
-  const crackCount = Math.round((options.cracks ?? 0) * k * k);
+  // Structural cracks: jagged, branching fractures with a dark inside and a
+  // pale broken edge, only where this part of the wall is damaged (see
+  // `buildFractures`). Bare concrete shows lighter at the edge and in chips.
+  const fractures = buildFractures(
+    size,
+    random,
+    Math.round((options.cracks ?? 0) * k * k),
+    tileableNoise(size, 3, random),
+  );
 
-  for (let n = 0; n < crackCount; n++) {
-    let x = random() * size;
-    let y = random() * size;
-    let angle = random() * Math.PI * 2;
-    const length = 40 + random() * 140;
+  for (let i = 0; i < size * size; i++) {
+    const inside = fractures.dark[i];
+    const edge = fractures.light[i] * (1 - inside);
 
-    for (let t = 0; t < length; t++) {
-      angle += (random() - 0.5) * 0.45;
-      x += Math.cos(angle);
-      y += Math.sin(angle);
-
-      const i =
-        (((Math.round(y) % size) + size) % size) * size +
-        (((Math.round(x) % size) + size) % size);
-
+    if (inside > 0 || edge > 0) {
       for (let c = 0; c < 3; c++) {
-        color[i * 4 + c] = Math.max(0, color[i * 4 + c] - 0.13 * 255);
+        color[i * 4 + c] = Math.min(
+          255,
+          Math.max(0, color[i * 4 + c] * (1 - 0.5 * inside) + edge * 22),
+        );
       }
 
-      height[i] -= 0.5;
+      height[i] += -0.9 * inside + 0.35 * edge;
     }
   }
 

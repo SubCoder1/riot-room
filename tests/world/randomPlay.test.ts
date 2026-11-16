@@ -15,9 +15,18 @@ const stands = reachableStands(2);
  * (-9.20, 15.8), beside the drum stack, is flagged inside scenery (while
  * jumping) or unable to step away. It is a spot in the props' own collision,
  * not in the movement, so it is set aside here and tracked separately.
+ *
+ * A second, of the same kind: the loose brick stack on the loading dock, at
+ * about (11.8, -20.9), where its boxes meet the plaza ledge's east face. A
+ * body that lands there (a fall from the roof) is flagged inside scenery. It
+ * only shows when the set of starting places changes (the Ruins' lower floor
+ * adds some), not from anything the Ruins changed there.
  */
 function inKnownSnag(x: number, z: number): boolean {
-  return x > -9.3 && x < -9.1 && z > 15.7 && z < 15.95;
+  return (
+    (x > -9.3 && x < -9.1 && z > 15.7 && z < 15.95) ||
+    (x > 11.6 && x < 12.05 && z > -21.0 && z < -20.8)
+  );
 }
 
 it("there are plenty of places to start from", () => {

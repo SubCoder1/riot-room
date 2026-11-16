@@ -738,14 +738,16 @@ describe("Getting around", () => {
     // The Server room opens on its west wall only, onto the loading dock
     // (z -16.3 to -12.3), through the collapsed entrance: from inside, the dock
     // is reached through the opening.
-    const openNe = walkField(27, -20, F, { ladders: false });
+    // (From the walkway: the lower floor below its broken edge is a drop with
+    // no way back up, so a start over it would be a start in a sealed pit.)
+    const openNe = walkField(27, -14.3, F, { ladders: false });
 
     expect(distanceAtHeight(openNe, 18, -14, F)).toBeLessThan(Infinity);
   });
 
   it("the north-west staircase serves the west, north-west and east; the vault is reached through its collapsed entrance", () => {
     const fromNw = walkField(-26.5, -20.5, 0, { ladders: false });
-    const fromNe = walkField(27, -20, F, { ladders: false });
+    const fromNe = walkField(27, -14.3, F, { ladders: false });
     const to = (field: ReturnType<typeof walkField>, id: string): number => {
       const room = layout.rooms.find((r) => r.id === id)!;
       const cells = freeCells(room, room.floorY);

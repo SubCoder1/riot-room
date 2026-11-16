@@ -70,14 +70,13 @@ describe("The Ruins, carried north over the old spawn yard", () => {
     expect(world.groundHeight(27, -14.3, 4.05)).toBe(4);
     expect(world.groundHeight(27, -11, 4.05)).toBe(4);
     expect(world.groundHeight(29, -22.3, 4.05)).toBeLessThan(0.5);
-    // The tilted slab, joined to the walkway and sloping down: its ground is
-    // part way, higher near the walkway than near its foot.
-    const high = world.groundHeight(24.6, -16.6, 4.05);
-    const low = world.groundHeight(24.6, -21.2, 4.05);
-
-    expect(high).toBeGreaterThan(3.4);
-    expect(low).toBeGreaterThan(1);
-    expect(low).toBeLessThan(high - 1.5);
+    // The lower floor is a drop with no way back up: nothing slopes down from
+    // the walkway's broken edge, and the fallen ceiling slab is only a
+    // half-metre-thick block lying on the ground.
+    expect(world.groundHeight(24.6, -16.9, 4.05)).toBeLessThan(0.7);
+    expect(world.groundHeight(24.6, -21.2, 4.05)).toBeLessThan(0.7);
+    expect(world.groundHeight(23.72, -19.3, 4.05)).toBeGreaterThan(0.3);
+    expect(world.groundHeight(23.72, -19.3, 4.05)).toBeLessThan(0.8);
   });
 });
 

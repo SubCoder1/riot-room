@@ -17,30 +17,36 @@ function meshes(group: THREE.Object3D): THREE.Mesh[] {
 }
 
 describe("createPiles (every piece is a lean copy of its shared source)", () => {
-  it("builds the same heaps every time: sharing a source's index changes nothing", () => {
-    const first = meshes(createPiles(ARENA_LAYOUT));
-    const second = meshes(createPiles(ARENA_LAYOUT));
+  // (Every pile in the arena is built twice here: slow when the suite runs
+  // its files in parallel, so this test gets a longer budget than the default.)
+  it(
+    "builds the same heaps every time: sharing a source's index changes nothing",
+    { timeout: 20000 },
+    () => {
+      const first = meshes(createPiles(ARENA_LAYOUT));
+      const second = meshes(createPiles(ARENA_LAYOUT));
 
-    expect(first.length).toBeGreaterThan(0);
-    expect(second.map((m) => m.name)).toEqual(first.map((m) => m.name));
+      expect(first.length).toBeGreaterThan(0);
+      expect(second.map((m) => m.name)).toEqual(first.map((m) => m.name));
 
-    first.forEach((mesh, k) => {
-      const other = second[k].geometry;
+      first.forEach((mesh, k) => {
+        const other = second[k].geometry;
 
-      expect(other.index?.count).toBe(mesh.geometry.index?.count);
+        expect(other.index?.count).toBe(mesh.geometry.index?.count);
 
-      for (const name of Object.keys(mesh.geometry.attributes)) {
-        const a = mesh.geometry.getAttribute(name).array;
-        const b = other.getAttribute(name).array;
+        for (const name of Object.keys(mesh.geometry.attributes)) {
+          const a = mesh.geometry.getAttribute(name).array;
+          const b = other.getAttribute(name).array;
 
-        expect(a.length).toBe(b.length);
-        // Spot-check (a full compare of ~2 million vertices is slow).
-        for (let i = 0; i < a.length; i += 997) {
-          expect(a[i]).toBe(b[i]);
+          expect(a.length).toBe(b.length);
+          // Spot-check (a full compare of ~2 million vertices is slow).
+          for (let i = 0; i < a.length; i += 997) {
+            expect(a[i]).toBe(b[i]);
+          }
         }
-      }
-    });
-  });
+      });
+    },
+  );
 
   it("gives each merged mesh all the attributes the weathering and lighting read", () => {
     for (const mesh of meshes(createPiles(ARENA_LAYOUT))) {

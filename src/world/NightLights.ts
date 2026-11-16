@@ -23,13 +23,14 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     intensity: 8,
     distance: 10,
   },
-  // One dim warm amber lamp on the north wall's foot, for the lower floor's
-  // rubble and the wall behind it.
+  // One dim warm amber lamp, held well out from the north wall (a lamp close
+  // to a wall burns a small hard spot into it), for the lower floor's rubble
+  // and the wall behind it.
   {
     id: "indicator-ruins-warm",
-    x: 23.3,
-    y: 2.2,
-    z: -23.2,
+    x: 23.8,
+    y: 2.4,
+    z: -21.4,
     color: 0xffa850,
     intensity: 2.2,
     distance: 5,
