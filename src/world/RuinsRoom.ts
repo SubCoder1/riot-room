@@ -92,6 +92,11 @@ export function furnishRuins(map: MapBuilder, F: number): void {
   // south (the solid east wing).
   map.createWall("ruins-pit-wall-n", "x", Z_NORTH, X0, X1, 0, 0.3, F);
   map.createWall("ruins-pit-wall-e", "z", X1 - 0.3, Z_NORTH, Z_WING, 0, 0.3, F);
+  // The west wall of the pit is the north wing's floor slab, a different
+  // concrete a step (0.3 m) behind the room wall above it: a painted wall like
+  // the other two, flush with that room wall, hides both (north of the walkway
+  // only: under the walkway the pit's wall stays as it was).
+  map.createWall("ruins-pit-wall-w", "z", X0, Z_NORTH + 0.3, -16.3, 0, 0.3, F);
 
   // ----------------------------------------------------- slab and its heap
   const put = (
@@ -381,7 +386,7 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     25.5,
     -19.35,
     [0.32, 1.5, 1.8],
-    [0.02, 0.45, flat - 0.04],
+    [0.0, 0.45, flat - 0.015],
     CONCRETE[2],
     0,
     true,
@@ -391,7 +396,7 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     intactX,
     intactZ,
     [0.5, 3.0, 3.4],
-    [0.03, 0.12, flat + 0.1],
+    [0.0, 0.12, flat + 0.04],
     CONCRETE[0],
     0,
     true,
@@ -413,7 +418,7 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     26.55,
     -17.75,
     [0.42, 1.5, 1.25],
-    [0.03, 0.9, flat - 0.05],
+    [0.0, 0.9, flat - 0.015],
     CONCRETE[3],
     0,
     true,
@@ -423,9 +428,9 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     26.95,
     -19.9,
     [0.4, 1.25, 1.1],
-    [0.1, 2.0, flat + 0.12],
+    [0.0, 2.0, flat + 0.02],
     CONCRETE[4],
-    0.08,
+    0,
     true,
   );
   lay(
@@ -433,7 +438,7 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     26.15,
     -21.45,
     [0.38, 1.1, 1.0],
-    [0.02, 0.3, flat - 0.1],
+    [0.0, 0.3, flat - 0.02],
     CONCRETE[1],
     0,
     true,
@@ -443,7 +448,7 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     27.95,
     -21.0,
     [0.34, 0.8, 0.85],
-    [0.15, 1.4, flat + 0.2],
+    [0.0, 1.4, flat + 0.03],
     CONCRETE[5],
     0,
     true,
@@ -461,15 +466,15 @@ export function furnishRuins(map: MapBuilder, F: number): void {
 
   // A scaffold frame bent where it fell, trapped under the middle fragment of
   // the broken half: two tubes and a brace, the ends out from under it.
-  put(pit, "pipe", 27.4, 0.05, -19.55, [1.9, 0.08, 0.08], [0, 0.25, 0], STEEL);
-  put(pit, "pipe", 27.3, 0.05, -20.25, [1.5, 0.08, 0.08], [0, -0.15, 0], STEEL);
+  put(pit, "pipe", 27.4, 0.04, -19.55, [1.9, 0.07, 0.07], [0, 0.25, 0], STEEL);
+  put(pit, "pipe", 27.3, 0.04, -20.25, [1.5, 0.07, 0.07], [0, -0.15, 0], STEEL);
   put(
     pit,
     "pipe",
     26.9,
-    0.05,
+    0.04,
     -19.95,
-    [0.8, 0.07, 0.07],
+    [0.8, 0.06, 0.06],
     [0, 1.45, 0],
     STEEL_DARK,
   );
@@ -953,6 +958,75 @@ export function furnishRuins(map: MapBuilder, F: number): void {
   settle(pitPile.elements);
   groundPieces(pitPile.elements);
 
+  // A big rock lying on other debris must touch it along its underside, not on
+  // one point: where a quarter of its underside hangs more than 10 cm over what
+  // is under it, it is settled down into what it rests on (the gap is its own
+  // shadow's dark line, and read as floating).
+  for (const e of pitPile.elements) {
+    if (e.shape !== "rock" || Math.max(e.sx, e.sy, e.sz) < 0.5) continue;
+
+    const vertices = meshVertices(e);
+
+    if (!vertices) continue;
+
+    const ys = vertices.map((v) => e.y + v.y).sort((p, q) => p - q);
+    const cut = ys[Math.floor(ys.length * 0.25)];
+    const near = pitPile.elements.filter(
+      (o) =>
+        o !== e &&
+        Math.abs(o.x - e.x) < 1.6 &&
+        Math.abs(o.z - e.z) < 1.6 &&
+        Math.max(o.sx, o.sy, o.sz) > 0.2,
+    );
+    // What is under it: the drawn points of the pieces round it, found once.
+    const under: Array<{ x: number; z: number; y: number }> = [];
+
+    for (const o of near) {
+      const ov = meshVertices(o);
+
+      if (!ov) continue;
+
+      for (let k = 0; k < ov.length; k += 2) {
+        under.push({ x: o.x + ov[k].x, z: o.z + ov[k].z, y: o.y + ov[k].y });
+      }
+    }
+
+    const restAt = (x: number, z: number): number => {
+      let top = 0;
+
+      for (const q of under) {
+        if (Math.hypot(q.x - x, q.z - z) < 0.12 && q.y > top) top = q.y;
+      }
+
+      return top;
+    };
+    let hang = 0;
+    let bad = 0;
+    let count = 0;
+
+    for (let k = 0; k < vertices.length; k += 3) {
+      const v = vertices[k];
+
+      if (e.y + v.y > cut) continue;
+
+      count++;
+
+      const gap = e.y + v.y - restAt(e.x + v.x, e.z + v.z);
+
+      if (gap > 0.1) bad++;
+
+      hang = Math.max(hang, gap);
+    }
+
+    if (count > 0 && bad / count > 0.3) e.y -= Math.min(hang * 0.55, 0.16);
+  }
+
+  // A fallen slab lies sunk a little into the floor: its underside is uneven,
+  // and resting on its lowest point alone left a dark gap along every edge.
+  for (const e of pitPile.elements) {
+    if (e.shape === "slab" && e.y < 0.4) e.y -= 0.035;
+  }
+
   // ------------------------------------------------------- the upper floor
   const deck = new Pieces();
 
@@ -1171,6 +1245,365 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     rz: -0.45,
     color: PIPE,
   });
+
+  // ---- The pipe run carried on to the entrance. It leaves the existing pipe's
+  // west end, turns the north-west corner in two 45 degree mitres, runs south
+  // along the west wall (face at x 22.3) on brackets, and goes into the wall
+  // at z -18.7 through a flange, in a hole broken round it. Everything is
+  // above 8 m (the roof is at 10.5): nothing in reach of a player or the camera.
+  {
+    const PY = 4.4; // the pipe's centre, above the walkway (F)
+    const D = 0.28;
+    const wallX = 22.3;
+    const px = wallX + 0.2; // the pipe's centre line along the west wall
+    const run = (
+      x0: number,
+      z0: number,
+      x1: number,
+      z1: number,
+      d: number,
+      y: number,
+      color: number,
+    ): void => {
+      const dx = x1 - x0;
+      const dz = z1 - z0;
+
+      deck.elements.push({
+        shape: "pipe",
+        x: (x0 + x1) / 2,
+        y,
+        z: (z0 + z1) / 2,
+        // A touch long so neighbours overlap at a bend and no open end shows.
+        sx: Math.hypot(dx, dz) + d * 0.5,
+        sy: d,
+        sz: d,
+        rx: 0,
+        ry: Math.atan2(-dz, dx),
+        rz: 0,
+        color,
+      });
+    };
+    // A coupling collar round a pipe at (x, z), `along` the way it runs.
+    const collar = (
+      x: number,
+      z: number,
+      d: number,
+      y: number,
+      yaw: number,
+      length = 0.14,
+    ): void => {
+      deck.elements.push({
+        shape: "pipe",
+        x,
+        y,
+        z,
+        sx: length,
+        sy: d + 0.09,
+        sz: d + 0.09,
+        rx: 0,
+        ry: yaw,
+        rz: 0,
+        color: STEEL_DARK,
+      });
+    };
+    // A thin steel bar from one point to another (reinforcement).
+    const bar = (
+      a: [number, number, number],
+      b: [number, number, number],
+      thick: number,
+      color: number,
+    ): void => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const dz = b[2] - a[2];
+      const len = Math.hypot(dx, dy, dz);
+
+      deck.elements.push({
+        shape: "plank",
+        x: (a[0] + b[0]) / 2,
+        y: (a[1] + b[1]) / 2,
+        z: (a[2] + b[2]) / 2,
+        sx: len,
+        sy: thick,
+        sz: thick,
+        rx: 0,
+        ry: Math.atan2(-dz, dx),
+        rz: Math.asin(dy / len),
+        color,
+      });
+    };
+    const zS = -23.5; // the existing pipe's line along the north wall
+    const zEnd = -18.9;
+    const zHole = -18.68;
+
+    // The route, from the existing pipe's west end (x 23.4).
+    run(23.4, zS, 22.95, zS, D, PY, PIPE);
+    run(22.95, zS, px, zS + (22.95 - px), D, PY, PIPE);
+    run(px, zS + (22.95 - px), px, zEnd, D, PY, PIPE);
+    run(px, zEnd, wallX + 0.06, zHole, D, PY, PIPE);
+    run(wallX + 0.06, zHole, wallX - 0.2, zHole, D, PY, PIPE);
+
+    // Couplings: on the old run between its brackets, and at every joint.
+    for (const x of [24.8, 26.6, 28.2]) collar(x, zS, D, PY, 0);
+
+    collar(22.95, zS, D, PY, 0, 0.18);
+    collar(px, zS + (22.95 - px), D, PY, -Math.PI / 2, 0.18);
+    collar(px, zEnd, D, PY, -Math.PI / 2, 0.18);
+    collar(px, -21.3, D, PY, -Math.PI / 2);
+    // The flange where it meets the wall: a wide plate on the face and a
+    // collar behind it, with bolt heads.
+    deck.box(wallX + 0.03, PY - 0.25, zHole, 0.06, 0.5, 0.5, STEEL_DARK);
+
+    for (const [dy, dz] of [
+      [-0.2, -0.2],
+      [0.2, -0.2],
+      [-0.2, 0.2],
+      [0.2, 0.2],
+    ] as const) {
+      deck.box(
+        wallX + 0.075,
+        PY + dy - 0.025,
+        zHole + dz,
+        0.03,
+        0.05,
+        0.05,
+        STEEL,
+      );
+    }
+
+    // Brackets on the west wall (a plate on the face, an arm, a strap ring).
+    for (const z of [-22.4, -20.6]) {
+      deck.box(wallX + 0.02, PY - 0.2, z, 0.04, 0.4, 0.22, STEEL_DARK);
+      deck.box(wallX + 0.1, PY - 0.03, z, 0.12, 0.06, 0.1, STEEL_DARK);
+      collar(px, z, D, PY, -Math.PI / 2, 0.06);
+    }
+
+    // The broken edge round the entry: a dark bite in the face, a few
+    // chunks fallen from it onto the pipe's flange line, and bars out of it.
+    deck.elements.push({
+      shape: "plank",
+      x: wallX + 0.004,
+      y: PY,
+      z: zHole,
+      sx: 0.01,
+      sy: 1.1,
+      sz: 1.0,
+      rx: 0,
+      ry: 0,
+      rz: 0.12,
+      color: 0x101114,
+    });
+
+    for (const [dz, up, tilt] of [
+      [-0.45, 0.35, 0.5],
+      [-0.3, -0.5, -0.3],
+      [0.4, 0.45, 0.35],
+      [0.5, -0.35, -0.5],
+    ] as const) {
+      bar(
+        [wallX - 0.12, PY + up * 0.6, zHole + dz],
+        [wallX + 0.5, PY + up * 0.6 + tilt * 0.4, zHole + dz + 0.08],
+        0.035,
+        up > 0 ? REBAR_BARE : REBAR,
+      );
+    }
+
+    // Two thinner conduits along the wall, clipped to it; they turn the
+    // corner in a single 45 degree bend and end in a junction box on the
+    // west wall (the cable goes on inside the concrete).
+    const CD = 0.07;
+
+    for (const [y, off] of [
+      [PY + 0.31, 0],
+      [PY - 0.31, 0.12],
+    ] as const) {
+      const zc = zS - 0.15 + 0.0; // against the north wall
+      const xw = wallX + 0.06 + off * 0; // against the west wall
+
+      run(24.4, zc, 22.8 + off, zc, CD, y, 0x2a2d33);
+      run(22.8 + off, zc, xw, zc + (22.8 + off - xw), CD, y, 0x2a2d33);
+      run(xw, zc + (22.8 + off - xw), xw, -19.6 - off * 6, CD, y, 0x2a2d33);
+
+      // Clips every 1.2 m.
+      for (const x of [24.0, 25.4, 26.8]) {
+        deck.box(x, y - 0.06, zc - 0.03, 0.05, 0.12, 0.05, STEEL_DARK);
+      }
+
+      for (const z of [-22.2, -21.0]) {
+        deck.box(wallX + 0.02, y - 0.06, z, 0.05, 0.12, 0.05, STEEL_DARK);
+      }
+
+      // The junction box at the end.
+      deck.box(
+        wallX + 0.05,
+        y - 0.09,
+        -19.6 - off * 6 - 0.09,
+        0.1,
+        0.18,
+        0.18,
+        STEEL_DARK,
+      );
+    }
+
+    // ---- The pipe goes on: two more run down into the chamber. The old pipe
+    // (C) is carried east to the north-east corner, drops down the corner and
+    // runs along the pit's east wall and its south wall (above the doorway's
+    // head height, under the walkway's slab at 3.5 m); a second (B) comes out
+    // of the east wall and runs the same way beneath it. Both go through the
+    // south wall over the chamber's doorway into a manifold box (see
+    // RuinsChamber). All drawn only, above 2.6 m, nothing in reach.
+    const rise = (
+      x: number,
+      z: number,
+      y0: number,
+      y1: number,
+      d: number,
+    ): void => {
+      deck.elements.push({
+        shape: "pipe",
+        x,
+        y: (y0 + y1) / 2 - F,
+        z,
+        sx: Math.abs(y1 - y0) + d * 0.5,
+        sy: d,
+        sz: d,
+        rx: 0,
+        ry: 0,
+        rz: Math.PI / 2,
+        color: PIPE,
+      });
+    };
+    const eastX = 31.52; // the pipes' centre line along the pit's east wall
+    const southZ = -12.2; // ... and along its south wall
+    const yC = 3.3 - F;
+    const yB = 2.8 - F;
+    const flange = (x: number, z: number, y: number, alongX: boolean): void => {
+      deck.box(
+        alongX ? x : x - 0.25,
+        y - 0.25 - F,
+        alongX ? z - 0.25 : z,
+        alongX ? 0.06 : 0.5,
+        0.5,
+        alongX ? 0.5 : 0.06,
+        STEEL_DARK,
+      );
+    };
+
+    // C: the old pipe's east end, round the corner and down.
+    run(29.4, zS, eastX - 0.3, zS, D, PY, PIPE);
+    run(eastX - 0.3, zS, eastX, zS, D, PY, PIPE);
+    rise(eastX, zS, 3.3, 8.4 + 0.14, D);
+    collar(eastX, zS, D + 0.04, PY, 0, 0.3);
+    rise(eastX, zS, 3.3, 3.3, D);
+
+    // B: out of the east wall at z -22 (a hole broken round its flange).
+    run(31.7 + 0.2, -22.0, eastX, -22.0, D - 0.02, 2.8 - F, PIPE);
+    flange(31.7 - 0.03, -22.0, 2.8, true);
+    deck.elements.push({
+      shape: "plank",
+      x: 31.7 - 0.004,
+      y: 2.8 - F,
+      z: -22.0,
+      sx: 0.01,
+      sy: 1.0,
+      sz: 0.9,
+      rx: 0,
+      ry: 0,
+      rz: 0.1,
+      color: 0x101114,
+    });
+
+    for (const [dz, up] of [
+      [-0.4, 0.35],
+      [0.4, -0.3],
+      [0.45, 0.4],
+    ] as const) {
+      bar(
+        [31.7 + 0.12, 2.8 - F + up * 0.6, -22.0 + dz],
+        [31.7 - 0.5, 2.8 - F + up * 0.6 - 0.1, -22.0 + dz + 0.08],
+        0.035,
+        REBAR,
+      );
+    }
+
+    // Both: south along the east wall, a 45 degree mitre pair round the
+    // corner, then west along the south wall to above the doorway.
+    for (const [y, d, xin] of [
+      [yC, D, 24.3],
+      [yB, D - 0.02, 23.2],
+    ] as const) {
+      run(eastX, y === yC ? zS : -22.0, eastX, southZ + 0.45, d, y, PIPE);
+      run(eastX, southZ + 0.45, eastX - 0.45, southZ, d, y, PIPE);
+      run(eastX - 0.45, southZ, xin + 0.35, southZ, d, y, PIPE);
+      run(xin + 0.35, southZ, xin, southZ + 0.35, d, y, PIPE);
+      // Through the wall (above the doorway) to the manifold box inside.
+      run(xin, southZ + 0.35, xin, -11.45, d, y, PIPE);
+      collar(eastX, southZ + 0.45, d, y, 0, 0.16);
+      collar(xin + 0.35, southZ, d, y, 0, 0.16);
+      collar(xin, -11.95, d, y, -Math.PI / 2, 0.16);
+
+      for (const x of [29.8, 27.6, 25.6]) collar(x, southZ, d, y, 0, 0.14);
+      for (const z of [-19.8, -16.6, -14.2]) {
+        collar(eastX, z, d, y, -Math.PI / 2, 0.14);
+      }
+    }
+
+    // The flange on the south wall where each goes in.
+    for (const [x, y] of [
+      [24.3, 3.3],
+      [23.2, 2.8],
+    ] as const) {
+      deck.box(x - 0.25, y - 0.25 - F, -12.03, 0.5, 0.5, 0.06, STEEL_DARK);
+    }
+
+    // Brackets: one tall plate holds both pipes, on the east wall and the south.
+    for (const z of [-21.0, -18.4, -16.2, -14.0]) {
+      deck.box(31.7 - 0.04, 2.55 - F, z, 0.04, 0.93, 0.2, STEEL_DARK);
+      deck.box(31.7 - 0.12, 3.27 - F, z, 0.12, 0.06, 0.1, STEEL_DARK);
+      deck.box(31.7 - 0.12, 2.77 - F, z, 0.12, 0.06, 0.1, STEEL_DARK);
+      collar(eastX, z, D, yC, -Math.PI / 2, 0.06);
+      collar(eastX, z, D, yB, -Math.PI / 2, 0.06);
+    }
+
+    for (const x of [30.4, 28.8, 26.4]) {
+      deck.box(x - 0.1, 2.55 - F, -12.04, 0.2, 0.93, 0.04, STEEL_DARK);
+      deck.box(x - 0.05, 3.27 - F, -12.12, 0.1, 0.06, 0.12, STEEL_DARK);
+      deck.box(x - 0.05, 2.77 - F, -12.12, 0.1, 0.06, 0.12, STEEL_DARK);
+      collar(x, southZ, D, yC, 0, 0.06);
+      collar(x, southZ, D, yB, 0, 0.06);
+    }
+
+    // Two thin conduits under them on the east and south walls, clipped, going
+    // into a junction box on the south wall.
+    for (const [y, off] of [
+      [2.4, 0],
+      [2.22, 0.12],
+    ] as const) {
+      const ex = 31.7 - 0.05 - off * 0.3;
+      const sz = -12.0 - 0.05 - off * 0.3;
+
+      run(ex, -22.0 + 0.3 * off, ex, sz + 0.4, 0.07, y - F, 0x2a2d33);
+      run(ex, sz + 0.4, ex - 0.4, sz, 0.07, y - F, 0x2a2d33);
+      run(ex - 0.4, sz, 27.1 - off * 0.5, sz, 0.07, y - F, 0x2a2d33);
+      deck.box(
+        26.9 - off * 0.5 - 0.09,
+        y - 0.09 - F,
+        sz - 0.06,
+        0.18,
+        0.18,
+        0.1,
+        STEEL_DARK,
+      );
+
+      for (const z of [-20.5, -17.4, -14.6]) {
+        deck.box(ex - 0.03, y - 0.06 - F, z, 0.05, 0.12, 0.05, STEEL_DARK);
+      }
+
+      for (const x of [30.0, 28.8]) {
+        deck.box(x, y - 0.06 - F, sz - 0.03, 0.05, 0.12, 0.05, STEEL_DARK);
+      }
+    }
+  }
 
   for (const [x, z, len] of [
     [25.0, -13.0, 2.4],

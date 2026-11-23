@@ -51,6 +51,8 @@ const XE = 29.7;
 const COL_W = 20.6;
 const COL_E = 26.9;
 const COL_Z = [-6.0, 1.0] as const;
+/** The east line's standing column is off the west line's: not a mirrored pair. */
+const COL_EAST_Z = -3.1;
 
 /** The two weakened sections of the arena wall (z centres, half widths). */
 const WEAK = [
@@ -362,11 +364,14 @@ export function furnishRuinsChamber(map: MapBuilder, F: number): void {
     column(`column-w-${z}`, COL_W, z, ceiling);
   }
 
-  column("column-e-a", COL_E, COL_Z[0], ceiling);
+  column("column-e-a", COL_E, COL_EAST_Z, ceiling);
   column("column-e-stump", COL_E, COL_Z[1], 1.3);
 
-  for (const x of [COL_W, COL_E]) {
-    for (const z of COL_Z) {
+  for (const [x, zs] of [
+    [COL_W, COL_Z],
+    [COL_E, [COL_EAST_Z, COL_Z[1]]],
+  ] as const) {
+    for (const z of zs) {
       box(dress, x, 0, z, [1.1, 0.22, 1.1], CONCRETE[1]);
 
       if (!(x === COL_E && z === COL_Z[1])) {
@@ -379,7 +384,7 @@ export function furnishRuinsChamber(map: MapBuilder, F: number): void {
   // bars showing.
   for (const [x, z, face] of [
     [COL_W, COL_Z[0], "E"],
-    [COL_E, COL_Z[0], "W"],
+    [COL_E, COL_EAST_Z, "W"],
   ] as const) {
     const px = x + (face === "E" ? 0.456 : -0.456);
 
@@ -500,6 +505,17 @@ export function furnishRuinsChamber(map: MapBuilder, F: number): void {
       FRACTURE[2],
     );
   }
+
+  // The standing east column's own beam, tying its head to the east wall (a
+  // short one: the column is off the long beams' lines).
+  box(
+    dress,
+    (COL_E + XE) / 2,
+    ceiling - 0.45,
+    COL_EAST_Z,
+    [XE - COL_E, 0.45, 0.5],
+    CONCRETE[3],
+  );
 
   between(
     dress,
@@ -1552,9 +1568,141 @@ export function furnishRuinsChamber(map: MapBuilder, F: number): void {
     );
   }
 
-  // The far end's strip light: a steel housing flush to the ceiling over the
-  // way up to the enclosure.
-  box(dress, 24.0, ceiling - 0.12, 8.6, [1.8, 0.1, 0.26], 0x3a3c40);
+  // Two wall-mounted emergency fixtures either side of the way to the
+  // enclosure: a steel back plate and a wire-guarded red lamp (the glow draws
+  // the bulbs; the one lamp over the enclosure does the lighting).
+  for (const [x, dir] of [
+    [20.9, 1],
+    [27.1, -1],
+  ] as const) {
+    box(dress, x + dir * 0.03, 2.05, 8.1, [0.06, 0.34, 0.26], 0x3a3c40);
+    box(dress, x + dir * 0.13, 2.1, 7.98, [0.02, 0.28, 0.02], STEEL_DARK);
+    box(dress, x + dir * 0.13, 2.1, 8.22, [0.02, 0.28, 0.02], STEEL_DARK);
+    box(dress, x + dir * 0.13, 2.38, 8.1, [0.02, 0.02, 0.26], STEEL_DARK);
+    box(dress, x + dir * 0.13, 2.08, 8.1, [0.02, 0.02, 0.26], STEEL_DARK);
+  }
+
+  // The far end's emergency lamp, over the way up to the enclosure.
+  // (Now the enclosure's emergency lamp: a round bulkhead on the ceiling with a
+  // wire guard round the red bulb, which the glow draws.)
+  put(
+    dress,
+    "pipe",
+    24.0,
+    ceiling - 0.03,
+    8.9,
+    [0.06, 0.32, 0.32],
+    [0, 0, Math.PI / 2],
+    0x3a3c40,
+  );
+
+  for (let k = 0; k < 6; k++) {
+    const angle = (k / 6) * Math.PI * 2;
+
+    box(
+      dress,
+      24.0 + Math.cos(angle) * 0.12,
+      ceiling - 0.62,
+      8.9 + Math.sin(angle) * 0.12,
+      [0.02, 0.58, 0.02],
+      STEEL_DARK,
+    );
+  }
+
+  // The manifold the two pipes from the pit end in (they come through the wall
+  // over the doorway at x 23.2 and 24.3): a steel box hung hard against the
+  // roof just inside, flanged where each pipe meets it, with a gauge and a
+  // valve between them and a conduit box on its side. Above head height.
+  {
+    const mx = 23.75;
+    const mz = -11.08;
+
+    box(machines, mx, 2.5, mz, [1.7, ceiling - 2.5, 0.75], 0x3c4652);
+    // The front: a lid line, bolted flanges round each pipe.
+    box(machines, mx, 2.5, mz + 0.385, [1.74, 0.05, 0.02], STEEL_DARK);
+
+    for (const [px, py] of [
+      [24.3, 3.3],
+      [23.2, 2.8],
+    ] as const) {
+      box(
+        machines,
+        px - 0.24,
+        py - 0.24,
+        -11.47,
+        [0.48, 0.48, 0.03],
+        STEEL_DARK,
+      );
+
+      for (const [dx, dy] of [
+        [-0.19, -0.19],
+        [0.19, -0.19],
+        [-0.19, 0.19],
+        [0.19, 0.19],
+      ] as const) {
+        box(
+          machines,
+          px + dx - 0.025,
+          py + dy - 0.025,
+          -11.49,
+          [0.05, 0.05, 0.03],
+          STEEL,
+        );
+      }
+    }
+
+    // A gauge (a dial on a short stem) and a valve wheel between the pipes.
+    put(
+      machines,
+      "pipe",
+      23.75,
+      3.05,
+      -11.5,
+      [0.06, 0.2, 0.2],
+      [0, Math.PI / 2, 0],
+      0x8a8068,
+    );
+    put(
+      machines,
+      "pipe",
+      23.75,
+      3.05,
+      -11.465,
+      [0.04, 0.24, 0.24],
+      [0, Math.PI / 2, 0],
+      STEEL_DARK,
+    );
+    put(
+      machines,
+      "pipe",
+      24.35,
+      2.75,
+      -11.52,
+      [0.05, 0.3, 0.3],
+      [0, Math.PI / 2, 0],
+      0x7a2a22,
+    );
+    box(
+      machines,
+      24.35 - 0.02,
+      2.75 - 0.02,
+      -11.5,
+      [0.04, 0.04, 0.06],
+      STEEL_DARK,
+    );
+    // A conduit box on its east side, a conduit run up into the roof.
+    box(machines, mx + 0.85 + 0.05, 2.9, mz - 0.1, [0.1, 0.3, 0.3], 0x20252b);
+    put(
+      machines,
+      "pipe",
+      mx + 0.9,
+      (2.9 + 0.3 + ceiling) / 2,
+      mz - 0.1,
+      [ceiling - 3.2, 0.07, 0.07],
+      [0, 0, Math.PI / 2],
+      0x2a2d33,
+    );
+  }
 
   // The vestibule's emergency lamp: a round bulkhead lamp, a steel base plate
   // on the ceiling and a wire guard (six bars between two rings) round the
