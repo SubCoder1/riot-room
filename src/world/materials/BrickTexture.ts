@@ -17,8 +17,8 @@ export interface BrickTextures {
   roughness: THREE.DataTexture;
 }
 
-const BRICKS_ACROSS = 8;
-const COURSES = 16;
+export const BRICKS_ACROSS = 8;
+export const COURSES = 16;
 
 function hash(a: number, b: number): number {
   let h =

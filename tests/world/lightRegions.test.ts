@@ -12,6 +12,18 @@ const lights = nightLights(layout);
 const regions = buildLightRegions(layout, lights);
 
 describe("Room-aware lighting", () => {
+  it("keeps the lights with shadows to eleven (the GPU has 16 texture slots)", () => {
+    // Every light with a shadow map takes a texture slot in each lit material:
+    // one more than this and the roofs (the materials with the most textures)
+    // stop drawing. The sky light is one of the eleven.
+    const lamps = lights.filter((l) => l.castShadow === true).length;
+    const drums = (layout.fireDrums ?? []).filter(
+      (d) => d.shadow !== false,
+    ).length;
+
+    expect(1 + lamps + drums).toBeLessThanOrEqual(11);
+  });
+
   it("gives every lamp without a shadow a region, and none of the others one", () => {
     for (const light of lights) {
       const has = regions.decays.has(light.id);
@@ -121,5 +133,25 @@ describe("Room-aware lighting", () => {
         }
       }
     }
+  });
+
+  it("splits the Ruins into its lower floor and its walkway level, so a lamp in the pit does not light the level over its floor", () => {
+    const at = (x: number, y: number, z: number): number =>
+      dynamicDecayAt(x, y, z);
+    const pit = at(28.6, 2.6, -20.2);
+    const walkway = at(27, 5, -12.5);
+    const door = at(23.5, 5, -14.3);
+    const outside = at(17, 5, -14.3);
+
+    // Under the deck and on it are different regions...
+    expect(pit).not.toBe(walkway);
+    // ...the walkway and the way in belong to one, outside is neither...
+    expect(door).toBe(walkway);
+    expect(outside).toBe(OUTDOORS_DECAY);
+    expect(pit).not.toBe(OUTDOORS_DECAY);
+    // ...and over the opening where the floor has gone, the pit's region goes up
+    // (its lamps light the wall and the roof there).
+    expect(at(27, 7, -21)).toBe(pit);
+    expect(at(27, 7, -14)).toBe(walkway);
   });
 });

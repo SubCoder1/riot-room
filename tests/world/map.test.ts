@@ -86,13 +86,17 @@ const OPEN_TOP = ["room-spawn-nw", "room-hall"];
 function roofOf(room: { id: string }): BoxSolid {
   // (A roof with a hole in it is in pieces: `-roof-1`, `-roof-2`...)
   return layout.platforms.find(
-    (p) => p.id === `${room.id}-roof` || p.id.startsWith(`${room.id}-roof-`),
+    (p) =>
+      p.id === `${room.id}-roof` ||
+      p.id.startsWith(`${room.id}-roof-`) ||
+      // (A ceiling that is the underside of a wing's floor: `wing~room-roof`.)
+      p.id.endsWith(`~${room.id}-roof`),
   )!;
 }
 
 describe("What was built", () => {
-  it("has eleven rooms of different sizes and shapes (the Server room is part of the north-east spawn room)", () => {
-    expect(layout.rooms).toHaveLength(11);
+  it("has twelve rooms of different sizes and shapes (the Server room is part of the north-east spawn room; the twelfth is the Ruins' chamber on the ground floor)", () => {
+    expect(layout.rooms).toHaveLength(12);
 
     const areas = new Set(
       layout.rooms.map((r) =>
@@ -529,8 +533,9 @@ describe("What was built", () => {
     const pits = layout.rooms.filter((r) => r.id.startsWith("room-spawn-"));
 
     for (const solid of [...layout.walls, ...layout.pillars]) {
-      // The Ruins' lower floor is the ground: its walls and debris stand on it.
-      if (/^(ruins-|fittings-ruins)/.test(solid.id)) {
+      // The Ruins' lower floor and its chamber are the ground: their walls and
+      // debris stand on it.
+      if (/^(ruins-|fittings-ruins|room-ruins-chamber)/.test(solid.id)) {
         continue;
       }
 
@@ -626,6 +631,10 @@ describe("Getting around", () => {
       // The Server room is the vault: its only doorway is collapsed shut.
       if (room.id === "room-server") continue;
 
+      // The Ruins' chamber is entered from the pit's ground floor, which the
+      // stairs do not reach (the drop does: see the next test).
+      if (room.id === "room-ruins-chamber") continue;
+
       const cells = freeCells(room, room.floorY);
       const unreachable = cells.filter(
         (c) => distanceAtHeight(onFoot, c.x, c.z, room.floorY) === Infinity,
@@ -637,6 +646,18 @@ describe("Getting around", () => {
     }
 
     expect(sealed).toEqual([]);
+  });
+
+  it("the Ruins' chamber is walked into from the pit and all of it can be reached", () => {
+    const room = layout.rooms.find((r) => r.id === "room-ruins-chamber")!;
+    const cells = freeCells(room, room.floorY);
+
+    expect(cells.length).toBeGreaterThan(20);
+    expect(
+      cells.filter(
+        (c) => distanceAtHeight(all, c.x, c.z, room.floorY) === Infinity,
+      ),
+    ).toEqual([]);
   });
 
   it("the stairs alone reach every walkway, deck, balcony and the corridor", () => {

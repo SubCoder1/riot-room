@@ -71,6 +71,7 @@ describe("Arena meshes", () => {
       3 + // the vents: floor and walls of the ground network, floor of the upper
       ventBlocks(ARENA_LAYOUT.vents).length + // ...then a block of grating each
       ventBlocks(ARENA_LAYOUT.upperVents).length +
+      2 + // the dark lining of the upper vents' cut floors
       ladderParts;
 
     expect(all).toHaveLength(expected);
@@ -88,6 +89,7 @@ describe("Arena meshes", () => {
         ventBlocks(ARENA_LAYOUT.upperVents).length +
         1 + // the upper network's floor (its walls are the cut floor)
         2 + // the north and south wings, cut round the upper grating
+        2 + // ...and the dark lining of their tunnels
         ARMORY_VENT_HATCHES.length + // each Armory vent hatch's grille (one merged mesh)
         fixedVentBlocks().length + // and each fixed grating of the vent row
         pileMeshes + // bags, bricks, planks, chunks: one merged mesh each

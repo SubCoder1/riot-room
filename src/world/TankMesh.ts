@@ -28,7 +28,7 @@ useWorldSpaceUv(material, {
   tileMetres: METAL_TILE_METRES / 2,
   macro: { frequency: 0.3, strength: 0.14, baseDirt: 0.12 },
 });
-weather(material, "metal", { exposure: 1 });
+weather(material, "enamel", { exposure: 1 });
 
 function paint(
   geometry: THREE.BufferGeometry,

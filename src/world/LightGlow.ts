@@ -32,9 +32,11 @@ const BEAM_FRAGMENT = /* glsl */ `
   varying float vRim;
 
   void main() {
-    float along = pow(1.0 - vFade, 2.2) * smoothstep(0.0, 0.1, vFade);
+    // Brightest by the lamp, gone well before the ground: haze in rain, with
+    // no visible far end and no tip.
+    float along = pow(1.0 - vFade, 2.8);
     // Soft to nothing at the cone's edge, so it has no hard outline in the air.
-    float soft = pow(smoothstep(0.0, 0.85, vRim), 2.2);
+    float soft = pow(smoothstep(0.0, 1.0, vRim), 4.0);
     gl_FragColor = vec4(uColor, uStrength * along * soft);
   }
 `;
@@ -96,7 +98,8 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
   const length = Math.min(light.distance * 0.7, MAX_BEAM, run);
   // (A hanging bulb's visible rays are narrower than its light, so the cone's
   // edge does not show as a pale triangle on the walls.)
-  const angle = (light.angle ?? 0.8) * (light.id.startsWith("bulb-") ? 0.5 : 1);
+  const angle =
+    (light.angle ?? 0.8) * (light.id.startsWith("bulb-") ? 0.5 : 0.65);
 
   root.name = `glow-${light.id}`;
   root.position.copy(from);
@@ -224,11 +227,18 @@ export function createFixtureGlow(light: LightDefinition): THREE.Group | null {
 
   geometry.translate(0, -length / 2, 0);
   geometry.rotateX(-Math.PI / 2);
+  // The cone starts behind the lens, so at the lens it is already as wide as
+  // the lens (a rectangle 0.5 x 0.34 m), not a point: the light leaves the
+  // whole face. Its width is stretched to the lens's proportions.
+  const back = 0.25 / Math.tan(angle);
+
+  geometry.translate(0, 0, -back);
+  geometry.scale(1.45, 1, 1);
 
   // (A hanging bulb's rays are as strong as a halogen's.)
   const beamStrength = light.id.startsWith("bulb-")
-    ? 0.14
-    : Math.min(0.1 + light.intensity / 700, 0.2);
+    ? 0.08
+    : Math.min(0.08 + light.intensity / 1400, 0.14);
   const beamMaterial = new THREE.ShaderMaterial({
     vertexShader: BEAM_VERTEX,
     fragmentShader: BEAM_FRAGMENT,

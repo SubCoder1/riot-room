@@ -55,9 +55,11 @@ export class BarrelFire {
   private readonly sparks: THREE.Mesh[] = [];
   private readonly light = new THREE.PointLight(0xff8a3a, 0, 7.5, 2);
   private readonly seed: number;
+  private readonly glow: number;
 
   constructor(drum: FireDrumDefinition) {
     this.seed = drum.x * 7.31 + drum.z * 3.17;
+    this.glow = drum.glow ?? 1;
     this.group.name = drum.id;
     this.group.position.set(drum.x, drum.y, drum.z);
 
@@ -103,12 +105,14 @@ export class BarrelFire {
     this.light.name = `${drum.id}-light`;
     // With shadows, so the walls stop its light (the Break room's north wall is
     // three metres off: without them the room's ceiling glowed from outside).
-    this.light.castShadow = true;
-    this.light.shadow.mapSize.set(512, 512);
-    this.light.shadow.camera.near = 0.3;
+    this.light.castShadow = drum.shadow !== false;
+    // A fine map and a small normal offset, so a shadow starts at the foot of
+    // what casts it (a big offset leaves a gap and detaches small things').
+    this.light.shadow.mapSize.set(1024, 1024);
+    this.light.shadow.camera.near = 0.2;
     this.light.shadow.camera.far = 7.5;
-    this.light.shadow.bias = -0.0008;
-    this.light.shadow.normalBias = 0.01;
+    this.light.shadow.bias = -0.0004;
+    this.light.shadow.normalBias = 0.003;
     this.group.add(this.light);
   }
 
@@ -173,7 +177,7 @@ export class BarrelFire {
     });
 
     this.light.intensity =
-      20 + 22 * flare + 3 * Math.sin(time * 23.7 + this.seed);
+      (20 + 22 * flare + 3 * Math.sin(time * 23.7 + this.seed)) * this.glow;
   }
 
   public dispose(): void {

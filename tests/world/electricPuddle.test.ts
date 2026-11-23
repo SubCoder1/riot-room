@@ -75,7 +75,7 @@ describe("The live puddle at the Power Room's door", () => {
     // Just past the puddle's edge (x), beyond it (z), and a floor below.
     for (const [x, y, z] of [
       [puddle.x + puddle.rx + 0.15, F, puddle.z],
-      [3, F, -15.9 + 1.8 + 0.15], // beyond the walkway puddle's far edge
+      [3, F, -15.9 + 2.1 + 0.15], // beyond the walkway puddle's far edge
       [puddle.x, F, -24.5], // behind the room's own wall line
       [puddle.x, F - 4, puddle.z],
       [puddle.x, F + 4, puddle.z],

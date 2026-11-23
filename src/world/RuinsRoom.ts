@@ -1,5 +1,6 @@
 import type { PartRole, PileElement } from "./ArenaLayout";
 import { Pieces, rng } from "./FittingPieces";
+import { groundPieces, surfaceUnder } from "./DebrisGround";
 import { halfExtents, type MapBuilder } from "./MapParts";
 import { meshExtent, meshVertices } from "./PileMeshes";
 
@@ -375,7 +376,7 @@ export function furnishRuins(map: MapBuilder, F: number): void {
   // its west side on the floor.
   const intactX = 23.72;
   const intactZ = -19.3;
-  const under = lay(
+  lay(
     "slab",
     25.5,
     -19.35,
@@ -496,9 +497,39 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     PLANK[0],
   );
 
-  // Reinforcement out of the fracture: straight bars lying out horizontally
-  // from the slab's east edge, some bent down, some stubs. (Each starts
-  // inside the concrete and runs out of the broken face.)
+  // Reinforcement out of the fracture. Each bar starts inside the concrete,
+  // at the slab's mid-thickness, and leaves the broken face: some run straight
+  // out and level, some bend down after a short level run and end on the
+  // floor (so no bar is left hanging free in the air: a level one is held at
+  // the face, a bent one is held at the face and rests on the ground).
+  // `rod` runs a bar from its start point along a bearing (0: east, a quarter
+  // turn: north) and a pitch (down is positive).
+  const rod = (
+    x: number,
+    y: number,
+    z: number,
+    length: number,
+    yaw: number,
+    down: number,
+  ): { x: number; y: number; z: number } => {
+    const dx = Math.cos(down) * Math.cos(yaw);
+    const dy = -Math.sin(down);
+    const dz = -Math.cos(down) * Math.sin(yaw);
+
+    put(
+      pit,
+      "plank",
+      x + (dx * length) / 2,
+      y + (dy * length) / 2,
+      z + (dz * length) / 2,
+      [length, 0.035, 0.035],
+      [0, yaw, -down],
+      fall() < 0.4 ? REBAR_BARE : REBAR,
+    );
+
+    return { x: x + dx * length, y: y + dy * length, z: z + dz * length };
+  };
+  const mid = 0.3;
   const faceX = intactX + 1.5;
 
   for (const [z, len, bend] of [
@@ -508,22 +539,21 @@ export function furnishRuins(map: MapBuilder, F: number): void {
     [-18.65, 0.55, 1],
     [-18.05, 0.8, 0],
   ] as const) {
-    const out = bend ? [1.0, 1.2, 0] : [0, flat, 0];
-    const lift = under * 0.5 + 0.18;
+    const yaw = (fall() - 0.5) * 0.4;
 
-    bar(
-      pit,
-      faceX - 0.25 + (len / 2) * (bend ? 0.9 : 1),
-      bend ? lift - 0.04 : lift,
-      z,
-      len + 0.25,
-      out as [number, number, number],
-    );
+    if (bend) {
+      // Level out of the face, then bent down to the floor.
+      const knee = rod(faceX - 0.25, mid, z, 0.5, yaw, 0);
+
+      rod(knee.x, knee.y, knee.z, 0.45, yaw + (fall() - 0.5) * 0.5, 0.65);
+    } else {
+      rod(faceX - 0.25, mid, z, len + 0.25, yaw, 0);
+    }
   }
 
-  // Bars out of the slab's north edge, bent over.
-  bar(pit, intactX - 0.7, 0.2, intactZ - 1.95, 0.7, [-0.45, 0.15, 0]);
-  bar(pit, intactX + 0.5, 0.36, intactZ - 1.9, 0.55, [-0.9, 0.3, 0]);
+  // Bars out of the slab's north edge, bent over and down onto the floor.
+  rod(intactX - 0.7, mid, intactZ - 1.45, 0.95, Math.PI / 2 + 0.15, 0.32);
+  rod(intactX + 0.5, mid, intactZ - 1.45, 0.8, Math.PI / 2 - 0.3, 0.38);
 
   // A steel beam that came down with it: its north end on the slab's top, its
   // south end on the floor, a bent flange on it.
@@ -712,34 +742,84 @@ export function furnishRuins(map: MapBuilder, F: number): void {
 
   // The pocket between the two fallen floor slabs on the east side: rubble and
   // two crushed drums, one box (a slot a crouched body could jump into).
-  put(
-    pit,
-    "pipe",
-    30.55,
-    0.29,
-    -19.8,
-    [0.9, 0.58, 0.58],
-    [0, 0.4, 0],
-    0x4b5663,
-  );
-  put(
-    pit,
-    "pipe",
-    31.0,
-    0.3,
-    -19.4,
-    [0.7, 0.5, 0.62],
-    [0.3, 1.2, 0.5],
-    0x59606a,
-  );
+  // A steel drum lying on its side, with the ribbing a real one has: the
+  // body, a rolling hoop at each end and one in the middle, a rim and a bung
+  // at each end. `squash` flattens it (crushed under the slab).
+  const drum = (
+    x: number,
+    z: number,
+    yaw: number,
+    body: number,
+    hoops: number,
+    squash: number,
+    length = 1.15,
+    diameter = 0.76,
+  ): void => {
+    const r = diameter / 2;
+    const h = diameter * squash;
+    const along = [Math.cos(yaw), -Math.sin(yaw)] as const;
+    const at = (t: number): [number, number] => [
+      x + along[0] * t,
+      z + along[1] * t,
+    ];
+
+    put(pit, "pipe", x, h / 2, z, [length, h, diameter], [0, yaw, 0], body);
+
+    for (const t of [-0.4, 0, 0.4]) {
+      const [hx, hz] = at(t * length);
+
+      put(
+        pit,
+        "pipe",
+        hx,
+        (h + 0.04) / 2,
+        hz,
+        [0.07, h + 0.04, diameter + 0.04],
+        [0, yaw, 0],
+        hoops,
+      );
+    }
+
+    for (const t of [-0.5, 0.5]) {
+      const [ex, ez] = at(t * length);
+
+      // The chime (the rolled rim) round each end, and a bung in one.
+      put(
+        pit,
+        "pipe",
+        ex,
+        (h + 0.06) / 2,
+        ez,
+        [0.06, h + 0.06, diameter + 0.06],
+        [0, yaw, 0],
+        hoops,
+      );
+    }
+
+    const [bx, bz] = at(0.5 * length + 0.025);
+
+    put(
+      pit,
+      "pipe",
+      bx,
+      h / 2 + r * 0.25,
+      bz,
+      [0.05, 0.12, 0.12],
+      [0, yaw, 0],
+      STEEL_DARK,
+    );
+  };
+
+  drum(30.55, -19.8, 0.4, 0x4b5663, STEEL_DARK, 0.82);
+  drum(30.7, -18.65, 1.2, 0x6a4030, 0x3a2c25, 0.9, 1.05, 0.72);
   // (A lid lying on the first drum, its underside on the drum's top.)
   put(
     pit,
     "plank",
     30.55,
-    0.6,
+    0.66,
     -19.8,
-    [0.55, 0.03, 0.55],
+    [0.62, 0.03, 0.62],
     [0.06, 0.3, 0.04],
     STEEL_DARK,
   );
@@ -766,9 +846,9 @@ export function furnishRuins(map: MapBuilder, F: number): void {
   pitBoxes.push({
     minX: 29.4,
     maxX: 31.65,
-    minZ: -20.3,
-    maxZ: -19.0,
-    top: 0.6,
+    minZ: -20.35,
+    maxZ: -18.1,
+    top: 0.7,
     exact: true,
   });
 
@@ -1338,193 +1418,12 @@ function propUp(elements: PileElement[], random: () => number): void {
 }
 
 /**
- * The height of what is drawn under (x, z): the highest point of any piece in
- * `list` within `reach` of it (a rock's or a slab's real mesh, a plank's or a
- * pipe's box), or the floor. A piece dropped there by its own lowest point
- * rests on what is really under it, not at a guessed height. Pieces that
- * stand tall (a section leaning on a wall, a beam) are not a surface: rubble
- * dropped by one comes to rest at its foot, not perched on its top edge.
- */
-function surfaceUnder(
-  list: readonly PileElement[],
-  x: number,
-  z: number,
-  reach: number,
-): number {
-  let top = 0;
-
-  for (const q of list) {
-    if (Math.abs(q.x - x) > 3 || Math.abs(q.z - z) > 3) continue;
-
-    const vertices = meshVertices(q);
-
-    if (vertices) {
-      let low = Infinity;
-      let high = -Infinity;
-
-      for (const v of vertices) {
-        low = Math.min(low, v.y);
-        high = Math.max(high, v.y);
-      }
-
-      if (high - low > 1.3) continue;
-
-      for (const v of vertices) {
-        if (Math.hypot(q.x + v.x - x, q.z + v.z - z) < reach) {
-          top = Math.max(top, q.y + v.y);
-        }
-      }
-    } else {
-      const [hx, hy, hz] = halfExtents(q);
-
-      if (hy > 0.65) continue;
-
-      if (Math.abs(q.x - x) < hx && Math.abs(q.z - z) < hz) {
-        top = Math.max(top, q.y + hy);
-      }
-    }
-  }
-
-  return top;
-}
-
-/**
  * The collision of the heaps is rubble, not a low prop: it is never vaulted
  * (a "floor" part is walked up where it is a step and blocks otherwise), so
  * nobody swings over a heap that is drawn as a pile of broken concrete.
  */
 function withRole<T extends object>(boxes: T[]): Array<T & { role: PartRole }> {
   return boxes.map((box) => ({ ...box, role: "floor" as const }));
-}
-
-/**
- * Puts every loose piece on what is really under it. A piece's origin says
- * nothing about where it touches: a rotated rock or a chipped slab is smaller
- * than its box, and a piece placed by a guess or lifted by the box rules can
- * hang a few centimetres over the floor, which its own shadow then shows. For
- * each piece the real lowest point of its drawn mesh is found, then the
- * highest thing drawn under that point (another piece's real surface, or the
- * floor); a piece whose lowest point is above that by a hand's width or less
- * is lowered until it is just sunk into it. Taller gaps are left (a piece
- * resting on something this does not count, or hanging from something), as
- * are long pieces (beams, tubes, bars) and tall ones (sections leaning on a
- * wall). Pieces go from the bottom up, so each one rests on a piece already
- * settled. `floor` is the height of the floor under them; `onDeck` limits the
- * pass to pieces lying on top of it (not the ones hanging from its edge).
- * Returns how many pieces were lowered.
- */
-function groundPieces(elements: PileElement[], onDeck = false): number {
-  interface Info {
-    e: PileElement;
-    low: number;
-    at: { x: number; z: number };
-    surface: Array<{ x: number; z: number; y: number }> | null;
-    top: number;
-  }
-
-  const infos: Info[] = [];
-
-  for (const e of elements) {
-    if (e.shape === "cable") continue;
-
-    const vertices = meshVertices(e);
-
-    if (vertices) {
-      let low = Infinity;
-      let top = -Infinity;
-      let at = { x: 0, z: 0 };
-
-      for (const v of vertices) {
-        if (v.y < low) {
-          low = v.y;
-          at = { x: e.x + v.x, z: e.z + v.z };
-        }
-
-        top = Math.max(top, v.y);
-      }
-
-      infos.push({
-        e,
-        low: e.y + low,
-        top: e.y + top,
-        at,
-        surface: vertices.map((v) => ({
-          x: e.x + v.x,
-          z: e.z + v.z,
-          y: e.y + v.y,
-        })),
-      });
-    } else {
-      const [, hy] = halfExtents(e);
-
-      infos.push({
-        e,
-        low: e.y - hy,
-        top: e.y + hy,
-        at: { x: e.x, z: e.z },
-        surface: null,
-      });
-    }
-  }
-
-  const supportUnder = (self: Info, x: number, z: number): number => {
-    let height = 0;
-
-    for (const q of infos) {
-      if (q === self) continue;
-      if (Math.abs(q.e.x - x) > 3 || Math.abs(q.e.z - z) > 3) continue;
-      // Tall or long pieces are not a surface to rest on.
-      if (q.top - q.low > 1.3) continue;
-
-      if (q.surface) {
-        for (const v of q.surface) {
-          if (Math.hypot(v.x - x, v.z - z) < 0.15) {
-            height = Math.max(height, v.y);
-          }
-        }
-      } else {
-        const [hx, , hz] = halfExtents(q.e);
-
-        if (Math.abs(q.e.x - x) < hx && Math.abs(q.e.z - z) < hz) {
-          height = Math.max(height, q.top);
-        }
-      }
-    }
-
-    return height;
-  };
-
-  let moved = 0;
-
-  for (const info of [...infos].sort((a, b) => a.low - b.low)) {
-    const { e } = info;
-    const long = Math.max(e.sx, e.sy, e.sz);
-
-    // Beams, tubes and bars are placed by what they are fixed to.
-    if ((e.shape === "plank" || e.shape === "pipe") && long > 0.9) continue;
-    // Pieces hanging from the walkway's edge, or overhead.
-    if (onDeck && (info.low < -0.05 || info.low > 0.5)) continue;
-    // Tall pieces lean on something.
-    if (info.top - info.low > 1.3) continue;
-
-    const gap = info.low - supportUnder(info, info.at.x, info.at.z);
-
-    if (gap > 0.004 && gap < 0.4) {
-      const lower = gap + Math.min(0.03, long * 0.12) * 0.5;
-
-      e.y -= lower;
-      info.low -= lower;
-      info.top -= lower;
-
-      if (info.surface) {
-        for (const v of info.surface) v.y -= lower;
-      }
-
-      moved++;
-    }
-  }
-
-  return moved;
 }
 
 /**

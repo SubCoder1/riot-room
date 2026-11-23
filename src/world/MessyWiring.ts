@@ -96,10 +96,11 @@ function sprawl(
 }
 
 /**
- * A lead run up a pole and kept against it: sometimes wound round in uneven
- * turns, sometimes running straight up for a stretch, now and then a tight
- * few turns of tape-like wrapping, and it ends short of the lamp head, still
- * on the pole.
+ * A lead run up a pole the way an electrician on a site does it: it comes up
+ * from the floor in a gentle curve, then runs dead straight up the pole,
+ * held by a black cable tie every half metre (the cut tails sticking out), a
+ * wrap of tape at the lowest tie, and ends in a short slack loop into the
+ * lamp head's gland. A spare turn of slack lies at the foot.
  */
 function wrapPole(
   p: Pieces,
@@ -110,68 +111,114 @@ function wrapPole(
   radius: number,
   color: number,
 ): void {
-  const diameter = 0.02 + random() * 0.006;
+  // Thick insulated site cable, dark (a reddish one now and then).
+  const diameter = 0.03 + random() * 0.006;
   const reach = radius + diameter / 2;
-  // Runs right up to the lamp's arm, ending a hand below it.
-  const end = Math.max(top - 0.35, 0.6);
-  const step = 0.06;
-  let y = 0.15;
-  let angle = random() * Math.PI * 2;
-  let from: Vec = [
-    cx + Math.cos(angle) * (reach + 0.05),
+  const angle = random() * Math.PI * 2;
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  const at = (r: number, y: number, side = 0): Vec => [
+    cx + ca * r - sa * side,
     y,
-    cz + Math.sin(angle) * (reach + 0.05),
+    cz + sa * r + ca * side,
   ];
-  let mode: "wind" | "straight" | "tight" = "wind";
-  let left = 0.3 + random() * 0.7;
-  let rate = 0;
+  const lead = random() < 0.7 ? 0x1c1e22 : color;
+  const end = Math.max(top - 0.4, 0.8);
 
-  const pick = (): void => {
-    const roll = random();
+  // From the floor, 0.45 m out, curving in to the pole by 0.35 m up.
+  const rise: Array<[number, number, number]> = [
+    [0.45, 0.015, 0.12],
+    [0.3, 0.02, 0.06],
+    [0.18, 0.08, 0.03],
+    [0.09, 0.2, 0.0],
+    [0.03, 0.34, 0.0],
+    [0, 0.45, 0],
+  ];
+  let from = at(reach + rise[0][0], rise[0][1], rise[0][2]);
 
-    mode = roll < 0.5 ? "wind" : roll < 0.8 ? "straight" : "tight";
-    // How fast it turns, in radians per metre of height, and which way.
-    rate =
-      mode === "wind"
-        ? (3 + random() * 9) * (random() < 0.5 ? 1 : -1)
-        : mode === "tight"
-          ? (30 + random() * 20) * (random() < 0.5 ? 1 : -1)
-          : (random() - 0.5) * 1.2;
-    left = mode === "tight" ? 0.12 + random() * 0.2 : 0.3 + random() * 1.1;
-  };
+  for (const [r, y, side] of rise.slice(1)) {
+    const to = at(reach + r, y, side);
 
-  pick();
+    wire(p, from, to, diameter, lead);
+    from = to;
+  }
+
+  // A spare turn of slack at the foot, lying on the floor.
+  for (let k = 0; k < 8; k++) {
+    const t0 = (k / 8) * Math.PI * 2;
+    const t1 = ((k + 1) / 8) * Math.PI * 2;
+    const centre = reach + 0.55;
+
+    wire(
+      p,
+      at(centre + Math.cos(t0) * 0.12, diameter / 2, Math.sin(t0) * 0.12),
+      at(centre + Math.cos(t1) * 0.12, diameter / 2, Math.sin(t1) * 0.12),
+      diameter,
+      lead,
+    );
+  }
+
+  // Straight up the pole, with a tiny sway so it is not ruler-true.
+  let y = 0.45;
 
   while (y < end) {
-    // Never turn more than ~0.3 rad in one piece, so a bend stays smooth.
-    const dy = Math.min(step, end - y, 0.3 / Math.max(Math.abs(rate), 1));
+    const dy = Math.min(0.5, end - y);
+    const to = at(reach, y + dy, (random() - 0.5) * 0.004);
 
-    y += dy;
-    angle += rate * dy;
-
-    const r = reach + (random() - 0.5) * 0.008;
-    const to: Vec = [cx + Math.cos(angle) * r, y, cz + Math.sin(angle) * r];
-
-    wire(p, from, to, diameter, color);
+    wire(p, from, to, diameter, lead);
     from = to;
-    left -= dy;
+    y += dy;
 
-    if (left <= 0) {
-      pick();
+    // A black cable tie round both pole and lead, its cut tail out.
+    if (y < end - 0.05) {
+      p.box(
+        cx + ca * (reach + 0.004),
+        y - 0.012,
+        cz + sa * (reach + 0.004),
+        0.03,
+        0.014,
+        0.03,
+        0x0e0f11,
+        angle,
+      );
+      p.box(
+        cx + ca * (reach + 0.03),
+        y - 0.01,
+        cz + sa * (reach + 0.03) + 0.01,
+        0.04,
+        0.006,
+        0.008,
+        0x0e0f11,
+        angle,
+      );
     }
   }
 
-  // The end is left bare, pressed to the pole.
-  p.cable(
-    from[0],
-    from[1] + 0.05,
-    from[2],
-    0.1,
-    0.01,
-    0xa8602c,
-    0,
-    Math.PI / 2,
+  // A band of tape at the first tie.
+  p.box(
+    cx + ca * (reach + 0.002),
+    0.52,
+    cz + sa * (reach + 0.002),
+    0.05,
+    0.06,
+    0.05,
+    0x14161a,
+    angle,
   );
+
+  // The top: the lead leaves the pole in a short loop and goes into the lamp head.
+  const loop: Array<[number, number, number]> = [
+    [0.05, 0.1, 0.03],
+    [0.12, 0.12, 0.07],
+    [0.18, 0.05, 0.1],
+  ];
+
+  for (const [r, up, side] of loop) {
+    const to = at(reach + r, end + up, side);
+
+    wire(p, from, to, diameter, lead);
+    from = to;
+  }
 }
 
 /** The pole a lamp hangs on: its fitting's collider, or the lamp itself. */
@@ -288,10 +335,43 @@ export function furnishMessyWiring(map: MapBuilder): void {
       }
     }
 
-    // A taped-up junction and a loose plug on the floor.
-    p.box(fx + 0.3, 0, fz - 0.2, 0.18, 0.1, 0.12, GUNMETAL, random() * 3);
-    p.box(fx + 0.3, 0.1, fz - 0.2, 0.2, 0.02, 0.14, 0x14161a, random() * 3);
-    p.box(fx - 0.35, 0, fz + 0.3, 0.07, 0.04, 0.05, STEEL_BARE, random() * 3);
+    // A taped-up junction and a loose plug on the floor. (Both must be on the
+    // floor the lamp's own level is, with a hand's margin: a lamp over a
+    // platform's edge put them past it, hanging in the air. Pulled toward the
+    // lamp until they are on it, or left out; the random draws stay the same.)
+    const junctionTurn = random() * 3;
+    const lidTurn = random() * 3;
+    const plugTurn = random() * 3;
+    const fits = (k: number): boolean =>
+      [
+        [fx + 0.3, fz - 0.2],
+        [fx - 0.35, fz + 0.3],
+      ].every(([x, z]) =>
+        [
+          [0, 0],
+          [0.15, 0],
+          [-0.15, 0],
+          [0, 0.15],
+          [0, -0.15],
+        ].every(([dx, dz]) =>
+          onLevel(level)(
+            lamp.x + (x - lamp.x) * k + dx,
+            lamp.z + (z - lamp.z) * k + dz,
+          ),
+        ),
+      );
+    const shrink = [1, 0.7, 0.4, 0.15].find(fits);
+
+    if (shrink !== undefined) {
+      const jx = lamp.x + (fx + 0.3 - lamp.x) * shrink;
+      const jz = lamp.z + (fz - 0.2 - lamp.z) * shrink;
+      const gx = lamp.x + (fx - 0.35 - lamp.x) * shrink;
+      const gz = lamp.z + (fz + 0.3 - lamp.z) * shrink;
+
+      p.box(jx, 0, jz, 0.18, 0.1, 0.12, GUNMETAL, junctionTurn);
+      p.box(jx, 0.1, jz, 0.2, 0.02, 0.14, 0x14161a, lidTurn);
+      p.box(gx, 0, gz, 0.07, 0.04, 0.05, STEEL_BARE, plugTurn);
+    }
   }
 
   // Red leads all over, in a few places: nests of spaghetti with no plan.

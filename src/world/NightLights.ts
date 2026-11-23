@@ -23,17 +23,57 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     intensity: 8,
     distance: 10,
   },
-  // One dim warm amber lamp, held well out from the north wall (a lamp close
-  // to a wall burns a small hard spot into it), for the lower floor's rubble
-  // and the wall behind it.
+  // The vault entrance's tube light: a cold cyan tube hung from the roof
+  // inside the Ruins, just past the collapsed doorway (its drawn fixture: ChamberGlow).
+  // (It takes the place of the pit's dim amber lamp: the rail shader holds 34.)
   {
-    id: "indicator-ruins-warm",
-    x: 23.8,
-    y: 2.4,
-    z: -21.4,
-    color: 0xffa850,
-    intensity: 2.2,
-    distance: 5,
+    id: "indicator-ruins-entrance",
+    x: 25.6,
+    y: 9.9,
+    z: -19.8,
+    color: 0x6fd0f0,
+    intensity: 36,
+    distance: 13,
+  },
+  {
+    id: "indicator-ruins-entrance-b",
+    x: 29.4,
+    y: 9.9,
+    z: -19.8,
+    color: 0x6fd0f0,
+    intensity: 36,
+    distance: 13,
+  },
+  // The Ruins' chamber (see RuinsChamber): three restrained lamps, no shadows
+  // (the room's own light region keeps each inside it): an amber emergency
+  // lamp in the vestibule, the old fixture over the middle of the hall, and a
+  // pale status light by the enclosure at the far end.
+  {
+    id: "indicator-ruins-chamber-entry",
+    x: 23.7,
+    y: 3.0,
+    z: -9.6,
+    color: 0xffa860,
+    intensity: 9,
+    distance: 7.5,
+  },
+  {
+    id: "indicator-ruins-chamber-mid",
+    x: 22.4,
+    y: 2.85,
+    z: 0.3,
+    color: 0xd6cdb6,
+    intensity: 70,
+    distance: 20,
+  },
+  {
+    id: "indicator-ruins-chamber-far",
+    x: 24.0,
+    y: 3.0,
+    z: 8.6,
+    color: 0xb8d0c0,
+    intensity: 16,
+    distance: 11,
   },
   {
     id: "halogen-wall-room-armory",
@@ -45,9 +85,11 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     // The warm yellow of the site's work halogens (the scaffold's).
     color: 0xffcf94,
     intensity: 75,
-    distance: 15,
-    target: { x: -18.6, y: 4.0, z: 8 },
-    angle: 0.9,
+    distance: 11,
+    // (A narrow cone aimed out along the walkway: a wide one spilled under the
+    // edge of the Armory's floor onto the ground below it.)
+    target: { x: -16.6, y: 4.0, z: 8 },
+    angle: 0.62,
     // Its beam stops at the Armory's wall: no light through it into the room.
     castShadow: true,
   },
@@ -132,12 +174,12 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     "bulb-junk-b": { scale: 0.88, color: 0xffb870, reach: 1 },
     "bulb-power-a": { scale: 0.88, color: 0xffb870, reach: 1 },
     "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
-    "bulb-break-a": { scale: 0.96, reach: 1 },
+    "bulb-break-a": { scale: 0.96, color: 0xff9440, reach: 1 },
     "light-room-barracks": { scale: 1.6, color: 0xffbe85, reach: 1 },
-    "light-room-yard": { scale: 1.4, reach: 0.42 },
+    "light-room-yard": { scale: 1.4, color: 0xff9440, reach: 0.42 },
     // The scaffold lamp lights the alley; its tail is cut where it reached into rooms.
     "light-site-scaffold": { scale: 1, reach: 0.8 },
-    "light-room-hall-b": { scale: 0.72, reach: 1 },
+    "light-room-hall-b": { scale: 0.72, color: 0xff9440, reach: 1 },
     "workshop-light-bench": { scale: 2.8, reach: 0.55 },
     "workshop-light-machines": { scale: 2.2 },
     "light-power-room-work": { scale: 1, reach: 1 },

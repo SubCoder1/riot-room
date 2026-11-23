@@ -724,7 +724,7 @@ function buildSupport(map: MapBuilder, F: number, s: Support): void {
   // enough for a focused pool, with the cold harsh white of old halogen.
   heads.forEach((h, index) => {
     const [lx, lz] = at(s, h.u, h.v);
-    const [ax, tz0] = at(s, h.u + 1.1 + s.tilt * 3, h.v * 0.5);
+    const [ax, tz0] = at(s, h.u + 0.5 + s.tilt * 1.5, h.v * 0.5);
     const tx = s.aim ? s.aim[0] : ax;
     const tz = s.aim ? s.aim[2] : tz0;
 
@@ -734,8 +734,11 @@ function buildSupport(map: MapBuilder, F: number, s: Support): void {
       y: F + h.y,
       z: lz,
       color: s.color ?? 0xeaf0f7,
-      intensity: s.power ?? (wall ? 45 : heads.length > 1 ? 60 : 75),
-      distance: wall ? 12 : 15,
+      // (Option C of the lamp comparison: 2.2 times brighter, a wider cone.)
+      intensity: 3.2 * (s.power ?? (wall ? 45 : heads.length > 1 ? 60 : 75)),
+      // (A tight, short cone: a wide one spilled past the walkway's edge and
+      // lit the ground floor below.)
+      distance: 13,
       target: { x: tx, y: s.aim ? s.aim[1] : F + 0.2, z: tz },
       angle: 0.72,
       castShadow: s.shadow === true && index === 0,

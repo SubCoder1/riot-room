@@ -261,16 +261,7 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
     scrawl(p, "z", 1, -23.7, 30.7, 1.5, 0.3);
     crudeX(p, "z", 1, -23.7, 23.3, 1.5, 0.3, PAINT_RED);
     map.createFitting("occupation-server", F, p.elements, []);
-    map.addLight({
-      id: "light-room-server",
-      castShadow: true,
-      x: 27.0,
-      y: F + 5.2,
-      z: -17.0,
-      color: 0x7fb0ea,
-      intensity: 26,
-      distance: 12,
-    });
+    // (Its own overhead lamp is gone: the entrance's cyan tube lights the room.)
   }
 
   // =============================================================== ARCHIVE
@@ -296,7 +287,10 @@ export function furnishOccupation(map: MapBuilder, floorY: number): void {
 
       map.addLight({
         id: id as string,
-        castShadow: true,
+        // Only the first throws shadows: every shadow map costs a texture slot
+        // in each lit material, and the GPU has 16 (see lightRegions.test).
+        // The second is kept in its room by the room's light region.
+        castShadow: n === 0,
         x: bulb.x,
         y: F + bulb.y - 0.16,
         z: bulb.z,

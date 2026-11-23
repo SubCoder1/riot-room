@@ -25,6 +25,7 @@ import {
 } from "../world/ArmoryMechanisms";
 import { ArmoryMechanismView } from "../world/ArmoryMechanismView";
 import { createTubeGlow } from "../world/ArmoryLighting";
+import { createChamberGlow } from "../world/ChamberGlow";
 import { createHangingTubeGlow } from "../world/HangingTubes";
 import {
   BARRACKS_BULB,
@@ -303,6 +304,7 @@ export class Game {
   private readonly armoryView = new ArmoryMechanismView();
   /** The Armory's tubes (they glow, and the loose one dips with its lamp). */
   private readonly tubeGlow = createTubeGlow();
+  private readonly chamberGlow = createChamberGlow();
   /** The Warehouse's hanging tubes. */
   private readonly hangingTubes = createHangingTubeGlow();
   private readonly junkBulbs = createJunkBulbGlow(UPPER_FLOOR_Y);
@@ -746,6 +748,7 @@ export class Game {
     this.renderer.scene.add(this.arena.group);
     this.arena.group.add(this.armoryView.group);
     this.arena.group.add(this.tubeGlow.group);
+    this.arena.group.add(this.chamberGlow.group);
     this.arena.group.add(this.hangingTubes.group);
     this.arena.group.add(this.junkBulbs.group);
     this.arena.group.add(this.ventDrips.group);
@@ -4044,6 +4047,7 @@ export class Game {
     this.extractionMarker.removeFromParent();
     this.hudCluster.remove();
     this.tubeGlow.dispose();
+    this.chamberGlow.dispose();
     this.hangingTubes.dispose();
     this.junkBulbs.dispose();
     this.fuelSpillView.dispose();

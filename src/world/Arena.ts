@@ -423,6 +423,7 @@ export class Arena {
     // roofs shimmer (shadow acne), worst when a flash brightens the light.
     keyLight.shadow.bias = -0.0004;
     keyLight.shadow.normalBias = 0.025;
+    keyLight.shadow.radius = 1.5;
     this.group.add(keyLight);
 
     const flickering: THREE.Light[] = [];
@@ -516,7 +517,7 @@ export class Arena {
           light.intensity,
           light.distance,
           light.angle ?? 0.8,
-          0.65,
+          1,
           regions.decays.get(light.id) ?? 2,
         );
 
@@ -530,12 +531,14 @@ export class Arena {
         spot.castShadow = light.castShadow === true;
 
         if (spot.castShadow) {
-          spot.shadow.mapSize.set(512, 512);
+          spot.shadow.mapSize.set(1024, 1024);
+          // A soft edge: a hard one steps and shimmers on the ground.
+          spot.shadow.radius = 1.5;
           spot.shadow.camera.near = 0.5;
           spot.shadow.camera.far = light.distance;
           spot.shadow.bias = -0.0005;
           // Without it the grazing light down a vent's walls shimmers (acne).
-          spot.shadow.normalBias = 0.015;
+          spot.shadow.normalBias = 0.012;
         }
 
         this.group.add(spot);
@@ -602,6 +605,7 @@ export class Arena {
       if (light.castShadow === true) {
         lamp.castShadow = true;
         lamp.shadow.mapSize.set(512, 512);
+        lamp.shadow.radius = 1.5;
         lamp.shadow.camera.near = 0.3;
         lamp.shadow.camera.far = light.distance;
         lamp.shadow.bias = -0.0008;

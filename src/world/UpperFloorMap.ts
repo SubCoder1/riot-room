@@ -53,6 +53,7 @@ import {
 import { furnishBarracks } from "./Barracks";
 import { furnishConstructionSite } from "./ConstructionSite";
 import { furnishBreakRoom } from "./BreakRoom";
+import { CHAMBER_HOLLOWS, furnishRuinsChamber } from "./RuinsChamber";
 import { furnishRuins } from "./RuinsRoom";
 import { furnishVaultCase } from "./VaultCase";
 import { furnishSpawnAreas } from "./SpawnAreas";
@@ -124,7 +125,67 @@ function createUpperFloor(): ArenaLayout {
   map.createFloorSection("north-wing-nw", bounds(-X, -21, -13.5, -12), F);
   map.createFloorSection("south-wing", bounds(-X, X, 12, Z), F);
   map.createFloorSection("west-wing", bounds(-X, -18, -12, 12), F);
-  map.createFloorSection("east-wing", bounds(18, X, -12, 12), F);
+  // The east wing: solid, except where the ground floor runs on into the
+  // Ruins' chamber (three hollows, entered from the pit through the wing's
+  // north face): over those the floor is only a slab 0.3 m thick, hanging.
+  // The rest of the wing is cut into solid blocks round them. See RuinsChamber.
+  {
+    const wing = { minX: 18, maxX: X, minZ: -12, maxZ: 12 };
+    const unique = (v: number[]): number[] =>
+      [...new Set(v)].sort((p, q) => p - q);
+    const xs = unique([
+      wing.minX,
+      wing.maxX,
+      ...CHAMBER_HOLLOWS.flatMap((r) => [r.minX, r.maxX]),
+    ]);
+    const zs = unique([
+      wing.minZ,
+      wing.maxZ,
+      ...CHAMBER_HOLLOWS.flatMap((r) => [r.minZ, r.maxZ]),
+    ]);
+    const hollowAt = (i: number, j: number): boolean =>
+      CHAMBER_HOLLOWS.some(
+        (r) =>
+          r.minX <= xs[i] &&
+          xs[i + 1] <= r.maxX &&
+          r.minZ <= zs[j] &&
+          zs[j + 1] <= r.maxZ,
+      );
+    let block = 0;
+
+    for (let j = 0; j + 1 < zs.length; j++) {
+      // The solid cells of this strip, side by side joined into runs.
+      let start = -1;
+
+      for (let i = 0; i + 1 < xs.length; i++) {
+        if (!hollowAt(i, j) && start < 0) start = i;
+
+        const last = i + 2 === xs.length;
+
+        if (start >= 0 && (hollowAt(i, j) || last)) {
+          const end = hollowAt(i, j) ? i : i + 1;
+
+          map.createFloorSection(
+            // (The block on the arena face at the south keeps the wing's own name.)
+            xs[start] === wing.minX && zs[j] <= 9 && 9 < zs[j + 1]
+              ? "east-wing"
+              : `east-wing~solid-${block++}`,
+            bounds(xs[start], xs[end], zs[j], zs[j + 1]),
+            F,
+          );
+          start = -1;
+        }
+      }
+    }
+
+    for (const r of CHAMBER_HOLLOWS) {
+      map.createFloorSection(
+        `east-wing~${r.id}${r.id === "room-ruins-chamber" ? "-roof" : "-roof-part"}`,
+        bounds(r.minX, r.maxX, r.minZ, r.maxZ),
+        F,
+      ).bottom = F - 0.3;
+    }
+  }
 
   // ------------------------------------------------------------- walkways
   // Four widths: a wide east side, medium north and south, a narrower west
@@ -595,6 +656,7 @@ function createUpperFloor(): ArenaLayout {
   // through the 4 m doorway the yard's staircase used to climb to. It is not a
   // spawn area: the only spawn yard is the north-west one, with its stairs.
   furnishRuins(map, F);
+  furnishRuinsChamber(map, F);
   const serverRoom = map.createRoom({
     id: "room-server",
     name: "The Ruins",
@@ -820,8 +882,8 @@ function createUpperFloor(): ArenaLayout {
     // floor past it are dry, and the vent stays open.
     z: -15.9,
     y: F,
-    rx: 3.4,
-    rz: 1.8,
+    rx: 3.8,
+    rz: 2.1,
     // Open to the sky outside the Power Room's door: the rain lands on it.
     rain: true,
   });

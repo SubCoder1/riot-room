@@ -20,7 +20,16 @@ import type * as THREE from "three";
  *
  * Every effect is held back: most of a surface is left as it was.
  */
-export type WearKind = "metal" | "wood" | "concrete" | "mixed";
+export type WearKind =
+  | "metal"
+  | "wood"
+  | "concrete"
+  | "mixed"
+  | "steel"
+  | "enamel"
+  | "pipe"
+  | "cast"
+  | "hazard";
 
 /** What a piece of a `mixed` material is made of. */
 export const WEAR_WOOD = 0;
@@ -31,6 +40,14 @@ export const WEAR_PLASTIC = 3;
 export const WEAR_RUBBLE = 4;
 /** A brick: speckle, chips, mortar smeared on it. */
 export const WEAR_BRICK = 5;
+/** Painted sheet metal: cabinets, lockers, drums, panels. */
+export const WEAR_ENAMEL = 6;
+/** Hot-rolled structural steel: beams, bars, braces, brackets. */
+export const WEAR_STEEL = 7;
+/** Pipes and conduit: paint bands, weld rings, flaking. */
+export const WEAR_PIPE = 8;
+/** Heavy cast machinery: boilers, transformers, housings. */
+export const WEAR_CAST = 9;
 
 export interface WearOptions {
   /**
@@ -69,6 +86,17 @@ const NOISE = /* glsl */ `
     p = fract( p * 0.3183099 + vec3( 0.71, 0.113, 0.419 ) );
     p *= 17.0;
     return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) );
+  }
+  // How big a pixel is on the surface, and how much of a pattern of f
+  // cycles per metre is still there to see (a finer one is faded, not shimmered).
+  float wxPix( vec3 p ) { return length( fwidth( p ) ) * 0.7071; }
+  float wxFine( float px, float f ) { return 1.0 - smoothstep( 0.18, 0.5, px * f ); }
+  float wxNoise( vec3 x );
+  // How much of the surface detail a place carries (0.15 to 1). It changes
+  // slowly from one object to the next, so some are nearly clean and some are
+  // worn, and no two look alike.
+  float wxGate( vec3 p, float salt ) {
+    return 0.15 + 0.85 * smoothstep( 0.3, 0.75, wxNoise( p * 0.85 + vec3( salt, salt * 0.7, salt * 1.3 ) ) );
   }
   float wxNoise( vec3 x ) {
     vec3 i = floor( x );
@@ -154,7 +182,194 @@ const metal = (e: string): string => /* glsl */ `
     vec3 rustLight = vec3( 0.17, 0.07, 0.04 );
     vec3 rust = mix( rustDark, rustLight, smoothstep( 0.3, 0.8, fine * 0.5 + mid * 0.5 ) );
     diffuseColor.rgb = mix( diffuseColor.rgb, rust, amount * 0.9 );
+    // Surface: a fine grain, a faint brushed run and the odd scratch, paint
+    // chipped bright along the edges. Noise only (no texture), and skipped
+    // where it would be too small to see.
+    float near = 1.0 - smoothstep( 7.0, 20.0, length( vViewPosition ) );
+    if ( near > 0.01 ) {
+      // Nothing about it repeats: the direction of the brushing, its scale and
+      // how strong the grain is change from one place to the next, so two
+      // cabinets never match. The direction and the scale are held to a few
+      // steps (not blended): a smoothly changing one swims as you move.
+      float turn = floor( wxNoise( p * 0.43 + vec3( 17.0 ) ) * 4.0 ) * 0.7854;
+      float ca = cos( turn );
+      float sa = sin( turn );
+      vec3 r = vec3( p.x * ca - p.z * sa, p.y, p.x * sa + p.z * ca );
+      float scale = 0.8 + 0.22 * floor( wxNoise( p * 0.31 + vec3( 5.0 ) ) * 3.0 );
+      float strength = ( 0.3 + 0.7 * wxNoise( p * 0.57 + vec3( 29.0 ) ) ) * wxGate( p, 7.0 );
+      bool upright = abs( vWxNrm.y ) < 0.6;
+      // How big a pixel is on the surface (m): a pattern finer than about two
+      // pixels is faded out, not left to shimmer.
+      float px = length( fwidth( p ) ) * 0.7071;
+      float f1 = 1.0 - smoothstep( 0.18, 0.5, px * 52.0 * scale );
+      float f2 = 1.0 - smoothstep( 0.18, 0.5, px * 118.0 * scale );
+      float f3 = 1.0 - smoothstep( 0.18, 0.5, px * 64.0 * scale );
+      float f4 = 1.0 - smoothstep( 0.18, 0.5, px * 34.0 * scale );
+      float g1 = wxNoise( r * 52.0 * scale );
+      float g2 = wxNoise( r * 118.0 * scale + vec3( 7.0 ) );
+      float run = upright
+        ? wxNoise( vec3( r.x * 64.0 * scale, r.y * 3.0, 1.0 ) )
+        : wxNoise( vec3( r.x * 64.0 * scale, 3.0, r.z * 6.0 ) );
+      float tex = ( g1 - 0.5 ) * 0.1 * f1 + ( g2 - 0.5 ) * 0.06 * f2 + ( run - 0.5 ) * 0.12 * f3;
+      diffuseColor.rgb *= 1.0 + tex * strength * near;
+      float scratchy = smoothstep( 0.35, 0.8, wxNoise( p * 0.8 + vec3( 41.0 ) ) );
+      float scratch = smoothstep( 0.9, 0.98, wxNoise( upright ? vec3( r.x * 34.0, r.y * 1.4, 2.0 ) : vec3( r.x * 34.0, 3.0, r.z * 2.0 ) ) );
+      diffuseColor.rgb += scratch * scratchy * 0.022 * f4 * near;
+      float chip = edgeW * smoothstep( 0.55, 0.8, g2 ) * f2 * ( 1.0 - amount );
+      diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 1.5 + 0.02, chip * 0.5 * near );
+    }
     wxAmount = amount;
+    wxMetal = 1.0;
+  }
+`;
+
+/**
+ * Painted sheet metal (cabinets, lockers, drums, panels): smooth enamel with
+ * a faint orange peel, paint chipped away at edges to bare steel, rust
+ * bleeding from the chips and the foot, drip streaks down upright faces and
+ * dust on the tops.
+ */
+const enamel = (e: string, mixed: boolean): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float px = wxPix( p );
+    float near = 1.0 - smoothstep( 7.0, 20.0, length( vViewPosition ) );
+    bool upright = abs( vWxNrm.y ) < 0.6;
+    float gate = wxGate( p, 3.0 );
+    float broad = wxNoise( p * 1.1 + vec3( 3.0, 1.0, 7.0 ) );
+    diffuseColor.rgb *= 0.96 + 0.08 * broad;
+    diffuseColor.rgb *= 1.0 + ( wxNoise( p * 20.0 ) - 0.5 ) * 0.03 * wxFine( px, 20.0 ) * near;
+    float edgeW = 1.0 - smoothstep( 0.0, 0.04, wxEdge );
+    ${mixed ? "if ( vWxHalf.y < 0.0 ) edgeW = 0.0;" : ""}
+    float chipN = smoothstep( 0.66, 0.84, wxNoise( p * 55.0 + vec3( 5.0 ) ) ) * wxFine( px, 55.0 );
+    float chip = clamp( edgeW * chipN * 1.2, 0.0, 1.0 ) * near * gate;
+    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.55 + 0.03, chip * 0.7 );
+    float baseW = 1.0 - smoothstep( 0.0, 0.5, wxBase );
+    float seed = smoothstep( 0.45, 0.75, wxNoise( p * 7.0 + vec3( 9.0 ) ) );
+    float rust = clamp( ( edgeW * 0.3 + baseW * 0.4 ) * seed * ${e} * gate + chip * 0.25, 0.0, 0.4 );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.17, 0.075, 0.04 ), rust * 0.8 );
+    float drip = upright
+      ? smoothstep( 0.62, 0.86, wxNoise( vec3( ( p.x + p.z ) * 26.0, p.y * 0.9, 4.0 ) ) ) * wxFine( px, 26.0 )
+      : 0.0;
+    diffuseColor.rgb *= 1.0 - 0.1 * drip * near * gate;
+    if ( vWxNrm.y > 0.6 ) {
+      diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.2, 0.19, 0.17 ), 0.12 * gate * wxNoise( p * 5.0 ) );
+    }
+    wxAmount = rust;
+    wxMetal = 1.0;
+  }
+`;
+
+/**
+ * Hot-rolled structural steel: dark blue-grey mill scale, mottled in broad
+ * patches, with long faint rolling marks; rust only at the edges, the foot
+ * and the joints. Almost no grain.
+ */
+const steel = (e: string): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float px = wxPix( p );
+    float mott = wxNoise( p * 4.5 + vec3( 2.0 ) ) * 0.6 + wxNoise( p * 15.0 ) * 0.4 * wxFine( px, 15.0 );
+    float gate = wxGate( p, 17.0 );
+    diffuseColor.rgb *= 0.9 + 0.16 * mott;
+    diffuseColor.rgb *= vec3( 0.94, 0.98, 1.04 );
+    bool upright = abs( vWxNrm.y ) < 0.6;
+    float rolled = upright
+      ? wxNoise( vec3( ( p.x + p.z ) * 2.2, p.y * 0.25, 3.0 ) )
+      : wxNoise( vec3( p.x * 0.3, 2.0, p.z * 2.2 ) );
+    diffuseColor.rgb *= 0.97 + 0.06 * rolled;
+    float edgeW = 1.0 - smoothstep( 0.0, 0.14, wxEdge );
+    float baseW = 1.0 - smoothstep( 0.0, 0.4, wxBase );
+    float seed = smoothstep( 0.35, 0.7, wxNoise( p * 3.0 + vec3( 8.0 ) ) );
+    float rust = clamp( ( edgeW * 0.55 + baseW * 0.5 ) * seed * ${e} * gate, 0.0, 0.5 );
+    vec3 rustCol = mix( vec3( 0.07, 0.036, 0.026 ), vec3( 0.17, 0.07, 0.04 ), wxNoise( p * 12.0 ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, rustCol, rust * 0.85 );
+    wxAmount = rust;
+    wxMetal = 1.0;
+  }
+`;
+
+/**
+ * Pipes and conduit: a painted skin banded lengthwise in soft shades, a weld
+ * ring at every joint, paint flaked off in patches to rust, dust along the top
+ * and a dark stain under the belly (where condensation runs).
+ */
+const pipe = (e: string, mixed: boolean): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float px = wxPix( p );
+    float l = ${mixed ? "vWxLocal.x" : "( p.x + p.z + p.y )"};
+    float gate = wxGate( p, 29.0 );
+    float band = wxNoise( vec3( l * 0.35, 1.0, 3.0 ) );
+    diffuseColor.rgb *= 0.95 + 0.1 * band;
+    float ring = exp( - pow( ( fract( l * 0.625 ) - 0.5 ) / 0.02, 2.0 ) );
+    diffuseColor.rgb *= 1.0 - 0.4 * ring * wxFine( px, 20.0 );
+    float flake = smoothstep( 0.6, 0.8, wxNoise( p * 5.5 + vec3( 4.0 ) ) ) * ${e} * gate;
+    float flakeEdge = smoothstep( 0.0, 0.35, wxNoise( p * 22.0 ) ) * wxFine( px, 22.0 );
+    float rust = clamp( flake * ( 0.55 + 0.45 * flakeEdge ), 0.0, 0.6 );
+    diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 0.07, 0.036, 0.026 ), vec3( 0.18, 0.08, 0.045 ), wxNoise( p * 14.0 ) ), rust * 0.85 );
+    if ( vWxNrm.y > 0.5 ) {
+      diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.21, 0.2, 0.18 ), 0.14 * gate * wxNoise( p * 6.0 ) );
+    } else if ( vWxNrm.y < -0.2 ) {
+      diffuseColor.rgb *= 0.82;
+    }
+    wxAmount = rust;
+    wxMetal = 1.0;
+  }
+`;
+
+/**
+ * Heavy cast machinery: a rough sand-cast skin pitted with small dark holes,
+ * thick dark paint worn to bare iron on the corners, grease gathered round the
+ * foot and the joints.
+ */
+const cast = (e: string): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float px = wxPix( p );
+    float near = 1.0 - smoothstep( 6.0, 18.0, length( vViewPosition ) );
+    float gate = wxGate( p, 41.0 );
+    diffuseColor.rgb *= 0.7 + 0.2 * wxNoise( p * 2.6 + vec3( 6.0 ) );
+    float pit = smoothstep( 0.7, 0.9, wxNoise( p * 34.0 + vec3( 3.0 ) ) ) * wxFine( px, 34.0 ) * near;
+    diffuseColor.rgb *= 1.0 - 0.3 * pit * gate;
+    float cloud = wxNoise( p * 9.0 + vec3( 12.0 ) );
+    diffuseColor.rgb *= 0.92 + 0.14 * cloud;
+    float edgeW = 1.0 - smoothstep( 0.0, 0.07, wxEdge );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.2, 0.19, 0.18 ), edgeW * smoothstep( 0.45, 0.7, cloud ) * 0.55 );
+    float baseW = 1.0 - smoothstep( 0.0, 0.55, wxBase );
+    float grease = clamp( ( baseW * ( 0.5 + 0.5 * wxNoise( p * 5.0 ) ) + edgeW * 0.15 ) * gate, 0.0, 0.7 );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.035, 0.03, 0.026 ), grease * 0.6 );
+    float rust = smoothstep( 0.62, 0.82, wxNoise( p * 4.0 + vec3( 21.0 ) ) ) * ${e} * 0.4 * gate;
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.15, 0.065, 0.04 ), rust );
+    wxAmount = clamp( rust + grease * 0.3, 0.0, 1.0 );
+    wxMetal = 1.0;
+  }
+`;
+
+/**
+ * Hazard-painted steel (ladders, hatches, landing pads): the yellow worn through
+ * to bare, grey steel in the lanes people walk and along the edges, a gritty
+ * non-slip finish, scuffs, and rust round the worn places.
+ */
+const hazard = (e: string): string => /* glsl */ `
+  {
+    vec3 p = vWxPos;
+    float px = wxPix( p );
+    float near = 1.0 - smoothstep( 6.0, 18.0, length( vViewPosition ) );
+    float gate = wxGate( p, 53.0 );
+    float lane = wxNoise( p * 0.45 + vec3( 11.0 ) ) * 0.6 + wxNoise( p * 1.6 ) * 0.4;
+    float edgeW = 1.0 - smoothstep( 0.0, 0.06, wxEdge );
+    float worn = max( smoothstep( 0.5, 0.78, lane ), edgeW * 0.8 );
+    worn *= ( 0.45 + 0.9 * wxNoise( p * 13.0 + vec3( 7.0 ) ) ) * ( 0.4 + 0.6 * gate );
+    worn = clamp( worn, 0.0, 0.9 );
+    vec3 bare = vec3( 0.11, 0.105, 0.1 ) * ( 0.8 + 0.5 * wxNoise( p * 8.0 ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb * ( 0.9 + 0.2 * wxNoise( p * 1.3 ) ), bare, worn * 0.8 );
+    diffuseColor.rgb *= 1.0 + ( wxNoise( p * 60.0 ) - 0.5 ) * 0.06 * wxFine( px, 60.0 ) * near;
+    float scuff = smoothstep( 0.78, 0.92, wxNoise( vec3( p.x * 22.0, p.y * 1.5, p.z * 22.0 ) + 5.0 ) ) * wxFine( px, 22.0 );
+    diffuseColor.rgb *= 1.0 - 0.18 * scuff * near * gate;
+    float rust = clamp( worn * smoothstep( 0.45, 0.75, wxNoise( p * 6.0 + vec3( 2.0 ) ) ) * ${e} * 1.2, 0.0, 0.55 );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.16, 0.07, 0.04 ), rust * 0.8 );
+    wxAmount = rust;
     wxMetal = 1.0;
   }
 `;
@@ -335,7 +550,17 @@ const color = (kind: WearKind, deck: boolean): string => {
         ? wood(e)
         : kind === "concrete"
           ? concrete(e)
-          : /* glsl */ `
+          : kind === "steel"
+            ? steel(e)
+            : kind === "enamel"
+              ? enamel(e, false)
+              : kind === "pipe"
+                ? pipe(e, false)
+                : kind === "cast"
+                  ? cast(e)
+                  : kind === "hazard"
+                    ? hazard(e)
+                    : /* glsl */ `
     if ( vWxKind < 0.5 ) {
       ${wood(e)}
     } else if ( vWxKind < 1.5 ) {
@@ -346,8 +571,16 @@ const color = (kind: WearKind, deck: boolean): string => {
       ${plastic()}
     } else if ( vWxKind < 4.5 ) {
       ${rubble()}
-    } else {
+    } else if ( vWxKind < 5.5 ) {
       ${brick()}
+    } else if ( vWxKind < 6.5 ) {
+      ${enamel(e, true)}
+    } else if ( vWxKind < 7.5 ) {
+      ${steel(e)}
+    } else if ( vWxKind < 8.5 ) {
+      ${pipe(e, true)}
+    } else {
+      ${cast(e)}
     }
   `;
 
@@ -356,7 +589,7 @@ const color = (kind: WearKind, deck: boolean): string => {
   return /* glsl */ `
     float wxAmount = 0.0;
     float wxTread = 0.0;
-    float wxMetal = ${kind === "metal" ? "1.0" : "0.0"};
+    float wxMetal = ${kind === "metal" || kind === "steel" || kind === "enamel" || kind === "pipe" || kind === "cast" || kind === "hazard" ? "1.0" : "0.0"};
     float wxMasonry = ${kind === "concrete" ? "1.0" : "0.0"};
     ${edge}
     ${tread}

@@ -57,6 +57,12 @@ export interface BoxSolid {
    */
   hidden?: boolean;
   /**
+   * A wall section that is structurally weak: solid to a player like any wall,
+   * but marked as one Batman will be able to break through (not implemented
+   * yet: nothing reads this flag so far).
+   */
+  weak?: boolean;
+  /**
    * Drawn as tinted glass instead of its role's material. Collision is by role
    * as usual (a glass barrier stops a body like a railing, a glass roof panel
    * holds you up like a roof).
@@ -539,6 +545,15 @@ export interface FireDrumDefinition {
   x: number;
   y: number;
   z: number;
+  /**
+   * Whether its light casts shadows (the default). Each one costs a texture
+   * slot in every lit material and the GPU has only 16, so the drums in
+   * rooms of their own go without and are kept inside their room by its light
+   * region instead.
+   */
+  shadow?: boolean;
+  /** How strong its light is, against the usual 1. */
+  glow?: number;
 }
 
 export interface LightDefinition {

@@ -1,6 +1,11 @@
 import * as THREE from "three";
 
-import { BRICK_TILE_METRES, type BrickTextures } from "./BrickTexture";
+import {
+  BRICKS_ACROSS,
+  BRICK_TILE_METRES,
+  COURSES,
+  type BrickTextures,
+} from "./BrickTexture";
 import { useWorldSpaceUv } from "./WorldSpaceUv";
 
 /** Two related looks of the same old brick; they share the textures. */
@@ -53,6 +58,7 @@ export function createBrickMaterial(
   useWorldSpaceUv(material, {
     tileMetres: BRICK_TILE_METRES,
     offset: look.offset,
+    bricks: { across: BRICKS_ACROSS, courses: COURSES },
     macro: { frequency: 0.21, strength: 0.2, baseDirt: 0.3 },
   });
 

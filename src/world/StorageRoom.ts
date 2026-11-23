@@ -182,11 +182,22 @@ export function drum(
   band = false,
   bottom = 0,
 ): void {
-  p.post(x, bottom, z, 0.88, 0.58, color);
-  p.post(x, bottom + 0.2, z, 0.04, 0.6, CHARCOAL);
-  p.post(x, bottom + 0.6, z, 0.04, 0.6, CHARCOAL);
-  p.post(x, bottom + 0.88, z, 0.02, 0.5, CHARCOAL);
-  p.chunk(x + 0.12, bottom + 0.9, z + 0.08, 0.06, STEEL_BARE);
+  // Body, a rolled foot and chime, three pressed ribs (a wide rib with a
+  // thin ring beside it, as a real drum has), a lid with a raised ring, a
+  // bung and a smaller vent plug.
+  p.post(x, bottom, z, 0.9, 0.58, color);
+  p.post(x, bottom, z, 0.05, 0.62, CHARCOAL);
+  p.post(x, bottom + 0.85, z, 0.05, 0.62, CHARCOAL);
+
+  for (const y of [0.22, 0.45, 0.68]) {
+    p.post(x, bottom + y, z, 0.05, 0.615, CHARCOAL);
+    p.post(x, bottom + y + 0.05, z, 0.012, 0.6, STEEL_BARE);
+  }
+
+  p.post(x, bottom + 0.9, z, 0.025, 0.5, CHARCOAL);
+  p.post(x, bottom + 0.925, z, 0.015, 0.38, color);
+  p.chunk(x + 0.14, bottom + 0.94, z + 0.08, 0.07, STEEL_BARE);
+  p.chunk(x - 0.1, bottom + 0.93, z - 0.12, 0.04, CHARCOAL);
 
   if (band) {
     p.post(x, bottom + 0.4, z, 0.1, 0.59, ACCENT);

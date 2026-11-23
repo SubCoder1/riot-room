@@ -172,6 +172,39 @@ export function addWeathering(layout: ArenaLayout): void {
       color: look.color,
       alpha: look.alpha,
     });
+
+    // A soft contact shadow under it: most lamps cast no shadows (only a few
+    // lights may, see Arena), so without this an object looks set on the floor
+    // with nothing beneath it. Tight to the footprint, dark, with a soft edge.
+    const tops = boxes.map((b) => b.height ?? 0);
+
+    if (
+      Math.max(...tops) - pile.baseY >= 0.3 &&
+      maxX - minX < 8 &&
+      maxZ - minZ < 8
+    ) {
+      const shade: DecalDefinition = {
+        id: `shade-${pile.id}`,
+        kind: "stain",
+        x: (minX + maxX) / 2,
+        z: (minZ + maxZ) / 2,
+        y: pile.baseY,
+        width: maxX - minX + 0.6,
+        depth: maxZ - minZ + 0.6,
+        rotation: 0,
+        color: 0x020203,
+        alpha: 0.42,
+      };
+
+      if (inRoom(shade.x, shade.z, shade.y)) {
+        // (The furnished rooms' marks are named for their room.)
+        if (!overVent(shade.x, shade.z, shade.y)) {
+          decals.push({ ...shade, id: `decal-room-shade-${pile.id}` });
+        }
+      } else {
+        add(shade);
+      }
+    }
   }
 
   layout.decals.push(...decals);

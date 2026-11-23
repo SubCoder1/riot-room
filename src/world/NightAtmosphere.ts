@@ -13,7 +13,7 @@ const FLASH_COLOUR = new THREE.Color(0xe4ebf5);
 /** Extra key-light intensity at a full flash. */
 const KEY_BOOST = 7;
 /** Extra hemisphere intensity at a full flash (it reaches indoors, so tiny). */
-const HEMI_BOOST = 0.3;
+const HEMI_BOOST = 0.12;
 
 /** A floodlight and its drawn glow (lens and beam). */
 export interface Halogen {

@@ -278,6 +278,12 @@ export class IndustrialMaterialLibrary {
       hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
     }
 
+    // The Ruins' chamber keeps the calm look everywhere: its columns, pilasters
+    // and walls are close to the player, and the worn relief reads as noise there.
+    if (id.startsWith("room-ruins-chamber")) {
+      return "standard";
+    }
+
     const pick = (hash >>> 0) % 100;
 
     return pick < 35 ? "dark" : pick < 75 ? "standard" : "worn";
@@ -308,7 +314,7 @@ export class IndustrialMaterialLibrary {
   public steel(): THREE.MeshStandardMaterial {
     this.steelMaterial ??= weather(
       createIndustrialSteelMaterial(this.metalWearMap()),
-      "metal",
+      "steel",
       { exposure: 0.9 },
     );
 

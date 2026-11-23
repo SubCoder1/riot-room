@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { BoxSolid, PileElement, TapeRun } from "./ArenaLayout";
+import { groundPieces } from "./DebrisGround";
 import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
 
@@ -1133,7 +1134,20 @@ function breakWall(map: MapBuilder, e: Entrance): RingSlice[] {
  * at the feet of the sections and thinning across the threshold. The plates
  * are the fractured-slab shape (corners cut, faces uneven), never boxes.
  */
-function wallSections(e: Entrance, ring: readonly RingSlice[]): PileElement[] {
+interface DebrisBox {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  top: number;
+  exact: true;
+}
+
+function wallSections(
+  e: Entrance,
+  ring: readonly RingSlice[],
+  boxes: DebrisBox[],
+): PileElement[] {
   const random = rng(6412);
   const out: PileElement[] = [];
   // The wall's own concrete, a little lighter than the old rubble so a plate reads.
@@ -1567,6 +1581,327 @@ function wallSections(e: Entrance, ring: readonly RingSlice[]): PileElement[] {
     }
   }
 
+  // ---- Structural damage round the opening, from its own random stream (so
+  // the sections above are as they were).
+  // Reinforcement: every bar starts inside the concrete it comes out of (at
+  // a cut face of the header, a stump or a section) and runs out through the
+  // broken face in one or two straight lengths, each with its own bearing
+  // and pitch, so some stand straight out, some are pulled down or twisted
+  // aside and some are bent over at the end.
+  const dmg = rng(3377);
+  const wood = [0x6b5338, 0x5a4632, 0x7a6244];
+  const steelColors = [0x4f5f74, 0x353b46, 0x5a4a40];
+  /** Outward is yaw PI: pitch up raises the outer end, pitch down lowers it. */
+  const rebar = (
+    into: number,
+    y: number,
+    u: number,
+    segments: ReadonlyArray<readonly [number, number, number]>,
+  ): void => {
+    let px = wallX(into);
+    let py = y;
+    let pz = e.centre + u;
+    const outward = e.out < 0 ? Math.PI : 0;
+
+    for (const [length, turn, pitch] of segments) {
+      const ry = outward + turn;
+      const dx = Math.cos(pitch) * Math.cos(ry);
+      const dy = Math.sin(pitch);
+      const dz = -Math.cos(pitch) * Math.sin(ry);
+
+      out.push({
+        shape: "plank",
+        x: px + (dx * length) / 2,
+        y: py + (dy * length) / 2,
+        z: pz + (dz * length) / 2,
+        sx: length,
+        sy: 0.032,
+        sz: 0.032,
+        rx: 0,
+        ry,
+        rz: pitch,
+        color: dmg() < 0.4 ? REBAR_BARE : REBAR,
+      });
+      px += dx * length;
+      py += dy * length;
+      pz += dz * length;
+    }
+  };
+  const side2 = (): number => (dmg() < 0.5 ? -1 : 1);
+
+  // From the header's cut underside, beside the way in (never over it): two
+  // long rods hanging, one cut off short, one bent out and over.
+  const header = ring.filter(
+    (r) =>
+      r.hi < 4.7 &&
+      Math.abs((r.z0 + r.z1) / 2 - e.centre) > OPEN + 0.2 &&
+      Math.abs((r.z0 + r.z1) / 2 - e.centre) < OPEN + 1.8,
+  );
+
+  for (const [index, kind] of [
+    [1, "hang"],
+    [Math.floor(header.length * 0.45), "short"],
+    [Math.floor(header.length * 0.7), "bent"],
+    [header.length - 2, "hang"],
+  ] as const) {
+    const r = header[Math.max(0, Math.min(header.length - 1, index))];
+
+    if (!r) continue;
+
+    const u = (r.z0 + r.z1) / 2 - e.centre + (dmg() - 0.5) * 0.2;
+    const base = r.hi - 0.12;
+
+    if (kind === "hang") {
+      rebar(0.2, base, u, [
+        [0.3 + dmg() * 0.15, (dmg() - 0.5) * 0.5, -0.15],
+        [0.9 + dmg() * 0.6, (dmg() - 0.5) * 0.8, -1.25 - dmg() * 0.25],
+      ]);
+    } else if (kind === "short") {
+      rebar(0.2, base, u, [[0.4 + dmg() * 0.2, (dmg() - 0.5) * 0.9, -0.5]]);
+    } else {
+      rebar(0.2, base, u, [
+        [0.45, (dmg() - 0.5) * 0.4, 0.1],
+        [0.5 + dmg() * 0.3, 0.7 * side2(), -0.9],
+      ]);
+    }
+  }
+
+  // Out of the stumps' cut tops (the wall left standing under the hole's
+  // edge): bars rising out of the concrete, bent over or twisted aside.
+  const tops = ring.filter(
+    (r) => r.lo > 0.5 && Math.abs((r.z0 + r.z1) / 2 - e.centre) > OPEN + 0.1,
+  );
+
+  for (let i = 0; i < tops.length; i += 2) {
+    const r = tops[i];
+    const u = (r.z0 + r.z1) / 2 - e.centre;
+
+    if (i % 4 === 0) {
+      rebar(0.12, r.lo - 0.08, u, [
+        [0.35 + dmg() * 0.2, (dmg() - 0.5) * 0.3, 1.25],
+        [0.4 + dmg() * 0.35, (dmg() - 0.5) * 1.4, 0.25 - dmg() * 0.9],
+      ]);
+    } else {
+      rebar(0.15, r.lo - 0.06, u, [
+        [0.5 + dmg() * 0.4, (dmg() - 0.5) * 0.9, 0.55 + dmg() * 0.5],
+      ]);
+    }
+  }
+
+  // Out of the broken side sections: a couple of straight bars lying out
+  // level, one pulled down.
+  for (const sd of [-1, 1]) {
+    rebar(0.1, 0.55 + dmg() * 0.3, sd * (OPEN + 0.5 + dmg() * 0.5), [
+      [0.55 + dmg() * 0.25, (dmg() - 0.5) * 0.3, 0.02],
+    ]);
+    rebar(0.1, 1.35 + dmg() * 0.3, sd * (OPEN + 0.7 + dmg() * 0.8), [
+      [0.35, 0.2 * sd, -0.15],
+      [0.45 + dmg() * 0.2, 0.9 * sd, -0.8],
+    ]);
+  }
+
+  // Broken steel beams: a girder stub left in the wall above the right-hand
+  // section, its end bent down where the wall let go of it; and a short
+  // length that fell and leans on the plain wall beyond the left-hand
+  // section, its foot on the dock and its top end against the wall.
+  const stubRing = ring.find((r) => (r.z0 + r.z1) / 2 - e.centre >= OPEN + 1.9);
+
+  if (stubRing) {
+    const u = (stubRing.z0 + stubRing.z1) / 2 - e.centre;
+    const y = Math.min(stubRing.hi, 4.7) - 0.45;
+
+    // Embedded 0.3 m in the wall, running out 0.85 m, one flange turned.
+    out.push({
+      shape: "plank",
+      x: wallX(0.3) + e.out * 0.575,
+      y,
+      z: e.centre + u,
+      sx: 1.15,
+      sy: 0.2,
+      sz: 0.11,
+      rx: 0.18,
+      ry: 0.04,
+      rz: 0.35,
+      color: 0x4f5f74,
+    });
+    // The plate it was bolted to, flat on the wall face.
+    out.push({
+      shape: "plank",
+      x: wallX(0.0) + e.out * 0.03,
+      y,
+      z: e.centre + u,
+      sx: 0.05,
+      sy: 0.42,
+      sz: 0.36,
+      rx: 0,
+      ry: 0,
+      rz: 0.05,
+      color: 0x353b46,
+    });
+  }
+
+  {
+    const u = -(OPEN + 3.6);
+    const foot = 0.7;
+    const top = 1.75;
+    const length = Math.hypot(foot, top);
+
+    out.push({
+      shape: "plank",
+      x: wallX(0.04) + e.out * (foot / 2),
+      y: top / 2 + 0.07,
+      z: e.centre + u,
+      sx: length,
+      sy: 0.13,
+      sz: 0.09,
+      rx: 0,
+      ry: 0.03,
+      // Foot out on the dock, top on the wall: the top end is the +x end.
+      rz: e.out < 0 ? Math.atan2(top, foot) : Math.PI - Math.atan2(top, foot),
+      color: 0x4f5f74,
+    });
+  }
+
+  // Large pieces near the collapse, beyond the side beams so the way in is as
+  // wide as it was: each stands on the dock (lowest point on the floor by the
+  // grounding below), leans a little on the section behind it, and has its
+  // own box where a body could meet it.
+  for (const [sd, dx, u, size, lean] of [
+    [-1, 0.95, 3.0, 0.78, 0.35],
+    [-1, 1.7, 3.9, 0.55, -0.4],
+    [1, 0.9, 2.5, 0.72, -0.3],
+    [1, 1.3, 3.55, 0.5, 0.45],
+  ] as const) {
+    const px = wallX(-dx);
+    const pz = e.centre + sd * u;
+
+    out.push({
+      shape: "slab",
+      x: px,
+      y: size * 0.35,
+      z: pz,
+      sx: size * 0.5,
+      sy: size * 1.1,
+      sz: size * 1.4,
+      rx: (dmg() - 0.5) * 0.3,
+      ry: (dmg() - 0.5) * 0.8,
+      rz: sd * lean,
+      color: grey(),
+    });
+    // (Under a step's height nobody is stopped by it: no box.)
+    if (size * 0.7 > 0.42) {
+      boxes.push({
+        minX: px - size * 0.55,
+        maxX: px + size * 0.55,
+        minZ: pz - size * 0.7,
+        maxZ: pz + size * 0.7,
+        top: size * 0.7,
+        exact: true,
+      });
+    }
+  }
+
+  // More fallen debris on the dock, thinning with distance and weighted to
+  // the feet of the sections and the wall: medium chunks, crushed masonry,
+  // broken brick, timber offcuts, steel offcuts and short lengths of bar.
+  for (let i = 0; i < 80; i++) {
+    const reach = Math.pow(dmg(), 1.6);
+    const sd = dmg() < 0.5 ? -1 : 1;
+    const u = sd * (OPEN + 0.15 + dmg() * (1.8 + reach * 2.2));
+    const x = wallX(-0.2) + e.out * reach * 3.2;
+    const roll = dmg();
+
+    if (roll < 0.36) {
+      const size = 0.08 + dmg() * 0.2 * (1 - reach * 0.5);
+
+      out.push({
+        shape: "rock",
+        x,
+        y: size * 0.3,
+        z: e.centre + u,
+        sx: size * 1.2,
+        sy: size * 0.7,
+        sz: size,
+        rx: dmg() * 0.5,
+        ry: dmg() * Math.PI * 2,
+        rz: dmg() * 0.5,
+        color: grey(),
+      });
+    } else if (roll < 0.58) {
+      out.push({
+        shape: "brick",
+        x,
+        y: 0.035,
+        z: e.centre + u,
+        sx: dmg() < 0.4 ? 0.1 : 0.17,
+        sy: 0.06,
+        sz: 0.09,
+        rx: 0,
+        ry: dmg() * Math.PI,
+        rz: 0,
+        color: BRICK[Math.floor(dmg() * BRICK.length)],
+      });
+    } else if (roll < 0.74) {
+      out.push({
+        shape: "plank",
+        x,
+        y: 0.025,
+        z: e.centre + u,
+        sx: 0.35 + dmg() * 0.55,
+        sy: 0.045,
+        sz: 0.09 + dmg() * 0.07,
+        rx: 0,
+        ry: dmg() * Math.PI,
+        rz: 0,
+        color: wood[Math.floor(dmg() * wood.length)],
+      });
+    } else if (roll < 0.88) {
+      out.push({
+        shape: "plank",
+        x,
+        y: 0.016,
+        z: e.centre + u,
+        sx: 0.22 + dmg() * 0.4,
+        sy: 0.032,
+        sz: 0.032,
+        rx: 0,
+        ry: dmg() * Math.PI,
+        rz: 0,
+        color: dmg() < 0.5 ? REBAR : REBAR_BARE,
+      });
+    } else if (roll < 0.95) {
+      out.push({
+        shape: "plank",
+        x,
+        y: 0.012,
+        z: e.centre + u,
+        sx: 0.3 + dmg() * 0.25,
+        sy: 0.022,
+        sz: 0.22 + dmg() * 0.2,
+        rx: 0,
+        ry: dmg() * Math.PI,
+        rz: 0,
+        color: steelColors[Math.floor(dmg() * steelColors.length)],
+      });
+    } else {
+      const size = 0.3 + dmg() * 0.22;
+
+      out.push({
+        shape: dmg() < 0.5 ? "slab" : "rock",
+        x,
+        y: size * 0.3,
+        z: e.centre + u,
+        sx: size * 0.9,
+        sy: size * 0.6,
+        sz: size * 1.2,
+        rx: dmg() * 0.4,
+        ry: dmg() * Math.PI * 2,
+        rz: dmg() * 0.4,
+        color: grey(),
+      });
+    }
+  }
+
   // Pieces spilled onto the vault side lie on the floor there. Past the
   // walkway's broken edge there is no floor at that height (the ground is
   // below, and the tilted slab), so nothing is left lying in the air.
@@ -1586,7 +1921,8 @@ export function furnishCollapsedEntrance(map: MapBuilder, e: Entrance): Site {
   // with small debris only on the floor (see `wallSections`). The opening
   // itself is cut in the wall (see `breakWall`).
   const ring = breakWall(map, e);
-  const rest: PileElement[] = wallSections(e, ring);
+  const largeBoxes: DebrisBox[] = [];
+  const rest: PileElement[] = wallSections(e, ring, largeBoxes);
   // The solid sides are narrow beams beside the way in: 0.6 m out on
   // the dock (the leaning slabs at the feet of the stacks) and 0.6 m into the
   // wall, and only 0.5 m across (the stumps beyond them are the wall's own).
@@ -1641,12 +1977,16 @@ export function furnishCollapsedEntrance(map: MapBuilder, e: Entrance): Site {
     }
   }
 
-  map.createFitting(COLLAPSE_PILE_ID, e.floor, rest, [
+  const collapsePile = map.createFitting(COLLAPSE_PILE_ID, e.floor, rest, [
     // The broken sides of the heap, to the jambs.
     side(Z(-CORE_HALF_WIDTH - 0.55), Z(-CORE_HALF_WIDTH)),
     side(Z(CORE_HALF_WIDTH), Z(CORE_HALF_WIDTH + 0.5)),
     ...corners,
+    ...largeBoxes,
   ]);
+
+  // Every loose piece on the dock rests on what is really under it.
+  groundPieces(collapsePile.elements);
 
   // Posts for the tape, one by one.
   for (const [x, z] of site.posts) {

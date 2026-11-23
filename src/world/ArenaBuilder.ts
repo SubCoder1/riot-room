@@ -52,6 +52,7 @@ function worn(
   material: THREE.MeshStandardMaterial,
   exposure = 0.8,
   deck = false,
+  kind: "metal" | "steel" | "cast" | "enamel" = "metal",
 ): THREE.MeshStandardMaterial {
   material.map = industrialMaterials.metalWearMap();
   useWorldSpaceUv(material, {
@@ -59,7 +60,7 @@ function worn(
     macro: { frequency: 0.2, strength: 0.1 },
   });
 
-  return weather(material, "metal", { exposure, deck });
+  return weather(material, kind, { exposure, deck });
 }
 
 const materials = {
@@ -80,10 +81,14 @@ const materials = {
       metalness: 0.3,
     }),
     1,
+    false,
+    "steel",
   ),
   railing: worn(
     new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.8 }),
     1,
+    false,
+    "steel",
   ),
   // Climbable ledges stand out so they are easy to find.
   ledge: new THREE.MeshStandardMaterial({ color: 0xb0865a, roughness: 0.9 }),
@@ -116,6 +121,9 @@ const materials = {
       roughness: 0.6,
       metalness: 0.2,
     }),
+    0.8,
+    false,
+    "cast",
   ),
   pipe: weather(
     new THREE.MeshStandardMaterial({
@@ -123,7 +131,7 @@ const materials = {
       roughness: 0.5,
       metalness: 0.45,
     }),
-    "metal",
+    "pipe",
     { exposure: 0.9 },
   ),
   // A roof hatch: the ladders' dull yellow, so what can be used reads as such.
@@ -134,7 +142,7 @@ const materials = {
       metalness: 0.4,
       emissive: 0x0e0c04,
     }),
-    "metal",
+    "hazard",
     { exposure: 0.6 },
   ),
   // The landing pad at a ladder's opening: the ladder's own dull yellow.
@@ -144,12 +152,12 @@ const materials = {
       roughness: 0.7,
       emissive: 0x0e0c04,
     }),
-    "metal",
+    "hazard",
     { exposure: 0.7 },
   ),
   duct: weather(
     new THREE.MeshStandardMaterial({ color: 0x4f5c6b, roughness: 0.7 }),
-    "metal",
+    "enamel",
     { exposure: 0.8 },
   ),
   glass: new THREE.MeshStandardMaterial({
@@ -176,12 +184,12 @@ const materials = {
       // A trace of glow so a ladder is still found in the dark.
       emissive: 0x0e0c04,
     }),
-    "metal",
+    "hazard",
     { exposure: 0.7 },
   ),
   pillar: weather(
     new THREE.MeshStandardMaterial({ color: 0x9aa2af, roughness: 0.85 }),
-    "metal",
+    "steel",
     { exposure: 0.9 },
   ),
 };
@@ -240,6 +248,9 @@ function mergedBoxes(
   boxes: Array<[number, number, number, number, number, number]>,
   material: THREE.Material,
   shadows = true,
+  // False for the vent's own surfaces: the sky light's one shadow map covers
+  // the whole map, so its edges across a tunnel 1.2 m wide are coarse and flicker.
+  receive = true,
 ): THREE.Mesh | null {
   if (boxes.length === 0) {
     return null;
@@ -261,7 +272,7 @@ function mergedBoxes(
   const mesh = new THREE.Mesh(merged, material);
 
   mesh.castShadow = shadows;
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = receive;
 
   return mesh;
 }
@@ -285,6 +296,22 @@ const ventInterior = new THREE.MeshStandardMaterial({
   roughness: 0.85,
   metalness: 0.2,
   emissive: 0x000000,
+});
+
+/** The upper tunnels' lining: dark, a little lighter than the floor. */
+const ventWall = new THREE.MeshStandardMaterial({
+  name: "VentWall",
+  color: 0x0c0c0f,
+  roughness: 0.9,
+  metalness: 0.1,
+});
+
+/** The tunnel floor: darker than the walls, so nothing flickers on it. */
+const ventFloor = new THREE.MeshStandardMaterial({
+  name: "VentFloor",
+  color: 0x050507,
+  roughness: 0.9,
+  metalness: 0.1,
 });
 
 const ventBars = weather(
@@ -401,7 +428,9 @@ function createVentNetwork(group: THREE.Group, network: VentNetwork): void {
     const cx = (i + 0.5) * cell;
     const cz = (j + 0.5) * cell;
 
-    floors.push([cx, floorY - 0.05, cz, cell, 0.1, cell]);
+    // (4 mm proud of the cut concrete floor under it: at the same height the
+    // two fought and the tunnel floor flickered in stripes.)
+    floors.push([cx, floorY - 0.046, cz, cell, 0.1, cell]);
 
     if (!open.has(key(i - 1, j))) {
       walls.push([cx - cell / 2 + thick / 2, wallY, cz, thick, height, cell]);
@@ -421,10 +450,12 @@ function createVentNetwork(group: THREE.Group, network: VentNetwork): void {
   }
 
   for (const part of [
-    mergedBoxes(floors, ventInterior, false),
+    mergedBoxes(floors, ventFloor, false, false),
     // The upper network's tunnel is cut into the solid upper floor, whose cut
     // faces are its walls: no separate wall panels there.
-    network.surfaceY > 0 ? null : mergedBoxes(walls, ventInterior, false),
+    network.surfaceY > 0
+      ? null
+      : mergedBoxes(walls, ventInterior, false, false),
   ]) {
     if (part) {
       group.add(part);
@@ -484,7 +515,9 @@ function createVentNetwork(group: THREE.Group, network: VentNetwork): void {
 
       holder.name = `ventblock:${block.id}`;
       holder.userData.block = block;
-      holder.position.set(hingeX, block.y, hingeZ);
+      // (6 mm under the floor line: the landing pad beside it tops out at
+      // 0.03 m, the same height as these bars, and the two flickered.)
+      holder.position.set(hingeX, block.y - 0.006, hingeZ);
       mesh.position.set(-hingeX, 0, -hingeZ);
       holder.add(mesh);
       group.add(holder);
@@ -687,6 +720,49 @@ export function createPlatform(
     const cut = mergedBoxes(cells, mesh.material as THREE.Material, true);
 
     if (cut) {
+      // The cut faces of the tunnel are the same blotchy concrete as the
+      // floor, lit by lamps and shadowed in hard patches. A dark lining just
+      // inside them (walls and a floor strip, no shadows received) calms it.
+      const lining: Array<[number, number, number, number, number, number]> =
+        [];
+      const t = 0.02;
+
+      for (const v of voids) {
+        const x0 = Math.max(v.minX, solid.minX);
+        const x1 = Math.min(v.maxX, solid.maxX);
+        const z0 = Math.max(v.minZ, solid.minZ);
+        const z1 = Math.min(v.maxZ, solid.maxZ);
+        const h = v.top - v.bottom;
+        const cy = (v.top + v.bottom) / 2;
+
+        if (x1 <= x0 || z1 <= z0 || h <= 0) continue;
+
+        lining.push(
+          [x0 + t / 2, cy, (z0 + z1) / 2, t, h, z1 - z0],
+          [x1 - t / 2, cy, (z0 + z1) / 2, t, h, z1 - z0],
+          [(x0 + x1) / 2, cy, z0 + t / 2, x1 - x0, h, t],
+          [(x0 + x1) / 2, cy, z1 - t / 2, x1 - x0, h, t],
+          [
+            (x0 + x1) / 2,
+            v.bottom + 0.001,
+            (z0 + z1) / 2,
+            x1 - x0,
+            0.004,
+            z1 - z0,
+          ],
+        );
+      }
+
+      const dark = mergedBoxes(lining, ventWall, false, false);
+
+      if (dark) {
+        const both = new THREE.Group();
+
+        both.add(cut, dark);
+
+        return both;
+      }
+
       return cut;
     }
   }

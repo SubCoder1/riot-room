@@ -111,9 +111,12 @@ const FRAGMENT = /* glsl */ `
     float glancing = pow(1.0 - clamp(view.y, 0.0, 1.0), 2.0);
     vec3 sheen = lamp * (0.9 + 1.8 * glancing)
       + vec3(0.32, 0.37, 0.48) * uFlash * (0.4 + glancing);
-    vec3 colour = sheen * (0.7 + 2.2 * rings) + vec3(0.02, 0.03, 0.04);
+    vec3 colour = sheen * (0.7 + 2.2 * rings);
     // Dark water: it deepens the floor, and only the sheen is bright.
-    float alpha = shape * (0.5 + min(max(sheen.r, max(sheen.g, sheen.b)), 0.5));
+    // (No base darkening or glow of its own: in the dark a puddle is as dark as
+    // the floor, and only lamplight or a flash shows it.)
+    float lum = max(sheen.r, max(sheen.g, sheen.b));
+    float alpha = shape * min(lum * 2.5, 0.9);
 
     gl_FragColor = vec4(min(colour, vec3(1.0)), min(alpha, 0.9));
   }

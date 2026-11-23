@@ -19,19 +19,19 @@ export const PAINTED_LOOKS: Record<PaintedVariant, PaintedLook> = {
   dark: {
     name: "PaintedConcreteDark",
     color: 0x535b6b,
-    normalScale: 0.5,
+    normalScale: 0.16,
     offset: [0, 0],
   },
   standard: {
     name: "PaintedConcrete",
     color: 0x636c7c,
-    normalScale: 0.55,
+    normalScale: 0.18,
     offset: [1.7, 2.3],
   },
   worn: {
     name: "PaintedConcreteWorn",
     color: 0x5c6474,
-    normalScale: 0.75,
+    normalScale: 0.22,
     offset: [3.1, 0.9],
   },
 };

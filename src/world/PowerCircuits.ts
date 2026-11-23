@@ -50,7 +50,6 @@ const INTERIOR_LAMPS: ReadonlySet<string> = new Set([
   "bulb-junk-b",
   "bulb-break-a",
   "light-spawn-worktable",
-  "light-room-server",
   "light-room-barracks",
   "light-room-hall-b",
   "tube-warehouse-1",
@@ -67,7 +66,11 @@ const INTERIOR_LAMPS: ReadonlySet<string> = new Set([
  */
 const INDEPENDENT_LAMPS: ReadonlySet<string> = new Set([
   "indicator-ruins-pit",
-  "indicator-ruins-warm",
+  "indicator-ruins-entrance",
+  "indicator-ruins-entrance-b",
+  "indicator-ruins-chamber-entry",
+  "indicator-ruins-chamber-mid",
+  "indicator-ruins-chamber-far",
 ]);
 
 /** The circuit a lamp is on (null: independent, or not a known lamp). */

@@ -669,17 +669,19 @@ export function furnishBarracks(map: MapBuilder, floorY: number): void {
     const p = new Pieces();
 
     // A wall shelf north of the east door with a few personal things.
-    p.box(-21.55, 1.4, -10.2, 0.28, 0.04, 2.0, TIMBER_B);
+    // (The east wall's inner face is x -21.3: the shelf's back and its
+    // brackets touch it.)
+    p.box(-21.44, 1.4, -10.2, 0.28, 0.04, 2.0, TIMBER_B);
 
     for (const z of [-11.0, -9.4]) {
-      p.box(-21.45, 1.25, z, 0.1, 0.15, 0.04, STEEL);
+      p.box(-21.35, 1.25, z, 0.1, 0.15, 0.04, STEEL);
     }
 
-    p.box(-21.55, 1.44, -10.9, 0.2, 0.16, 0.24, 0x5a4a38);
-    p.cableUp(-21.55, 1.44, -10.4, 0.1, 0.075, 0x3c5a78);
-    p.cableUp(-21.55, 1.44, -10.25, 0.1, 0.075, 0xb9b49c);
-    p.box(-21.55, 1.44, -9.8, 0.18, 0.2, 0.012, 0x6a6458, 0, 0, -0.1);
-    p.box(-21.62, 1.44, -9.55, 0.2, 0.14, 0.3, CARDBOARD);
+    p.box(-21.44, 1.44, -10.9, 0.2, 0.16, 0.24, 0x5a4a38);
+    p.cableUp(-21.44, 1.44, -10.4, 0.1, 0.075, 0x3c5a78);
+    p.cableUp(-21.44, 1.44, -10.25, 0.1, 0.075, 0xb9b49c);
+    p.box(-21.4, 1.44, -9.8, 0.18, 0.2, 0.012, 0x6a6458, 0, 0, -0.1);
+    p.box(-21.46, 1.44, -9.55, 0.2, 0.14, 0.3, CARDBOARD);
     // A washing line across the room above head height, with a few things hung on it.
     const lineY = 2.35;
 

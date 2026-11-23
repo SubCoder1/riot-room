@@ -13,11 +13,15 @@ import type {
 } from "./ArenaLayout";
 import { createStainTexture } from "../vfx/SoftTexture";
 import {
+  WEAR_CAST,
+  WEAR_ENAMEL,
   WEAR_MASONRY,
   WEAR_METAL,
+  WEAR_PIPE,
   WEAR_PLASTIC,
   WEAR_RUBBLE,
   WEAR_BRICK,
+  WEAR_STEEL,
   WEAR_WOOD,
   weather,
 } from "./materials/SurfaceWear";
@@ -408,8 +412,16 @@ function wearOf(kind: PileKind, element: PileElement): number {
     case "bag":
     case "chunk":
       return WEAR_MASONRY;
-    case "pipe":
-      return WEAR_METAL;
+    case "pipe": {
+      // Thick drums and boilers are cast or painted shells, thin ones are pipe.
+      const across = Math.max(element.sy, element.sz);
+
+      return across >= 1.0
+        ? WEAR_CAST
+        : across >= 0.45
+          ? WEAR_ENAMEL
+          : WEAR_PIPE;
+    }
     case "cable": {
       const hsl = { h: 0, s: 0, l: 0 };
 
@@ -417,10 +429,17 @@ function wearOf(kind: PileKind, element: PileElement): number {
 
       return hsl.l < 0.1 && hsl.s < 0.35 ? WEAR_PLASTIC : WEAR_METAL;
     }
-    default:
-      return kind === "fittings" && !looksLikeWood(color)
-        ? WEAR_METAL
-        : WEAR_WOOD;
+    default: {
+      if (kind !== "fittings" || looksLikeWood(color)) {
+        return WEAR_WOOD;
+      }
+
+      // Metal: a bar or a brace (both its smaller sides are slight) is rolled
+      // steel, a broad box or panel is painted sheet metal.
+      const sides = [element.sx, element.sy, element.sz].sort((a, b) => a - b);
+
+      return sides[1] < 0.2 ? WEAR_STEEL : WEAR_ENAMEL;
+    }
   }
 }
 
@@ -476,7 +495,44 @@ function placed(
     } else if (element.shape === "pipe") {
       const radial = Math.hypot(position.getY(i), position.getZ(i));
 
-      if (Math.abs(x) > 0.495) {
+      const drumLike = Math.max(element.sy, element.sz) >= 0.45;
+
+      if (drumLike) {
+        // A drum: a closed lid with a rolled rim, a pressed ring and a bung;
+        // hoops round the body (rolling rings near each end and the middle).
+        if (Math.abs(x) > 0.495) {
+          const bung =
+            Math.hypot(position.getY(i) - 0.22, position.getZ(i)) < 0.07;
+
+          if (radial > 0.43) {
+            shade.copy(color).multiplyScalar(1.3);
+          } else if (bung) {
+            shade.set(0x23262b);
+          } else if (radial > 0.33 && radial < 0.37) {
+            shade.copy(color).multiplyScalar(0.6);
+          } else {
+            shade.copy(color).multiplyScalar(0.95);
+          }
+        } else if (Math.abs(x) > 0.46) {
+          shade.copy(color).multiplyScalar(1.25);
+        } else if (
+          Math.abs(x - 0.3) < 0.035 ||
+          Math.abs(x + 0.3) < 0.035 ||
+          Math.abs(x) < 0.035
+        ) {
+          shade.copy(color).multiplyScalar(0.55);
+        } else if (
+          Math.abs(x - 0.3) < 0.06 ||
+          Math.abs(x + 0.3) < 0.06 ||
+          Math.abs(x) < 0.06
+        ) {
+          shade.copy(color).multiplyScalar(1.2);
+        } else {
+          shade.multiplyScalar(
+            1 + 0.05 * Math.sin(position.getZ(i) * 9 + element.x * 11),
+          );
+        }
+      } else if (Math.abs(x) > 0.495) {
         // The ends: a bright rim, then the dark inside of the pipe.
         if (radial > 0.4) {
           shade.copy(color).multiplyScalar(1.25);
