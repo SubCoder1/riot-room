@@ -212,8 +212,12 @@ export function createFlameGeometry(
 
   for (let i = 0; i <= samples; i++) {
     const y = i / samples;
+    // A flame: full and round low down, bulging a little above the foot, then
+    // narrowing to a soft, slightly pinched tip (not a needle, not a droplet).
     const radius =
-      Math.sin(Math.PI * Math.pow(y, 0.65)) * Math.pow(1 - y, 0.25);
+      Math.pow(Math.sin(Math.PI * Math.pow(y, 0.6)), 0.85) *
+      Math.pow(1 - y, 0.5) *
+      (1 + 0.1 * Math.sin(y * 9));
 
     profile.push(new THREE.Vector2(Math.max(radius, 0), y));
   }
@@ -469,6 +473,30 @@ export function createFlame(
   inner.frustumCulled = false;
   flame.add(outer, inner);
 
+  // Two small tongues leaning out from the main one, each flickering on its
+  // own beat (see flickerFlame): a flame is never one smooth shape.
+  for (const [side, size, phase] of [
+    [-1, 0.55, 1.7],
+    [1, 0.42, 4.1],
+  ] as const) {
+    const tongue = new THREE.Group();
+    const o = new THREE.Mesh(parts.geometries[3], parts.flame);
+    const n = new THREE.Mesh(parts.geometries[4], parts.flame);
+
+    o.scale.set(radius * size, height * size, radius * size);
+    n.scale.set(
+      radius * size * 0.55,
+      height * size * 0.68,
+      radius * size * 0.55,
+    );
+    o.frustumCulled = false;
+    n.frustumCulled = false;
+    tongue.add(o, n);
+    tongue.position.set(side * radius * 0.55, 0, side * radius * 0.2);
+    tongue.userData.tongue = { side, phase, size };
+    flame.add(tongue);
+  }
+
   return flame;
 }
 
@@ -527,7 +555,34 @@ export function flickerFlame(
   }
 
   flame.scale.copy(flickerScale(time, age));
-  flame.rotation.set(0.12 * Math.sin(time * 9), 0, 0.12 * Math.cos(time * 7.3));
+  // The whole flame leans and sways with the air, now and then a gust.
+  const gust = Math.max(0, Math.sin(time * 1.3) * Math.sin(time * 0.7)) * 0.25;
+
+  flame.rotation.set(
+    0.1 * Math.sin(time * 6.1) + 0.06 * Math.sin(time * 14.3) + gust * 0.6,
+    0,
+    0.1 * Math.cos(time * 5.3) + 0.06 * Math.cos(time * 12.7) - gust,
+  );
+
+  // Each small tongue rises and falls on its own, darting out and back.
+  for (const child of flame.children) {
+    const t = child.userData.tongue as
+      { side: number; phase: number; size: number } | undefined;
+
+    if (!t) {
+      continue;
+    }
+
+    const beat = 0.5 + 0.5 * Math.sin(time * (17 + t.phase * 2) + t.phase * 5);
+    const rise = 0.35 + 0.9 * beat * (0.6 + 0.4 * Math.sin(time * 7 + t.phase));
+
+    child.scale.set(1, rise, 1);
+    child.rotation.set(
+      0,
+      0,
+      -t.side * (0.35 + 0.35 * Math.sin(time * 11 + t.phase)),
+    );
+  }
 }
 
 const flare = new THREE.Vector3();
@@ -535,7 +590,11 @@ const flare = new THREE.Vector3();
 /** The scale of a flickering flame: a brief flare when first lit, then a wavering. */
 export function flickerScale(time: number, age = 1): THREE.Vector3 {
   const burst = 1 + 0.7 * Math.max(0, 1 - age / 0.18);
-  const flicker = 0.85 + 0.2 * Math.sin(time * 31) + 0.1 * Math.sin(time * 53);
+  const flicker =
+    0.82 +
+    0.18 * Math.sin(time * 23) +
+    0.12 * Math.sin(time * 37 + 2) +
+    0.06 * Math.sin(time * 61);
 
   return flare.set(
     burst * (0.9 + 0.12 * Math.sin(time * 41 + 1)),
