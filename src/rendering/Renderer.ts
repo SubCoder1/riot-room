@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { installColorGrade } from "./ColorGrade";
+
 export class Renderer {
   public readonly scene: THREE.Scene;
   public readonly camera: THREE.PerspectiveCamera;
@@ -9,6 +11,9 @@ export class Renderer {
 
   constructor(container: HTMLElement) {
     this.container = container;
+
+    // The one colour grade, before any material is first drawn.
+    installColorGrade();
 
     // ----------------------------------------
     // SCENE
