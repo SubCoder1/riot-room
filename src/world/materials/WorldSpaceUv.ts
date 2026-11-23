@@ -346,6 +346,9 @@ ${macro ? "varying vec3 vWorldMacro;\nvarying vec3 vWorldFlat;" : ""}`,
             ${
               macro.baseDirt
                 ? `float storey = mod( mp.y + 0.02, 4.0 );
+            // The Ruins' walls above the pit continue the pit wall under them: no foot
+            // band where the upper one starts (it showed as a dark line at 4 m).
+            if ( mp.y > 3.5 && mp.x > 21.5 && mp.x < 32.5 && mp.z > -24.5 && mp.z < -9.5 ) storey = 100.0;
             // Only an upright face has a foot: a narrow plinth band, a thin
             // shadow seam where it meets the wall, a little contact darkening
             // at the very base and a soft grime above (a fraction of the old

@@ -280,7 +280,17 @@ export class IndustrialMaterialLibrary {
 
     // The Ruins' chamber keeps the calm look everywhere: its columns, pilasters
     // and walls are close to the player, and the worn relief reads as noise there.
-    if (id.startsWith("room-ruins-chamber")) {
+    // (So do the Ruins' own walls, the pit's lower wall and the room wall
+    // above it: two looks stacked in one wall showed as a seam at 4 m.)
+    if (
+      id.startsWith("room-ruins-chamber") ||
+      id.startsWith("ruins-pit-wall") ||
+      id.startsWith("room-server-wall") ||
+      // (The broken wall round the vault doorway is dozens of thin slices: each
+      // got a look of its own by its name, which showed as bands and, where
+      // neighbours overlap, as flicker.)
+      id.startsWith("vault-break")
+    ) {
       return "standard";
     }
 
