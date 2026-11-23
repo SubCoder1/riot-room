@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { LightDefinition } from "./ArenaLayout";
 import { Pieces } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
+import { LAMP } from "./NightLights";
 import { GUNMETAL, STEEL_BARE } from "./RoomKit";
 
 /**
@@ -49,7 +50,7 @@ export const TUBE_FIXTURES: readonly TubeFixture[] = [
  * in from the east wall (so it does not spill out through the shutter). The
  * third is the loose one that stutters now and then.
  */
-const TUBE_COLOR = 0xd9e6ee;
+const TUBE_COLOR = LAMP.neutral;
 
 export const TUBE_LIGHTS: readonly LightDefinition[] = [
   // (Aimed straight down like the others: its beam used to point at the west
@@ -179,7 +180,7 @@ export function createTubeGlow(): TubeGlow {
 
   tubes.forEach((tube, i) => {
     mesh.setMatrixAt(i, matrix.makeTranslation(tube.x, tube.y, tube.z));
-    mesh.setColorAt(i, color.setRGB(0.86, 0.93, 0.96));
+    mesh.setColorAt(i, color.setRGB(0.92, 0.93, 0.93));
   });
 
   mesh.name = "armory-tubes";
@@ -204,7 +205,7 @@ export function createTubeGlow(): TubeGlow {
     );
     reflector.setColorAt(
       i,
-      color.setRGB(0.86 * REFLECTOR, 0.93 * REFLECTOR, 0.96 * REFLECTOR),
+      color.setRGB(0.92 * REFLECTOR, 0.93 * REFLECTOR, 0.93 * REFLECTOR),
     );
   });
 
@@ -227,7 +228,7 @@ export function createTubeGlow(): TubeGlow {
         if (tube.id === id) {
           mesh.setColorAt(
             i,
-            color.setRGB(0.86 * level, 0.93 * level, 0.96 * level),
+            color.setRGB(0.92 * level, 0.93 * level, 0.9 * level),
           );
         }
       });
@@ -237,9 +238,9 @@ export function createTubeGlow(): TubeGlow {
           reflector.setColorAt(
             i,
             color.setRGB(
-              0.86 * level * REFLECTOR,
+              0.92 * level * REFLECTOR,
               0.93 * level * REFLECTOR,
-              0.96 * level * REFLECTOR,
+              0.9 * level * REFLECTOR,
             ),
           );
         }

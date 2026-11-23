@@ -40,6 +40,9 @@ const PORTAL = 3.5;
  * other way, stay outside.
  */
 const WALL = 0.12;
+/** The Ruins' walls (the north wing's slab on its west, the pit walls) have their faces outside its room box: its regions reach out past them. */
+const wallOf = (room: RoomDefinition): number =>
+  room.id === "room-server" ? -0.35 : WALL;
 /** Lamps whose light is meant to cross a wall (a glass cover over a room). */
 const THROUGH_GLASS = new Set(["halogen-wall-storage", "halogen-roof-east"]);
 
@@ -77,6 +80,13 @@ const floorOf = (room: RoomDefinition): number =>
 const SPLIT_AT: Record<string, number> = { "room-server": 3.75 };
 
 /**
+ * Above this height the walkway level's roof space belongs to the lower region
+ * too: a lamp hung from the roof over the opening lights the whole of the roof
+ * and the walls up there, with no hard edge where the floor below begins.
+ */
+const HIGH_AT = 7.5;
+
+/**
  * Where the floor between the levels is missing (open over the lower level,
  * so its lamps do light the walls and roof above there): the part of a split
  * room's upper level that belongs to the lower region. The Ruins' walkway
@@ -104,11 +114,15 @@ function inside(layout: ArenaLayout, room: RoomDefinition): Box {
   const split = SPLIT_AT[room.id];
 
   return {
-    min: [room.minX + WALL, floorOf(room) - 0.05, room.minZ + WALL],
+    min: [
+      room.minX + wallOf(room),
+      floorOf(room) - 0.05,
+      room.minZ + wallOf(room),
+    ],
     max: [
-      room.maxX - WALL,
+      room.maxX - wallOf(room),
       split ?? ceilingOf(layout, room) + 0.02,
-      room.maxZ - WALL,
+      room.maxZ - wallOf(room),
     ],
   };
 }
@@ -117,23 +131,35 @@ function inside(layout: ArenaLayout, room: RoomDefinition): Box {
 function upperInside(
   layout: ArenaLayout,
   room: RoomDefinition,
-): { over: Box; open: Box | null } {
+): { over: Box; open: Box | null; high: Box } {
   const open = OPEN_ABOVE[room.id];
   const top = ceilingOf(layout, room) + 0.02;
-  const minZ = room.minZ + WALL;
-  const maxZ = room.maxZ - WALL;
+  const minZ = room.minZ + wallOf(room);
+  const maxZ = room.maxZ - wallOf(room);
 
   return {
     over: {
-      min: [room.minX + WALL, SPLIT_AT[room.id], open ? open.maxZ : minZ],
-      max: [room.maxX - WALL, top, maxZ],
+      min: [
+        room.minX + wallOf(room),
+        SPLIT_AT[room.id],
+        open ? open.maxZ : minZ,
+      ],
+      max: [room.maxX - wallOf(room), Math.min(top, HIGH_AT), maxZ],
     },
     open: open
       ? {
-          min: [room.minX + WALL, SPLIT_AT[room.id], Math.max(open.minZ, minZ)],
-          max: [room.maxX - WALL, top, open.maxZ],
+          min: [
+            room.minX + wallOf(room),
+            SPLIT_AT[room.id],
+            Math.max(open.minZ, minZ),
+          ],
+          max: [room.maxX - wallOf(room), top, open.maxZ],
         }
       : null,
+    high: {
+      min: [room.minX + wallOf(room), HIGH_AT, minZ],
+      max: [room.maxX - wallOf(room), top, maxZ],
+    },
   };
 }
 
@@ -216,6 +242,11 @@ export function buildLightRegions(
       rooms.push(levels.over);
       regionOf.push(rooms.length - 1);
 
+      // (The roof space belongs to the walkway level: a fire on it lights the
+      // walls up to the roof, and the roof's own lamps light both levels.)
+      rooms.push(levels.high);
+      regionOf.push(upper.get(i) as number);
+
       if (levels.open) {
         rooms.push(levels.open);
         regionOf.push(i);
@@ -287,12 +318,17 @@ export function buildLightRegions(
   const rl = (items: Box[], pick: "min" | "max"): string =>
     items.length ? list(items, pick) : "vec3(0.0)";
 
+  // For each region: the upper region of the same room (or -1). A lamp hung
+  // from the roof (above 8 m) lights both levels of its room, so no edge shows.
+  const upList = rooms.map((_, r) => upper.get(r) ?? -1).join(", ") || "-1";
+
   const glsl = /* glsl */ `
     const int LR_ROOMS = ${rooms.length};
     const int LR_DOORS = ${doorBoxes.length};
     const vec3 RM_MIN[${rn}] = vec3[${rn}](${rl(rooms, "min")});
     const vec3 RM_MAX[${rn}] = vec3[${rn}](${rl(rooms, "max")});
     const int SKY_OK[${rn}] = int[${rn}](${skyList});
+    const int UP_OF[${rn}] = int[${rn}](${upList});
     const int RM_ID[${rn}] = int[${rn}](${regionOf.length ? regionOf.join(", ") : "0"});
     const vec3 DR_MIN[${dn}] = vec3[${dn}](${rl(doorBoxes, "min")});
     const vec3 DR_MAX[${dn}] = vec3[${dn}](${rl(doorBoxes, "max")});
@@ -335,7 +371,9 @@ export function buildLightRegions(
       int room = tag - 2;
       // (An outdoor lamp has no room: "no door here" must not count as its
       // room, or it would light every interior away from the doors.)
-      bool ok = tag <= 0 || inRoom == room || ( room >= 0 && atDoor == room ) || ( room < 0 && atDoor >= 0 && atDoor == inRoom );
+      float roofY = ( ( vec4( lampView, 1.0 ) - viewMatrix[ 3 ] ) * viewMatrix ).y;
+      bool both = room >= 0 && roofY > 8.0 && inRoom >= 0 && UP_OF[ room ] == inRoom;
+      bool ok = tag <= 0 || both || inRoom == room || ( room >= 0 && atDoor == room ) || ( room < 0 && atDoor >= 0 && atDoor == inRoom );
 
       // A lamp above a deck must not light the ground under it (nor one below
       // light the deck above), whatever its region: the decks are 4 m up, round
@@ -346,7 +384,7 @@ export function buildLightRegions(
         float lampY = ( ( vec4( lampView, 1.0 ) - viewMatrix[ 3 ] ) * viewMatrix ).y;
         // (A lamp on the decks, 4 to 12 m up, never lights the ground at all,
         // the open middle included; the tall roof floodlights still do.)
-        bool deckLamp = lampY < 12.0;
+        bool deckLamp = lampY > 4.1 && lampY < 12.0;
         bool under = deckLamp || abs( lrWorld.x ) > 18.0 || abs( lrWorld.z ) > 12.0;
 
         if ( under && ( ( lrWorld.y < 3.9 && lampY > 4.1 ) || ( lrWorld.y > 3.9 && lampY < 3.8 ) ) ) {

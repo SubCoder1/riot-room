@@ -9,6 +9,26 @@ import type { ArenaLayout, LightDefinition } from "./ArenaLayout";
 
 const HALOGEN = 0xfff0d6;
 
+/**
+ * The lamp palette: four kinds of light, so the map reads as one place. A lamp
+ * takes its colour from here unless it is deliberately something else (the
+ * floodlights' warm white, the cyan of the Ruins' entrance tubes, the old
+ * fluorescent over the chamber).
+ *
+ *  - sodium: warm industrial amber (old sodium and tungsten work lamps)
+ *  - cold: desaturated blue-white tube light
+ *  - neutral: plain white tube light (the Armory's)
+ *  - red: deep emergency red, dim, only where there is equipment to warn of
+ *  - green: small electrical status lights
+ */
+export const LAMP = {
+  sodium: 0xff9440,
+  cold: 0xb3c0cc,
+  neutral: 0xe0e3e3,
+  red: 0xe0301f,
+  green: 0x4fd98a,
+} as const;
+
 export const EXTRA_LAMPS: LightDefinition[] = [
   // A dim cool emergency light low in the Ruins' pit, so the lower floor is
   // not black under the walkway: a small pool, not a lit room.
@@ -28,21 +48,25 @@ export const EXTRA_LAMPS: LightDefinition[] = [
   // (It takes the place of the pit's dim amber lamp: the rail shader holds 34.)
   {
     id: "indicator-ruins-entrance",
-    x: 25.6,
-    y: 9.9,
+    x: 28.9,
+    y: 8.4,
     z: -19.8,
     color: 0x6fd0f0,
-    intensity: 36,
-    distance: 13,
+    intensity: 34,
+    distance: 11,
   },
+  // The Power Room's emergency lamp (red): it comes on when the interior
+  // circuit goes dark and is out while the generator runs (see
+  // PowerCircuits.EMERGENCY_LAMPS). A restrained pool over the switchgear and
+  // the generator's panel, not a lit room.
   {
-    id: "indicator-ruins-entrance-b",
-    x: 29.4,
-    y: 9.9,
-    z: -19.8,
-    color: 0x6fd0f0,
-    intensity: 36,
-    distance: 13,
+    id: "emergency-power-room",
+    x: 6.0,
+    y: 7.2,
+    z: -21.4,
+    color: LAMP.red,
+    intensity: 17,
+    distance: 5.5,
   },
   // The Ruins' chamber (see RuinsChamber): three restrained lamps, no shadows
   // (the room's own light region keeps each inside it): an amber emergency
@@ -69,11 +93,13 @@ export const EXTRA_LAMPS: LightDefinition[] = [
   {
     id: "indicator-ruins-chamber-far",
     x: 24.0,
-    y: 3.0,
-    z: 8.6,
-    color: 0xb8d0c0,
+    y: 3.1,
+    z: 8.9,
+    // Emergency red over the equipment enclosure: its spill reaches the cage,
+    // the transformer and the console, and fades well before the hall.
+    color: LAMP.red,
     intensity: 16,
-    distance: 11,
+    distance: 6,
   },
   {
     id: "halogen-wall-room-armory",
@@ -174,12 +200,12 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     "bulb-junk-b": { scale: 0.88, color: 0xffb870, reach: 1 },
     "bulb-power-a": { scale: 0.88, color: 0xffb870, reach: 1 },
     "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
-    "bulb-break-a": { scale: 0.96, color: 0xff9440, reach: 1 },
+    "bulb-break-a": { scale: 0.96, color: LAMP.sodium, reach: 1 },
     "light-room-barracks": { scale: 1.6, color: 0xffbe85, reach: 1 },
-    "light-room-yard": { scale: 1.4, color: 0xff9440, reach: 0.42 },
+    "light-room-yard": { scale: 1.4, color: LAMP.sodium, reach: 0.42 },
     // The scaffold lamp lights the alley; its tail is cut where it reached into rooms.
     "light-site-scaffold": { scale: 1, reach: 0.8 },
-    "light-room-hall-b": { scale: 0.72, color: 0xff9440, reach: 1 },
+    "light-room-hall-b": { scale: 0.72, color: LAMP.sodium, reach: 1 },
     "workshop-light-bench": { scale: 2.8, reach: 0.55 },
     "workshop-light-machines": { scale: 2.2 },
     "light-power-room-work": { scale: 1, reach: 1 },
@@ -276,7 +302,11 @@ export function nightLights(layout: ArenaLayout): LightDefinition[] {
     ...lights,
     ...EXTRA_LAMPS.map((l) => ({
       ...l,
-      distance: keepInRoom(layout, l, l.distance),
+      // (The Ruins' lamps are kept in their room by its light regions: cut
+      // short to the nearest wall they left the lower walls dark.)
+      distance: l.id.startsWith("indicator-ruins-entrance")
+        ? l.distance
+        : keepInRoom(layout, l, l.distance),
     })),
   ];
 

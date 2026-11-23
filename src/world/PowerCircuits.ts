@@ -67,11 +67,24 @@ const INTERIOR_LAMPS: ReadonlySet<string> = new Set([
 const INDEPENDENT_LAMPS: ReadonlySet<string> = new Set([
   "indicator-ruins-pit",
   "indicator-ruins-entrance",
-  "indicator-ruins-entrance-b",
   "indicator-ruins-chamber-entry",
   "indicator-ruins-chamber-mid",
   "indicator-ruins-chamber-far",
 ]);
+
+/**
+ * Emergency lamps: lit while their circuit is OUT (the generator stopped or not
+ * yet restarted) and dark while it runs, like real emergency lighting. They
+ * follow the same state as the circuit's other lamps, inverted.
+ */
+const EMERGENCY_LAMPS: Readonly<Record<string, Circuit>> = {
+  "emergency-power-room": "interior",
+};
+
+/** The circuit whose failure lights this emergency lamp (null: not one). */
+export function emergencyCircuitOf(id: string): Circuit | null {
+  return EMERGENCY_LAMPS[id] ?? null;
+}
 
 /** The circuit a lamp is on (null: independent, or not a known lamp). */
 export function circuitOfLamp(id: string): Circuit | null {
@@ -88,7 +101,7 @@ export function circuitOfLamp(id: string): Circuit | null {
 
 /** Whether a lamp is deliberately on neither circuit. */
 export function isIndependentLamp(id: string): boolean {
-  return INDEPENDENT_LAMPS.has(id);
+  return INDEPENDENT_LAMPS.has(id) || id in EMERGENCY_LAMPS;
 }
 
 /** Which roles may switch a generator off. Batman only: a thug cannot. */

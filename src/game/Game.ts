@@ -2454,6 +2454,11 @@ export class Game {
       this.tubeGlow.setLevel(id, this.arena.lampLevelOf(id));
     }
 
+    // The Power Room's red emergency lamp: lit while the interior circuit is out.
+    this.chamberGlow.setEmergency(
+      this.arena.lampLevelOf("emergency-power-room"),
+    );
+
     this.generatorView.update(performance.now() / 1000, (id) =>
       this.power.isOn(this.circuitOfGenerator(id)),
     );

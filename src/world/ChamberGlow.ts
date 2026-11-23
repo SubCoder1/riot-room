@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { LAMP } from "./NightLights";
+
 /**
  * What lights up in the Ruins' chamber, drawn like the Armory's tubes: small
  * emissive meshes (not lit, so they read as lit in the dark) at the fixtures
@@ -8,6 +10,8 @@ import * as THREE from "three";
  */
 export interface ChamberGlow {
   group: THREE.Group;
+  /** How lit the Power Room's emergency lamp is (0 out, 1 on). */
+  setEmergency(level: number): void;
   dispose(): void;
 }
 
@@ -73,13 +77,61 @@ export function createChamberGlow(): ChamberGlow {
     -9.6,
   );
 
-  // The far end's strip light, over the way up to the enclosure.
-  for (const dz of [-0.06, 0.06]) {
-    const strip = new THREE.CylinderGeometry(0.017, 0.017, 1.6, 8);
+  // The far end's emergency lamp: a deep red bulb in its guard over the way up
+  // to the enclosure (always on: it is on no circuit).
+  add(new THREE.SphereGeometry(0.085, 14, 10), LAMP.red, group, 24.0, 3.2, 8.9);
 
-    strip.rotateZ(Math.PI / 2);
-    add(strip, 0xcfe6d8, group, 24.0, 3.55, 8.6 + dz);
+  // The two wall fixtures either side of the enclosure's approach.
+  for (const x of [21.03, 26.97]) {
+    add(new THREE.SphereGeometry(0.06, 12, 8), LAMP.red, group, x, 2.24, 8.1);
   }
+
+  // The Power Room's emergency lamp: a steel plate on the ceiling, a six-bar
+  // wire guard and a red bulb. It glows only while the interior circuit is out
+  // (see `setEmergency`, driven by the lamp's level in Arena).
+  const bulbMaterial = material(LAMP.red);
+  const bulbGeometry = new THREE.SphereGeometry(0.09, 14, 10);
+  const steel = new THREE.MeshStandardMaterial({
+    color: 0x2a2e34,
+    roughness: 0.6,
+    metalness: 0.5,
+  });
+  const plate = new THREE.CylinderGeometry(0.17, 0.17, 0.06, 16);
+  const bar = new THREE.BoxGeometry(0.02, 0.5, 0.02);
+
+  geometries.push(bulbGeometry, plate, bar);
+  materials.push(steel);
+
+  const px = 6.0;
+  const pz = -21.4;
+  const ceilingTop = 7.8;
+  const bulb = new THREE.Mesh(bulbGeometry, bulbMaterial);
+
+  bulb.position.set(px, 7.2, pz);
+  bulb.frustumCulled = false;
+  group.add(bulb);
+
+  const cap = new THREE.Mesh(plate, steel);
+
+  cap.position.set(px, ceilingTop - 0.03, pz);
+  group.add(cap);
+
+  for (let k = 0; k < 6; k++) {
+    const angle = (k / 6) * Math.PI * 2;
+    const b = new THREE.Mesh(bar, steel);
+
+    b.position.set(
+      px + Math.cos(angle) * 0.13,
+      ceilingTop - 0.31,
+      pz + Math.sin(angle) * 0.13,
+    );
+    group.add(b);
+  }
+
+  const dark = new THREE.Color(0x1a0907);
+  const lit = new THREE.Color(LAMP.red);
+
+  bulbMaterial.color.copy(dark);
 
   // The transformer's indicator lamps, and one on each of two cabinets.
   for (const [x, color] of [
@@ -153,6 +205,9 @@ export function createChamberGlow(): ChamberGlow {
 
   return {
     group,
+    setEmergency(level: number): void {
+      bulbMaterial.color.copy(dark).lerp(lit, Math.min(Math.max(level, 0), 1));
+    },
     dispose(): void {
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();

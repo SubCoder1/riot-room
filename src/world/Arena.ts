@@ -22,7 +22,11 @@ import { NightAtmosphere, type Halogen } from "./NightAtmosphere";
 import { BarrelFire } from "./BarrelFire";
 import { BLINKING_LAMP, FLICKERING, nightLights } from "./NightLights";
 import { createRain } from "./Rain";
-import { circuitOfLamp, type Circuit } from "./PowerCircuits";
+import {
+  circuitOfLamp,
+  emergencyCircuitOf,
+  type Circuit,
+} from "./PowerCircuits";
 import { ARENA_LAYOUT } from "./UpperFloorMap";
 
 /**
@@ -65,6 +69,8 @@ export class Arena {
   private readonly circuitLamps: Array<{
     id: string;
     circuit: Circuit;
+    /** An emergency lamp: lit while its circuit is out. */
+    invert: boolean;
     light: THREE.Light;
     base: THREE.Color;
     glow: THREE.Object3D | null;
@@ -177,7 +183,8 @@ export class Arena {
   /** The lamps on each circuit, found once the night's lamps are built. */
   private registerCircuitLamps(lights: ReadonlyArray<{ id: string }>): void {
     for (const { id } of lights) {
-      const circuit = circuitOfLamp(id);
+      const emergency = emergencyCircuitOf(id);
+      const circuit = circuitOfLamp(id) ?? emergency;
       const light = this.group.getObjectByName(id);
 
       if (!circuit || !(light instanceof THREE.Light)) {
@@ -187,12 +194,14 @@ export class Arena {
       this.circuitLamps.push({
         id,
         circuit,
+        invert: emergency !== null,
         light,
         base: light.color.clone(),
         glow: this.group.getObjectByName(`glow-${id}`) ?? null,
         rainBase: this.lampColours.get(id)?.clone() ?? null,
+        // (An emergency lamp starts out: the circuits start on.)
         applied: 1,
-        level: 1,
+        level: emergency !== null ? 0 : 1,
         rank: 0,
         count: 1,
       });
@@ -203,7 +212,9 @@ export class Arena {
       const generator = this.layout.generators.find(
         (g) => g.circuit === circuit,
       );
-      const lamps = this.circuitLamps.filter((l) => l.circuit === circuit);
+      const lamps = this.circuitLamps.filter(
+        (l) => l.circuit === circuit && !l.invert,
+      );
       const distance = (l: (typeof lamps)[number]): number =>
         generator
           ? Math.hypot(
@@ -226,8 +237,13 @@ export class Arena {
   /** Fades each lamp toward its circuit's target once its turn has come. */
   private updateCircuits(dt: number): void {
     for (const lamp of this.circuitLamps) {
-      const target = this.circuitTarget[lamp.circuit];
-      const turn = target === 0 ? lamp.rank : lamp.count - 1 - lamp.rank;
+      const circuitOn = this.circuitTarget[lamp.circuit];
+      const target = lamp.invert ? 1 - circuitOn : circuitOn;
+      const turn = lamp.invert
+        ? 0
+        : target === 0
+          ? lamp.rank
+          : lamp.count - 1 - lamp.rank;
       const due =
         this.time - this.circuitChangedAt[lamp.circuit] >= turn * Arena.STAGGER;
 
