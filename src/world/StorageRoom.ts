@@ -961,6 +961,10 @@ export function pallet(
     p.box(bx, 0, bz, 0.1, 0.1, d - 0.04, TIMBER_DARK, ry);
   }
 
+  // A dark core between the bearers, so a lamp's light cannot shine through
+  // the gap under the load and show as a pale line at its foot.
+  p.box(cx, 0, cz, w - 0.14, 0.1, d - 0.14, 0x1c1713, ry);
+
   for (let i = 0; i < 5; i++) {
     const [sx, sz] = turn(cx, cz, ry, 0, (i - 2) * (d / 5));
 

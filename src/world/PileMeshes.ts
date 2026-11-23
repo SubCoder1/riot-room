@@ -284,6 +284,10 @@ function rockGeometry(variant: number): THREE.BufferGeometry {
     v.multiplyScalar(
       1 + 0.025 * (noise3(v.x * 40, v.y * 40, v.z * 40, variant) - 0.5),
     );
+    // A flat base: a fallen rock lies on a face, not on a point, so the
+    // underside is cut flat (a rounded one rested on a single spot and left a
+    // visible gap under every edge).
+    v.y = Math.max(v.y, -0.2);
     position.setXYZ(i, v.x, v.y, v.z);
   }
 
