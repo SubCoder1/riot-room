@@ -33,7 +33,13 @@ import { ARENA_LAYOUT } from "./UpperFloorMap";
  * A lamp's own colour, a fifth of the way to white: the amber stays, but a room
  * of several lamps no longer washes every cool grey surface it reaches orange.
  */
-function practical(color: number): THREE.Color {
+function practical(color: number, own = false): THREE.Color {
+  // (The Ruins chamber's red lamps keep their colour: a fifth of white in a
+  // deep red turns it pink, and, over-exposed near a surface, cyan.)
+  if (own) {
+    return new THREE.Color(color);
+  }
+
   return new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.2);
 }
 
@@ -601,7 +607,7 @@ export class Arena {
       }
 
       const lamp = new THREE.PointLight(
-        practical(light.color),
+        practical(light.color, light.id.startsWith("indicator-ruins-chamber")),
         light.intensity,
         light.distance,
         regions.decays.get(light.id) ?? 2,

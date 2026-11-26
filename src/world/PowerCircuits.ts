@@ -67,8 +67,8 @@ const INTERIOR_LAMPS: ReadonlySet<string> = new Set([
 const INDEPENDENT_LAMPS: ReadonlySet<string> = new Set([
   "indicator-ruins-pit",
   "indicator-ruins-entrance",
-  "indicator-ruins-chamber-entry",
   "indicator-ruins-chamber-mid",
+  "indicator-ruins-chamber-east",
   "indicator-ruins-chamber-far",
 ]);
 

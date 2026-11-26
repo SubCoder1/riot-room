@@ -304,6 +304,17 @@ export function buildLightRegions(
   // Rooms that are open to the sky (the lightning's sky light may reach them);
   // in every other room it is kept out, so a flash cannot show at a corner.
   const OPEN_SKY = new Set(["room-spawn-nw", "room-hall", "room-server"]);
+  // How much of the hemisphere (ambient) light each region gets, per colour: a
+  // deep underground chamber gets a fifth of it and none of its blue, so the
+  // red tubes are what is seen and the shadows are black, not blue.
+  const ambList =
+    rooms
+      .map((_, r) =>
+        layout.rooms[r]?.id === "room-ruins-chamber"
+          ? "vec3( 0.3, 0.17, 0.15 )"
+          : "vec3( 1.0 )",
+      )
+      .join(", ") || "vec3( 1.0 )";
   const skyList =
     rooms
       .map((_, r) => {
@@ -327,6 +338,7 @@ export function buildLightRegions(
     const int LR_DOORS = ${doorBoxes.length};
     const vec3 RM_MIN[${rn}] = vec3[${rn}](${rl(rooms, "min")});
     const vec3 RM_MAX[${rn}] = vec3[${rn}](${rl(rooms, "max")});
+    const vec3 AMB[${rn}] = vec3[${rn}](${ambList});
     const int SKY_OK[${rn}] = int[${rn}](${skyList});
     const int UP_OF[${rn}] = int[${rn}](${upList});
     const int RM_ID[${rn}] = int[${rn}](${regionOf.length ? regionOf.join(", ") : "0"});
@@ -360,6 +372,10 @@ export function buildLightRegions(
     }
 
     // The sky light: 1 outdoors and in rooms open to the sky, 0 in a roofed room.
+    vec3 lrAmbient( int inRoom ) {
+      return inRoom < 0 ? vec3( 1.0 ) : AMB[ inRoom ];
+    }
+
     float lrSky( int inRoom ) {
       return ( inRoom < 0 || SKY_OK[ inRoom ] == 1 ) ? 1.0 : 0.0;
     }
@@ -425,6 +441,16 @@ ${glsl}`;
 	int lrInRoom;
 	int lrAtDoor;
 	lrLocate( geometryPosition, lrInRoom, lrAtDoor );`,
+    );
+  }
+
+  const hemi =
+    "irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );";
+
+  if (begin.includes(hemi)) {
+    begin = begin.replace(
+      hemi,
+      "irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal ) * lrAmbient( lrInRoom );",
     );
   }
 

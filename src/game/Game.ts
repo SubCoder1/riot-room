@@ -63,6 +63,7 @@ import { ArenaDebug } from "../world/ArenaDebug";
 import { CLIMB, angleBetween, ladderYaw } from "../player/Climb";
 import {
   ARENA_HALF_X,
+  ARENA_MAX_X,
   ARENA_HALF_Z,
   PERIMETER_WALL_HEIGHT,
   ROOF_HIGH,
@@ -244,6 +245,7 @@ export class Game {
   /** The outer wall: not a solid of the collision field, so thrown things check it too. */
   private readonly throwBounds: ThrowBounds = {
     halfX: ARENA_HALF_X,
+    maxX: ARENA_MAX_X,
     halfZ: ARENA_HALF_Z,
     height: PERIMETER_WALL_HEIGHT,
   };
@@ -2452,6 +2454,22 @@ export class Game {
 
     for (const id of ["tube-armory-1", "tube-armory-2", "tube-armory-4"]) {
       this.tubeGlow.setLevel(id, this.arena.lampLevelOf(id));
+    }
+
+    // The chamber's red tubes: the water, the drips and the stutter of two of
+    // them; the lamps over those follow the stutter.
+    const tubeLevels = this.chamberGlow.update(performance.now() / 1000);
+
+    for (const [id, tube] of [
+      ["indicator-ruins-chamber-mid", 2],
+      ["indicator-ruins-chamber-far", 4],
+    ] as const) {
+      const lamp = this.arena.group.getObjectByName(id);
+
+      if (lamp instanceof THREE.Light) {
+        lamp.userData.base ??= lamp.intensity;
+        lamp.intensity = (lamp.userData.base as number) * tubeLevels[tube];
+      }
     }
 
     // The Power Room's red emergency lamp: lit while the interior circuit is out.

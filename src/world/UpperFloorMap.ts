@@ -1,6 +1,7 @@
 import {
   ARENA_DEPTH,
   ARENA_HALF_X,
+  ARENA_MAX_X,
   ARENA_HALF_Z,
   ARENA_WIDTH,
   ROOF_HIGH,
@@ -130,50 +131,69 @@ function createUpperFloor(): ArenaLayout {
   // north face): over those the floor is only a slab 0.3 m thick, hanging.
   // The rest of the wing is cut into solid blocks round them. See RuinsChamber.
   {
-    const wing = { minX: 18, maxX: X, minZ: -12, maxZ: 12 };
     const unique = (v: number[]): number[] =>
       [...new Set(v)].sort((p, q) => p - q);
-    const xs = unique([
-      wing.minX,
-      wing.maxX,
-      ...CHAMBER_HOLLOWS.flatMap((r) => [r.minX, r.maxX]),
-    ]);
-    const zs = unique([
-      wing.minZ,
-      wing.maxZ,
-      ...CHAMBER_HOLLOWS.flatMap((r) => [r.minZ, r.maxZ]),
-    ]);
-    const hollowAt = (i: number, j: number): boolean =>
-      CHAMBER_HOLLOWS.some(
-        (r) =>
-          r.minX <= xs[i] &&
-          xs[i + 1] <= r.maxX &&
-          r.minZ <= zs[j] &&
-          zs[j + 1] <= r.maxZ,
-      );
+    // The wing, and the two strips of the east extension (x 32 to the new
+    // edge) north and south of it: the same floor, the chamber's hollows cut
+    // out of it wherever they run.
+    const rects = [
+      { minX: 18, maxX: ARENA_MAX_X, minZ: -12, maxZ: 12, named: true },
+      { minX: X, maxX: ARENA_MAX_X, minZ: -Z, maxZ: -12, named: false },
+      { minX: X, maxX: ARENA_MAX_X, minZ: 12, maxZ: Z, named: false },
+    ];
     let block = 0;
 
-    for (let j = 0; j + 1 < zs.length; j++) {
-      // The solid cells of this strip, side by side joined into runs.
-      let start = -1;
+    for (const wing of rects) {
+      const within = (v: number, lo: number, hi: number): boolean =>
+        v >= lo && v <= hi;
+      const xs = unique([
+        wing.minX,
+        wing.maxX,
+        ...CHAMBER_HOLLOWS.flatMap((r) => [r.minX, r.maxX]).filter((v) =>
+          within(v, wing.minX, wing.maxX),
+        ),
+      ]);
+      const zs = unique([
+        wing.minZ,
+        wing.maxZ,
+        ...CHAMBER_HOLLOWS.flatMap((r) => [r.minZ, r.maxZ]).filter((v) =>
+          within(v, wing.minZ, wing.maxZ),
+        ),
+      ]);
+      const hollowAt = (i: number, j: number): boolean =>
+        CHAMBER_HOLLOWS.some(
+          (r) =>
+            r.minX <= xs[i] &&
+            xs[i + 1] <= r.maxX &&
+            r.minZ <= zs[j] &&
+            zs[j + 1] <= r.maxZ,
+        );
 
-      for (let i = 0; i + 1 < xs.length; i++) {
-        if (!hollowAt(i, j) && start < 0) start = i;
+      for (let j = 0; j + 1 < zs.length; j++) {
+        // The solid cells of this strip, side by side joined into runs.
+        let start = -1;
 
-        const last = i + 2 === xs.length;
+        for (let i = 0; i + 1 < xs.length; i++) {
+          if (!hollowAt(i, j) && start < 0) start = i;
 
-        if (start >= 0 && (hollowAt(i, j) || last)) {
-          const end = hollowAt(i, j) ? i : i + 1;
+          const last = i + 2 === xs.length;
 
-          map.createFloorSection(
-            // (The block on the arena face at the south keeps the wing's own name.)
-            xs[start] === wing.minX && zs[j] <= 9 && 9 < zs[j + 1]
-              ? "east-wing"
-              : `east-wing~solid-${block++}`,
-            bounds(xs[start], xs[end], zs[j], zs[j + 1]),
-            F,
-          );
-          start = -1;
+          if (start >= 0 && (hollowAt(i, j) || last)) {
+            const end = hollowAt(i, j) ? i : i + 1;
+
+            map.createFloorSection(
+              // (The block on the arena face at the south keeps the wing's own name.)
+              wing.named &&
+                xs[start] === wing.minX &&
+                zs[j] <= 9 &&
+                9 < zs[j + 1]
+                ? "east-wing"
+                : `east-wing~solid-${block++}`,
+              bounds(xs[start], xs[end], zs[j], zs[j + 1]),
+              F,
+            );
+            start = -1;
+          }
         }
       }
     }

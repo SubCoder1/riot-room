@@ -18,7 +18,9 @@ import * as THREE from "three";
  */
 const GRADE = /* glsl */ `
   {
-    vec3 c = gl_FragColor.rgb;
+    // Clamped first: the curve below turns a value over 1 negative, and an
+    // over-bright red highlight came out cyan.
+    vec3 c = clamp( gl_FragColor.rgb, 0.0, 1.0 );
     float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
     float chroma = max( c.r, max( c.g, c.b ) ) - min( c.r, min( c.g, c.b ) );
     // Strong colours are intentional: leave them.

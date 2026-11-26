@@ -22,10 +22,12 @@ const HALOGEN = 0xfff0d6;
  *  - green: small electrical status lights
  */
 export const LAMP = {
-  sodium: 0xff9440,
+  sodium: 0xe2521f,
   cold: 0xb3c0cc,
   neutral: 0xe0e3e3,
   red: 0xe0301f,
+  /** A dull, deep red: the chamber's fluorescent emergency tubes. */
+  redTube: 0x9c1a12,
   green: 0x4fd98a,
 } as const;
 
@@ -68,38 +70,39 @@ export const EXTRA_LAMPS: LightDefinition[] = [
     intensity: 17,
     distance: 5.5,
   },
-  // The Ruins' chamber (see RuinsChamber): three restrained lamps, no shadows
-  // (the room's own light region keeps each inside it): an amber emergency
-  // lamp in the vestibule, the old fixture over the middle of the hall, and a
-  // pale status light by the enclosure at the far end.
-  {
-    id: "indicator-ruins-chamber-entry",
-    x: 23.7,
-    y: 3.0,
-    z: -9.6,
-    color: 0xffa860,
-    intensity: 9,
-    distance: 7.5,
-  },
+  // The Ruins' chamber (see RuinsChamber): three lamps (the rail holds 34 in
+  // all), one over the hall and vestibule, one in the extension, one at
+  // the far end; no shadows (the room's light
+  // region keeps each inside it). Each stands for the red fluorescent tubes
+  // hung over it: a deep red, hung just under the tubes' height so the light
+  // spills over the beams, pipes and piers round them and falls off into the
+  // dark.
   {
     id: "indicator-ruins-chamber-mid",
-    x: 22.4,
-    y: 2.85,
-    z: 0.3,
-    color: 0xd6cdb6,
-    intensity: 70,
-    distance: 20,
+    x: 24.3,
+    y: 2.65,
+    z: -4.8,
+    color: LAMP.redTube,
+    intensity: 12,
+    distance: 14,
+  },
+  {
+    id: "indicator-ruins-chamber-east",
+    x: 34.0,
+    y: 2.65,
+    z: -1.9,
+    color: LAMP.redTube,
+    intensity: 12,
+    distance: 14,
   },
   {
     id: "indicator-ruins-chamber-far",
     x: 24.0,
-    y: 3.1,
-    z: 8.9,
-    // Emergency red over the equipment enclosure: its spill reaches the cage,
-    // the transformer and the console, and fades well before the hall.
-    color: LAMP.red,
-    intensity: 16,
-    distance: 6,
+    y: 2.65,
+    z: 8.4,
+    color: LAMP.redTube,
+    intensity: 11,
+    distance: 11,
   },
   {
     id: "halogen-wall-room-armory",
@@ -194,14 +197,14 @@ const DIM: Record<string, number> = {
  */
 const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
   {
-    "light-room-warehouse-a": { scale: 0.88, color: 0xffc78a, reach: 1 },
-    "light-room-warehouse-b": { scale: 0.8, color: 0xffc78a, reach: 1 },
-    "bulb-junk-a": { scale: 0.88, color: 0xffb870, reach: 1 },
-    "bulb-junk-b": { scale: 0.88, color: 0xffb870, reach: 1 },
-    "bulb-power-a": { scale: 0.88, color: 0xffb870, reach: 1 },
+    "light-room-warehouse-a": { scale: 0.88, color: 0xe8723c, reach: 1 },
+    "light-room-warehouse-b": { scale: 0.8, color: 0xe8723c, reach: 1 },
+    "bulb-junk-a": { scale: 0.88, color: 0xe46a30, reach: 1 },
+    "bulb-junk-b": { scale: 0.88, color: 0xe46a30, reach: 1 },
+    "bulb-power-a": { scale: 0.88, color: 0xe46a30, reach: 1 },
     "light-room-server": { scale: 0.72, color: 0xc3d0e4, reach: 1 },
     "bulb-break-a": { scale: 0.96, color: LAMP.sodium, reach: 1 },
-    "light-room-barracks": { scale: 1.6, color: 0xffbe85, reach: 1 },
+    "light-room-barracks": { scale: 1.6, color: 0xe86e38, reach: 1 },
     "light-room-yard": { scale: 1.4, color: LAMP.sodium, reach: 0.42 },
     // The scaffold lamp lights the alley; its tail is cut where it reached into rooms.
     "light-site-scaffold": { scale: 1, reach: 0.8 },
@@ -271,8 +274,8 @@ function isHalogen(id: string): boolean {
 
 /** A halogen's colour, a little further toward orange (its lens and beam follow). */
 function warmed(hex: number): number {
-  const amber = [0xff, 0x9a, 0x4a];
-  const mix = 0.28;
+  const amber = [0xe0, 0x50, 0x28];
+  const mix = 0.4;
   const channel = (shift: number, i: number): number =>
     Math.round(((hex >> shift) & 255) * (1 - mix) + amber[i] * mix);
 
@@ -303,8 +306,9 @@ export function nightLights(layout: ArenaLayout): LightDefinition[] {
     ...EXTRA_LAMPS.map((l) => ({
       ...l,
       // (The Ruins' lamps are kept in their room by its light regions: cut
-      // short to the nearest wall they left the lower walls dark.)
-      distance: l.id.startsWith("indicator-ruins-entrance")
+      // short to the nearest wall they left the lower walls dark, and the
+      // chamber's, in its long stepped hollows, the far parts black.)
+      distance: l.id.startsWith("indicator-ruins-")
         ? l.distance
         : keepInRoom(layout, l, l.distance),
     })),
@@ -314,8 +318,17 @@ export function nightLights(layout: ArenaLayout): LightDefinition[] {
   // little stronger so they still carry the night.
   return all.map((l) => ({
     ...l,
-    color: dimmed(isHalogen(l.id) ? warmed(l.color) : l.color),
-    intensity: l.target ? l.intensity * 1.2 : l.intensity,
+    color: l.id.startsWith("indicator-ruins-chamber")
+      ? l.color
+      : dimmed(isHalogen(l.id) ? warmed(l.color) : l.color),
+    // The warm (orange) lamps are a deeper red now and a tenth weaker: the
+    // red carries the night, the orange does not wash the walls.
+    intensity:
+      (l.target ? l.intensity * 1.2 : l.intensity) *
+      (!l.id.startsWith("indicator-ruins-chamber") &&
+      ((l.color >> 16) & 255) > ((l.color >> 8) & 255) * 1.25
+        ? 0.9
+        : 1),
   }));
 }
 
