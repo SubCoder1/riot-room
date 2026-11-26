@@ -209,7 +209,7 @@ const ROOMS: Record<string, { scale: number; color?: number; reach?: number }> =
     // The scaffold lamp lights the alley; its tail is cut where it reached into rooms.
     "light-site-scaffold": { scale: 1, reach: 0.8 },
     "light-room-hall-b": { scale: 0.72, color: LAMP.sodium, reach: 1 },
-    "workshop-light-bench": { scale: 2.8, reach: 0.55 },
+    "workshop-light-bench": { scale: 2.8, reach: 0.85 },
     "workshop-light-machines": { scale: 2.2 },
     "light-power-room-work": { scale: 1, reach: 1 },
   };

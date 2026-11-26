@@ -365,14 +365,17 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
     p.box(x, mid + 0.2, zt, 0.05, 0.08, 0.03, STEEL_BARE);
     hooks(x, mid + 0.26, 0.0);
 
-    // The task light: a wall arm and a deep hood over the bench.
+    // The task light: a bracket on the wall, an arm, and a conical hood over
+    // the bench with a bright lens in its mouth.
     const lampX = benchCx - 0.3;
     const lampY = 2.62;
 
-    p.alongZ(lampX, lampY, NORTH + 0.02, NORTH + 0.62, 0.045, CHARCOAL);
-    p.post(lampX, lampY - 0.04, NORTH + 0.62, 0.07, 0.05, CHARCOAL);
-    p.post(lampX, lampY - 0.3, NORTH + 0.62, 0.26, 0.36, CHARCOAL);
-    p.post(lampX, lampY - 0.34, NORTH + 0.62, 0.04, 0.3, 0xdfe6ea);
+    p.box(lampX, lampY - 0.16, NORTH + 0.02, 0.14, 0.3, 0.03, CHARCOAL);
+    p.alongZ(lampX, lampY, NORTH + 0.03, NORTH + 0.62, 0.045, CHARCOAL);
+    p.post(lampX, lampY - 0.06, NORTH + 0.62, 0.09, 0.05, CHARCOAL);
+    p.post(lampX, lampY - 0.2, NORTH + 0.62, 0.15, 0.2, CHARCOAL);
+    p.post(lampX, lampY - 0.3, NORTH + 0.62, 0.1, 0.34, CHARCOAL);
+    p.post(lampX, lampY - 0.32, NORTH + 0.62, 0.025, 0.3, 0xfff1d6);
 
     map.createFitting("fittings-toolwall", F, p.elements, []);
   }
@@ -1041,10 +1044,11 @@ export function furnishWorkshop(map: MapBuilder, floorY: number): void {
   map.addLight({
     id: "workshop-light-bench",
     x: benchCx - 0.3,
-    y: F + 2.3,
+    y: F + 2.2,
     z: NORTH + 0.62,
-    color: 0xd6e4ff,
-    intensity: 2.6,
+    // Warm, like the rest of the site's work lights (not a cold white).
+    color: 0xffd9b0,
+    intensity: 2.2,
     distance: 6.5,
   });
   map.addLight({
