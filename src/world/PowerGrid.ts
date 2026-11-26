@@ -112,7 +112,7 @@ function lay(
  * Catmull-Rom spline cut into short straight pieces), lying on the floor: its
  * height is half its thickness, unless `y` is a real height (a roof, say).
  */
-function run(p: Pieces, points: XZ[], d = 0.045, y = 0, tone = 0): void {
+function run(p: Pieces, points: XZ[], d = 0.045, y = 0, tone = 0): XZ[] {
   const base = y > 0.3 ? y : d / 2 + 0.004;
   const pts: XZ[] = [points[0], ...points, points[points.length - 1]];
   const out: XZ[] = [points[0]];
@@ -141,8 +141,30 @@ function run(p: Pieces, points: XZ[], d = 0.045, y = 0, tone = 0): void {
   }
 
   for (let i = 1; i < out.length; i++) {
-    lay(p, out[i - 1], out[i], base, d, tone + Math.floor(i / 6));
+    // One colour the whole length: a change of colour every few pieces put
+    // two colours in the overlap of neighbouring pieces, which flickered.
+    lay(p, out[i - 1], out[i], base, d, tone);
   }
+
+  return out;
+}
+
+/** The drawn curve of a run from its start to the point nearest `until`. */
+function upTo(curve: XZ[], until: XZ): XZ[] {
+  let best = 0;
+
+  curve.forEach(([x, z], i) => {
+    const [bx, bz] = curve[best];
+
+    if (
+      Math.hypot(x - until[0], z - until[1]) <
+      Math.hypot(bx - until[0], bz - until[1])
+    ) {
+      best = i;
+    }
+  });
+
+  return curve.slice(0, best + 1);
 }
 
 /**
@@ -247,13 +269,18 @@ function ramp(p: Pieces, x: number, z: number, ry: number): void {
  * every `gap` metres, so it reads as fixed, not dropped.
  */
 function clips(p: Pieces, points: XZ[], gap = 0.9, d = 0.045): void {
+  // Spaced along the whole length (the points are the drawn curve, short
+  // pieces), so each clip sits on the cable where it really lies.
+  let next = gap / 2;
+  let walked = 0;
+
   for (let i = 1; i < points.length; i++) {
     const [a, b] = [points[i - 1], points[i]];
     const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const ry = Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
 
-    for (let t = gap / 2; t < length; t += gap) {
-      const u = t / length;
+    while (next <= walked + length) {
+      const u = (next - walked) / length;
 
       p.box(
         a[0] + (b[0] - a[0]) * u,
@@ -265,7 +292,10 @@ function clips(p: Pieces, points: XZ[], gap = 0.9, d = 0.045): void {
         STEEL_BARE,
         ry,
       );
+      next += gap;
     }
+
+    walked += length;
   }
 }
 
@@ -301,7 +331,18 @@ function reel(p: Pieces, x: number, z: number, ry: number, tone: number): void {
  * (the front looks +z): a louvred door with a hasp and a padlock, a hazard
  * plate, and three cables entering from below through glands.
  */
-function distributionBoard(p: Pieces, x: number, z: number): void {
+/**
+ * A site distribution board on two legs against a wall, its front toward +z.
+ * Each feed rises from the floor under it into its underside: `feeds` gives
+ * each riser's offset along the board, thickness and colour, so the floor
+ * cable that comes to it carries straight on up into the board.
+ */
+function distributionBoard(
+  p: Pieces,
+  x: number,
+  z: number,
+  feeds: ReadonlyArray<readonly [number, number, number]>,
+): void {
   for (const dx of [-0.32, 0.32]) {
     p.box(x + dx, 0, z, 0.05, 0.42, 0.05, MAST_WORN);
   }
@@ -322,15 +363,8 @@ function distributionBoard(p: Pieces, x: number, z: number): void {
   p.chunk(x - 0.3, 1.25, z + 0.16, 0.03, STEEL_BARE);
   p.chunk(x + 0.3, 1.25, z + 0.16, 0.03, STEEL_BARE);
 
-  for (const dx of [-0.22, 0, 0.22]) {
-    p.cableUp(
-      x + dx,
-      0,
-      z + 0.04,
-      0.42,
-      0.04,
-      SITE_CABLES[Math.abs(dx) < 0.1 ? 2 : 1],
-    );
+  for (const [dx, d, color] of feeds) {
+    p.cableUp(x + dx, 0, z + 0.04, 0.42, d, color);
   }
 }
 
@@ -698,8 +732,9 @@ function buildSupport(map: MapBuilder, F: number, s: Support): void {
       10,
     );
   } else {
-    lay(p, [jx, jz], [vx, vz], 0.24, 0.042, 1);
-    p.cableUp(vx, 0.22, vz, rise - 0.2, 0.042, SITE_CABLES[0]);
+    // Out of the junction box's side, low, and up the mast's front.
+    lay(p, [jx, jz], [vx, vz], 0.1, 0.042, 1);
+    p.cableUp(vx, 0.08, vz, rise - 0.06, 0.042, SITE_CABLES[0]);
 
     for (const y of [0.9, 2.0, 3.2]) {
       if (y < rise - 0.2) {
@@ -1125,7 +1160,8 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
       [3.1, -18.2],
       [3.0, -17.2],
       [3.35, -16.72],
-      [DB[0] - 0.14, DB[1] - 0.02],
+      [DB[0] - 0.22, DB[1] - 0.12],
+      [DB[0] - 0.22, DB[1] - 0.25],
     ];
 
     run(p, trunk, 0.065, 0, 0);
@@ -1133,7 +1169,12 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
     // socket, so the cable visibly enters the generator.
     plug(p, s1, [-1, 0], 0.065, 0);
     ramp(p, 3.0, -17.15, Math.PI / 2);
-    distributionBoard(p, DB[0], DB[1] - 0.29);
+    // The trunk, the walkway lead and the reel's lead each rise into it.
+    distributionBoard(p, DB[0], DB[1] - 0.29, [
+      [-0.22, 0.065, cableColor(0)],
+      [0, 0.044, cableColor(11)],
+      [0.22, 0.036, cableColor(13)],
+    ]);
 
     // Each lead runs straight along the wall's foot, clipped, to the board.
     // The archive wall's lead: along the wall to the corner, round it to the
@@ -1147,18 +1188,19 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
       [3.0, -16.88],
       [3.7, -16.84],
       [4.2, -16.66],
-      [DB[0] + 0.02, DB[1] - 0.04],
+      [DB[0], DB[1] - 0.12],
+      [DB[0], DB[1] - 0.25],
     ];
 
-    run(p, lead2, 0.044, 0, 11);
-    clips(p, lead2.slice(0, 5), 0.9, 0.044);
+    clips(p, upTo(run(p, lead2, 0.044, 0, 11), lead2[4]), 0.9, 0.044);
     ramp(p, 3.0, -16.88, Math.PI / 2);
 
-    // The work lamp by the alcove (north-1) taps this mast's foot box.
-    const lead1: XZ[] = [foot(n1s), [-8.4, -15.84], [-4.3, -15.84]];
+    // The work lamp by the alcove (north-1) taps this mast's foot box: its
+    // lead runs along the wall's foot into the box's west side.
+    const box2 = foot(n2s);
+    const lead1: XZ[] = [foot(n1s), [-8.4, -15.84], [box2[0] - 0.14, box2[1]]];
 
-    run(p, lead1, 0.036, 0, 12);
-    clips(p, lead1, 0.9, 0.036);
+    clips(p, run(p, lead1, 0.036, 0, 12), 0.9, 0.036);
 
     // A cable reel beside the mast, its lead taken to the board.
     reel(p, 6.55, -16.45, Math.PI / 2, 13);
@@ -1167,7 +1209,8 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
       [
         [6.3, -16.4],
         [5.9, -16.34],
-        [DB[0] + 0.3, DB[1] - 0.06],
+        [DB[0] + 0.22, DB[1] - 0.12],
+        [DB[0] + 0.22, DB[1] - 0.25],
       ],
       0.036,
       0,
@@ -1210,8 +1253,7 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
       [s2.x - 0.22, s2.z],
     ];
 
-    run(q, lead, 0.05, 0, 1);
-    clips(q, lead.slice(0, 7), 0.9, 0.05);
+    clips(q, upTo(run(q, lead, 0.05, 0, 1), lead[6]), 0.9, 0.05);
     plug(q, s2, [-1, 0], 0.05, 1);
     ramp(q, 6.85, -20.5, 0);
     map.createFitting("fittings-grid-dock", F, q.elements, []);
@@ -1297,8 +1339,7 @@ export function furnishPowerGrid(map: MapBuilder, floorY: number): void {
       [x + 0.15, 14.8],
     ];
 
-    run(p, lead, 0.046, 0, 10);
-    clips(p, lead.slice(0, 5), 0.9, 0.046);
+    clips(p, upTo(run(p, lead, 0.046, 0, 10), lead[4]), 0.9, 0.046);
     ramp(p, 11.5, 14.8, Math.PI / 2);
     ramp(p, 8.5, 14.8, Math.PI / 2);
 
@@ -1546,12 +1587,74 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
   const rnd = lcg(5151);
   const jitter = (n: number): number => (rnd() - 0.5) * n;
 
+  // Where the floor cables go in: each ends rising into the foot of what it
+  // feeds (the west switchgear's base, front face z -23.0, 0.25 m high; the
+  // generator's west face, x 5.8, and its north end, z -22.0), never loose.
+  const SWITCH_A_INLETS: Array<[number, number, number]> = [
+    [0.78, 0.12, -22.99],
+    [0.98, 0.12, -22.99],
+    [1.18, 0.12, -22.99],
+  ];
+  const PLATE_INLETS: Array<[number, number, number]> = [
+    [0.48, 0.08, -22.99],
+    [0.56, 0.16, -22.99],
+    [0.64, 0.08, -22.99],
+    [1.36, 0.16, -22.99],
+  ];
+  const GENERATOR_INLETS: Array<[number, number, number]> = [
+    [5.79, 0.14, -22.25],
+    [5.79, 0.14, -22.5],
+    [5.79, 0.14, -22.75],
+    [5.79, 0.14, -23.0],
+  ];
+  const GENERATOR_END_INLETS: Array<[number, number, number]> = [
+    [6.05, 0.14, -21.99],
+    [6.25, 0.14, -21.99],
+    [6.45, 0.14, -21.99],
+  ];
+
+  /**
+   * A cable down a wall (`wall`, ending just over the floor), then over the
+   * floor in a gentle wander to just in front of `inlet`, and up into it.
+   */
+  const feed = (
+    wall: Array<[number, number, number]>,
+    inlet: [number, number, number],
+    color: number,
+  ): void => {
+    const [fx, , fz] = wall[wall.length - 1];
+    const [ix, iy, iz] = inlet;
+    // The approach: 0.25 m straight out from the inlet's face.
+    const out: [number, number] =
+      Math.abs(iz + 22.99) < 0.01 || Math.abs(iz + 21.99) < 0.01
+        ? [ix, iz + 0.25]
+        : [ix - 0.25, iz];
+    const mid: [number, number] = [
+      (fx + out[0]) / 2 + jitter(0.4),
+      (fz + out[1]) / 2 + jitter(0.4),
+    ];
+
+    wire3(
+      p,
+      [
+        ...wall,
+        [fx, 0.03, fz],
+        [mid[0], 0.03, mid[1]],
+        [out[0], 0.03, out[1]],
+        [ix + (out[0] - ix) * 0.3, iy, iz + (out[1] - iz) * 0.3],
+        [ix, iy, iz],
+      ],
+      0.04,
+      color,
+    );
+  };
+
   // A junction box on a wall, small and dark, with a lid screw and a label.
   const box = (
     x: number,
     y: number,
     z: number,
-    facing: "s" | "e" | "w",
+    facing: "n" | "e" | "w",
   ): void => {
     if (facing === "e") {
       p.box(x, y, z, 0.12, 0.3, 0.34, CHARCOAL);
@@ -1560,8 +1663,9 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
       p.box(x, y, z, 0.12, 0.3, 0.34, CHARCOAL);
       p.box(x + 0.07, y + 0.04, z, 0.02, 0.22, 0.26, GUNMETAL);
     } else {
+      // On the south wall, its lid toward the room (north, -z).
       p.box(x, y, z, 0.34, 0.3, 0.12, CHARCOAL);
-      p.box(x, y + 0.04, z + 0.07, 0.26, 0.22, 0.02, GUNMETAL);
+      p.box(x, y + 0.04, z - 0.07, 0.26, 0.22, 0.02, GUNMETAL);
     }
   };
 
@@ -1639,13 +1743,13 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
     [0.3, 1.55, 3],
     [5.2, 1.6, 4],
   ] as const) {
-    box(bx, by, southWall, "s");
+    box(bx, by, southWall - 0.06, "n");
 
     // Conduit up the wall to the ceiling, then a cable along the ceiling to the bundle.
     p.cableUp(
       bx - 0.08,
       by + 0.3,
-      southWall + 0.04,
+      southWall - 0.04,
       ceilingY - by - 0.3,
       0.045,
       MAST_WORN,
@@ -1669,73 +1773,27 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
       Math.PI / 2,
     );
 
-    // Cables out of the bottom of the box, across the wall and onto the floor.
+    // Cables out of the bottom of the box, down the wall and onto the floor,
+    // then over the floor into the equipment the box feeds (see `feed`).
     for (let k = 0; k < count; k++) {
       const x = bx - 0.12 + k * 0.08;
+      const target = (bx < 3 ? SWITCH_A_INLETS : GENERATOR_INLETS)[k];
 
-      wire3(
-        p,
+      feed(
         [
-          [x, by - 0.03, southWall + 0.06],
-          [x + jitter(0.1), by - 0.5, southWall + 0.1],
-          [x + jitter(0.3), 0.1, southWall + 0.35],
-          [x + jitter(0.9), 0.03, southWall + 0.8 + k * 0.1],
+          [x, by - 0.03, southWall - 0.08],
+          [x + jitter(0.1), by - 0.5, southWall - 0.1],
+          [x + jitter(0.1), 0.1, southWall - 0.25],
         ],
-        0.04,
+        target,
         k % 2 ? SIGNAL : CABLES[k % 4],
       );
     }
   }
 
-  // Floor cables from those boxes, wandering to the equipment (low, off the middle).
-  wire3(
-    p,
-    [
-      [5.3, 0.03, -17.6],
-      [5.0, 0.03, -18.8],
-      [5.5, 0.03, -20.1],
-      [5.7, 0.03, -21.4],
-      [5.75, 0.03, -22.2],
-    ],
-    0.045,
-    CABLES[1],
-  );
-  wire3(
-    p,
-    [
-      [5.35, 0.03, -17.65],
-      [5.2, 0.03, -19.0],
-      [5.7, 0.03, -20.5],
-      [5.8, 0.03, -21.9],
-    ],
-    0.04,
-    SIGNAL,
-  );
-  wire3(
-    p,
-    [
-      [0.4, 0.03, -17.7],
-      [0.2, 0.03, -19.3],
-      [0.5, 0.03, -21.0],
-      [0.9, 0.03, -22.4],
-    ],
-    0.045,
-    CABLES[0],
-  );
-  wire3(
-    p,
-    [
-      [0.45, 0.03, -17.7],
-      [0.4, 0.03, -19.5],
-      [0.8, 0.03, -21.2],
-      [1.4, 0.03, -22.4],
-    ],
-    0.04,
-    SIGNAL,
-  );
-
   // ------------------------------------------------ the east wall
-  // A conduit along it at 2.4 m, a junction box, and cables down to the floor.
+  // A conduit along it at 2.4 m, a junction box, and cables down the wall and
+  // over the floor into the generator's north end.
   p.bar(eastWall, 2.4, -20.4, 6.2, 0.05, MAST_WORN, Math.PI / 2);
 
   for (const z of [-23.0, -21.4, -19.8, -18.2]) {
@@ -1746,34 +1804,33 @@ function furnishPowerRoomMoreWiring(map: MapBuilder, F: number): void {
   p.cableUp(eastWall - 0.02, 1.6, -19.6, 0.8, 0.045, MAST_WORN);
 
   for (let k = 0; k < 3; k++) {
-    wire3(
-      p,
+    const z = -19.6 - 0.1 + k * 0.1;
+
+    feed(
       [
-        [eastWall - 0.06, 1.3 + 0.03, -19.6 - 0.1 + k * 0.1],
-        [eastWall - 0.12 + jitter(0.06), 0.8, -19.6 - 0.1 + k * 0.1],
-        [eastWall - 0.3 + jitter(0.2), 0.1, -19.5 + jitter(0.4)],
-        [eastWall - 0.9 + jitter(0.4), 0.03, -19.4 + k * 0.25],
+        [eastWall - 0.06, 1.3 + 0.03, z],
+        [eastWall - 0.12 + jitter(0.04), 0.8, z],
+        [eastWall - 0.2, 0.1, z + 0.05],
       ],
-      0.04,
+      GENERATOR_END_INLETS[k],
       k === 1 ? SIGNAL : CABLES[k],
     );
   }
 
   // ----------------------------------- the west wall: a plate from the Junk Room
+  // Its cables go down the wall and over the floor into the west switchgear's base.
   p.box(-0.95, 0.9, -22.2, 0.05, 0.4, 0.45, GUNMETAL);
 
   for (let k = 0; k < 4; k++) {
     const z = -22.4 + k * 0.12;
 
-    wire3(
-      p,
+    feed(
       [
         [-0.92, 1.0 + (k % 2) * 0.1, z],
-        [-0.8, 0.5, z + jitter(0.1)],
-        [-0.5 + jitter(0.2), 0.04, z + 0.2 + jitter(0.2)],
-        [0.0 + jitter(0.3), 0.03, z + 0.5 + jitter(0.3)],
+        [-0.85, 0.5, z],
+        [-0.7, 0.1, z + 0.1],
       ],
-      0.04,
+      PLATE_INLETS[k],
       k % 2 ? SIGNAL : CABLES[k % 4],
     );
   }
@@ -1846,9 +1903,26 @@ function furnishPowerRoomWiring(map: MapBuilder, F: number): void {
   }
 
   // West end: down to the breaker panel's top (its top is 2.3 m up).
-  p.cableUp(-0.8, 2.3, zWall + 0.13, 0.25, 0.05, CABLES[0]);
-  p.cableUp(-0.8, 2.3, zWall + 0.29, 0.25, 0.05, CABLES[2]);
-  p.cableUp(-0.72, 2.3, zWall + 0.2, 0.25, 0.045, SIGNAL);
+  // (The panel is on the west wall, x -1.0 to -0.86, z -23.0 to -22.2: each
+  // cable drops out of the tray, runs along the wall over to it and down into
+  // its top, not into the air beside it.)
+  for (const [x, z, d, color, pz] of [
+    [-0.8, zWall + 0.13, 0.05, CABLES[0], -22.92],
+    [-0.8, zWall + 0.29, 0.05, CABLES[2], -22.8],
+    [-0.72, zWall + 0.2, 0.045, SIGNAL, -22.86],
+  ] as const) {
+    wire3(
+      p,
+      [
+        [x, 2.52, z],
+        [x, 2.42, z + 0.06],
+        [-0.93, 2.42, pz - 0.12],
+        [-0.93, 2.28, pz],
+      ],
+      d,
+      color,
+    );
+  }
   // ...and the panel's own gland.
   p.box(-0.82, 2.3, -22.6, 0.1, 0.05, 0.3, GUNMETAL);
 
@@ -2257,8 +2331,11 @@ export function furnishSpawnLamps(map: MapBuilder): void {
             [target[0], target[1]],
           ];
 
-    run(q, tap, 0.042, 0, 10);
-    clips(q, tap.slice(1), 0.9, 0.042);
+    // Clipped from its second point on (the first piece leaves the box).
+    const tapCurve = run(q, tap, 0.042, 0, 10);
+    const fromSecond = upTo(tapCurve, tap[1]).length - 1;
+
+    clips(q, tapCurve.slice(fromSecond), 0.9, 0.042);
     map.createFitting(`${lamp.id}-tap`, F, q.elements, []);
   }
 }
@@ -2287,14 +2364,19 @@ export function furnishDeckService(map: MapBuilder, floorY: number): void {
   const sock = gen.sockets[0];
 
   // The board, back to the wall, and the mains lead to it (red, the heavy supply).
-  distributionBoard(p, boardX, -4.84);
+  // The mains (west) and the reel's lead (east) each rise into its underside.
+  distributionBoard(p, boardX, -4.84, [
+    [-0.22, 0.065, cableColor(0)],
+    [0.22, 0.036, cableColor(13)],
+  ]);
 
   const mains: XZ[] = [
     [sock.x, sock.z + 0.22],
     [sock.x + 0.35, -3.48],
     [25.4, -3.5],
     [26.0, -3.9],
-    [boardX - 0.1, -4.62],
+    [boardX - 0.22, -4.62],
+    [boardX - 0.22, -4.8],
   ];
 
   run(p, mains, 0.065, 0, 0);
@@ -2307,7 +2389,8 @@ export function furnishDeckService(map: MapBuilder, floorY: number): void {
     [
       [27.3, -4.25],
       [27.0, -4.5],
-      [boardX + 0.3, -4.6],
+      [boardX + 0.22, -4.62],
+      [boardX + 0.22, -4.8],
     ],
     0.036,
     0,

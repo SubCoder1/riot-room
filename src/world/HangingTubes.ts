@@ -94,8 +94,11 @@ function hangingFixture(p: Pieces, x: number, z: number): void {
     p.box(cx, BEAM_Y - 0.03, z, 0.1, 0.03, 0.1, STEEL_BARE);
   }
 
-  // A short lead from the middle of the channel to the beam.
-  p.cable(x, TUBE_Y + 0.2, z, 0.3, 0.014, BLACK, 0, 0.9);
+  // The supply: from a gland in the middle of the channel straight up beside
+  // the hangers to a clip on the beam (a short stub here ended in the air).
+  p.box(x, TUBE_Y + 0.14, z + 0.03, 0.05, 0.04, 0.04, GUNMETAL);
+  p.cableUp(x, TUBE_Y + 0.17, z + 0.03, BEAM_Y - TUBE_Y - 0.17, 0.014, BLACK);
+  p.box(x, BEAM_Y - 0.03, z + 0.03, 0.06, 0.03, 0.06, STEEL_BARE);
 }
 
 /** The fixtures and their lamps, in the Warehouse. */

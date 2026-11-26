@@ -1590,7 +1590,7 @@ function overhead(map: MapBuilder, F: number): void {
   // Each bulb's supply: its flex up to the ceiling, along the ceiling to the
   // north wall (a flat cable on clips), and down the wall to the conduit.
   for (const bulb of JUNK_BULBS) {
-    const run = bulb.z + 23.5;
+    const run = bulb.z + 23.6;
 
     p.cable(
       bulb.x,
@@ -1606,7 +1606,8 @@ function overhead(map: MapBuilder, F: number): void {
       p.box(bulb.x, 3.7, z, 0.04, 0.03, 0.05, GUNMETAL);
     }
 
-    p.cableUp(bulb.x, 2.72, -23.56, 3.74 - 2.72, 0.025, BLACK);
+    // Down the wall into the top of the box on the conduit.
+    p.cableUp(bulb.x, 2.72, -23.6, 3.74 - 2.72, 0.025, BLACK);
     p.box(bulb.x, 2.55, -23.63, 0.07, 0.2, 0.06, CHARCOAL);
   }
 
@@ -1717,7 +1718,36 @@ function overhead(map: MapBuilder, F: number): void {
   // and a cable looped across the opening.
   p.box(-13.52, 0.95, -17.55, 0.03, 0.5, 0.75, RUSTY[1], 0, 0.3, 0.45);
   p.box(-13.45, 0, -17.3, 0.05, 0.14, 1.3, WOOD[2], 0, 0.9, 0.8);
-  p.cable(-13.5, 1.0, -17.1, 1.3, 0.035, BLACK, 0, 0.5, 0.25);
+  // (Hung from the wall either side of the hole, over its top, sagging
+  // across the opening: both ends clipped to the wall, nothing loose.)
+  const drape: Array<[number, number, number]> = [
+    [-13.68, 1.32, -18.08],
+    [-13.6, 1.0, -17.6],
+    [-13.55, 0.86, -17.1],
+    [-13.6, 0.98, -16.62],
+    [-13.68, 1.32, -16.14],
+  ];
+
+  for (let i = 1; i < drape.length; i++) {
+    const [ax, ay, az] = drape[i - 1];
+    const [bx, by, bz] = drape[i];
+    const flat = Math.hypot(bx - ax, bz - az);
+
+    p.cable(
+      (ax + bx) / 2,
+      (ay + by) / 2,
+      (az + bz) / 2,
+      Math.hypot(flat, by - ay) + 0.03,
+      0.035,
+      BLACK,
+      Math.atan2(-(bz - az), bx - ax),
+      Math.atan2(by - ay, flat),
+    );
+  }
+
+  for (const z of [-18.08, -16.14]) {
+    p.box(-13.69, 1.28, z, 0.03, 0.08, 0.06, CHARCOAL);
+  }
 
   // Chipped plaster: pale flakes low on the south wall and by the pile.
   p.box(-11.4, 0.0, -16.31, 0.5, 0.35, 0.006, PLASTER, 0, 0, 0.2);
@@ -1746,8 +1776,21 @@ function overhead(map: MapBuilder, F: number): void {
     [-8.6, 0.9],
     [-4.0, 0.6],
   ] as const) {
+    // Down out of the tray, round the bottom of the loop and back up into it.
+    const rise = 0.1;
+
     p.cableUp(x, 3.4 - drop, -23.2, drop, 0.035, BLACK);
-    p.cable(x + 0.12, 3.4 - drop, -23.2, 0.3, 0.035, BLACK, 0, 0, 0.8);
+    p.cableUp(x + 0.25, 3.4 - drop + rise, -23.2, drop - rise, 0.035, BLACK);
+    p.cable(
+      x + 0.125,
+      3.4 - drop + rise / 2,
+      -23.2,
+      Math.hypot(0.25, rise) + 0.03,
+      0.035,
+      BLACK,
+      0,
+      Math.atan2(rise, 0.25),
+    );
   }
 
   p.bar(-7.5, 3.56, -17.2, 12.0, 0.12, PIPE, 0);

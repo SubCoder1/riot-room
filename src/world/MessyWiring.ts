@@ -256,6 +256,12 @@ function floorUnder(
   let floor = 0;
 
   for (const s of solids) {
+    // A mast's little service platform is not a floor: wiring set out for the
+    // floor under a lamp would hang 1.2 m up in the air beside the mast.
+    if (/^support-.*-platform/.test(s.id)) {
+      continue;
+    }
+
     const inside =
       s.kind === "cylinder"
         ? Math.hypot(x - s.x, z - s.z) <= s.radius
@@ -318,7 +324,12 @@ export function furnishMessyWiring(map: MapBuilder): void {
     const pole = poleOf(layout, lamp);
     const key = `${pole.x.toFixed(1)},${pole.z.toFixed(1)}`;
 
-    if (!wrapped.has(key)) {
+    // The walkway masts and the spawn lamp posts have their own clamped run
+    // from their junction box up the front (see PowerGrid): a second lead
+    // wound on a spot beside the mast hung loose in the air.
+    const hasOwnRun = /^light-(support-|lamp-spawn)/.test(lamp.id);
+
+    if (!wrapped.has(key) && !hasOwnRun) {
       wrapped.add(key);
       wrapPole(p, random, pole.x, pole.z, height, pole.radius, pickRed());
 

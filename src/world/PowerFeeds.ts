@@ -9,7 +9,6 @@ import {
 import { openAt } from "./Debris";
 import { Pieces, rng } from "./FittingPieces";
 import type { MapBuilder } from "./MapParts";
-import { poleOf } from "./MessyWiring";
 import { nightLights, WALL_LAMPS } from "./NightLights";
 import { circuitOfLamp } from "./PowerCircuits";
 import { CHARCOAL, GUNMETAL, STEEL_BARE } from "./RoomKit";
@@ -55,8 +54,15 @@ function lampTop(l: LightDefinition): number {
   return l.y - F + (l.id.startsWith("bulb-") ? 0.36 : 0);
 }
 
+/**
+ * Lamps with no fitting to wire: the Hall's fill light (its bare lamp was
+ * taken down, and the hall is open to the sky, with no ceiling to run along).
+ */
+const UNWIRED = new Set(["light-room-hall-b"]);
+
 function isRoomLamp(l: LightDefinition): boolean {
   return (
+    !UNWIRED.has(l.id) &&
     l.y > F + 1 &&
     l.y < F + 6.6 &&
     (l.id.startsWith("light-room-") ||
@@ -73,10 +79,6 @@ function isRoomLamp(l: LightDefinition): boolean {
 const WALL_DROP: Record<string, number> = {
   "halogen-wall-room-armory": 6.5,
 };
-
-function isFirstFloorFloodlight(l: LightDefinition): boolean {
-  return l.id.startsWith("light-support-");
-}
 
 /** The underside of the lowest solid over (x, z) above `y`: the ceiling. */
 function ceilingOver(solids: Solid[], x: number, z: number, y: number): number {
@@ -503,14 +505,9 @@ export function furnishPowerFeeds(map: MapBuilder): void {
     floorRun([dx, dz], circuitOfLamp(lamp.id) === "exterior" ? roofGoal : goal);
   }
 
-  // ---------------------------------------- the first-floor floodlights
-  for (const lamp of nightLights(layout).filter(isFirstFloorFloodlight)) {
-    const pole = poleOf(layout, lamp);
-
-    // From the foot of its pole (where its own wiring starts) to the roof
-    // generator's conduit: it runs every light outside the building.
-    floorRun([pole.x, pole.z], roofGoal);
-  }
+  // (The first-floor floodlights are wired in PowerGrid: each mast's own
+  // junction box has a lead to the board, the generator or the roof conduit.
+  // A second cable from here started inside the mast and crossed the map.)
 
   map.createFitting("power-feeds", F, p.elements, []);
 }
