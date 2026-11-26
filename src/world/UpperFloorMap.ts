@@ -29,6 +29,7 @@ export const VAULT_BREACH: {
 import { addWeathering } from "./Weathering";
 import { furnishHall, furnishStorageRoom, furnishYard } from "./StorageRoom";
 import { furnishDebris } from "./Debris";
+import { furnishGroundDamage } from "./GroundDamage";
 import { furnishHangingTubes } from "./HangingTubes";
 import { furnishOccupation } from "./Occupation";
 import { furnishMessyWiring } from "./MessyWiring";
@@ -1845,6 +1846,7 @@ function createUpperFloor(): ArenaLayout {
   furnishRoofWiring(map);
   furnishMessyWiring(map);
   furnishPowerFeeds(map);
+  furnishGroundDamage(map);
   furnishDebris(map);
 
   // The one spawn area is the north-west yard, on the ground floor: two fixed

@@ -36,6 +36,7 @@ describe("Piles of building material", () => {
         /spawn/.test(pile.id) ||
         pile.id === "fittings-gate-closed" ||
         /^fittings-ruins/.test(pile.id) ||
+        pile.id.startsWith("fittings-ground-damage") ||
         pile.id.startsWith("debris-") ||
         pile.id.startsWith("messy-wiring-") ||
         pile.id === "power-feeds"

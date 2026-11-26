@@ -535,7 +535,11 @@ describe("What was built", () => {
     for (const solid of [...layout.walls, ...layout.pillars]) {
       // The Ruins' lower floor and its chamber are the ground: their walls and
       // debris stand on it.
-      if (/^(ruins-|fittings-ruins|room-ruins-chamber)/.test(solid.id)) {
+      if (
+        /^(ruins-|fittings-ruins|room-ruins-chamber|fittings-ground-damage)/.test(
+          solid.id,
+        )
+      ) {
         continue;
       }
 
