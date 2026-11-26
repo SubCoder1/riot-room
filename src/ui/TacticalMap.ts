@@ -1,3 +1,4 @@
+import { ARENA_MIN_X } from "../world/ArenaLayout";
 import type {
   ArenaLayout,
   DoorDefinition,
@@ -41,7 +42,7 @@ export type TeammateSource = () => readonly TeamMarker[];
 export const W = 1200;
 export const H = 900;
 /** Sheet pixels per metre, and where the plan's top-left corner is on the sheet. */
-const SCALE = 18;
+const SCALE = 16.8;
 const PLAN_X = 24;
 const PLAN_Y = 24;
 
@@ -77,8 +78,9 @@ const NAME_NEAR = 46;
 const SVG = "http://www.w3.org/2000/svg";
 
 /** Sheet position of a world point (the one transform for everything). */
-export const sx = (x: number, layout: ArenaLayout): number =>
-  PLAN_X + (x + layout.width / 2) * SCALE;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const sx = (x: number, _layout?: ArenaLayout): number =>
+  PLAN_X + (x - ARENA_MIN_X) * SCALE;
 export const sz = (z: number, layout: ArenaLayout): number =>
   PLAN_Y + (z + layout.depth / 2) * SCALE;
 
@@ -275,7 +277,7 @@ export function drawTacticalSheet(
   ctx.clearRect(0, 0, W, H);
 
   // The open ground inside the perimeter.
-  const ax = sx(-layout.width / 2, layout);
+  const ax = sx(ARENA_MIN_X, layout);
   const ay = sz(-layout.depth / 2, layout);
   const aw = layout.width * SCALE;
   const ah = layout.depth * SCALE;

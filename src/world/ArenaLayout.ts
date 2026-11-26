@@ -240,9 +240,19 @@ export interface Overhead {
   top: number;
 }
 
-export const ARENA_WIDTH = 64;
+/**
+ * The arena's x range. It was -32 to 32; the Ruins' chamber has since been
+ * extended east, so the east edge stands ARENA_EAST_EXTENSION further out and
+ * the map is no longer centred on x = 0 (use ARENA_MIN_X and ARENA_MAX_X for
+ * its edges). ARENA_HALF_X is the old half width: where the west edge, and the
+ * rooms built against the old east one, still stand.
+ */
+export const ARENA_EAST_EXTENSION = 6;
+export const ARENA_HALF_X = 32;
+export const ARENA_MIN_X = -ARENA_HALF_X;
+export const ARENA_MAX_X = ARENA_HALF_X + ARENA_EAST_EXTENSION;
+export const ARENA_WIDTH = ARENA_MAX_X - ARENA_MIN_X;
 export const ARENA_DEPTH = 48;
-export const ARENA_HALF_X = ARENA_WIDTH / 2;
 export const ARENA_HALF_Z = ARENA_DEPTH / 2;
 
 export const OUTER_WALL_THICKNESS = 0.45;

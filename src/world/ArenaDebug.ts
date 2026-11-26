@@ -1,7 +1,8 @@
 import * as THREE from "three";
 
 import {
-  ARENA_HALF_X,
+  ARENA_MAX_X,
+  ARENA_MIN_X,
   ARENA_HALF_Z,
   allSolids,
   type ArenaLayout,
@@ -142,14 +143,15 @@ export class ArenaDebug {
     }
 
     // Playable boundary.
-    const hx = ARENA_HALF_X;
+    const x0 = ARENA_MIN_X;
+    const x1 = ARENA_MAX_X;
     const hz = ARENA_HALF_Z;
     const boundary = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-hx, 0.06, -hz),
-        new THREE.Vector3(hx, 0.06, -hz),
-        new THREE.Vector3(hx, 0.06, hz),
-        new THREE.Vector3(-hx, 0.06, hz),
+        new THREE.Vector3(x0, 0.06, -hz),
+        new THREE.Vector3(x1, 0.06, -hz),
+        new THREE.Vector3(x1, 0.06, hz),
+        new THREE.Vector3(x0, 0.06, hz),
       ]),
       new THREE.LineBasicMaterial({ color: 0xf87171 }),
     );

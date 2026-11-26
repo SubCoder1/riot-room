@@ -208,6 +208,8 @@ export function traceThrowPath(
 export interface ThrowBounds {
   /** Half the width and half the depth of the inside of the wall, metres. */
   halfX: number;
+  /** The east edge, if the map is wider that way than it is west (default halfX). */
+  maxX?: number;
   halfZ: number;
   /** How high the wall is: above it the way out is open sky. */
   height: number;
@@ -225,21 +227,21 @@ export function perimeterClearFraction(
   to: THREE.Vector3,
   bounds: ThrowBounds,
 ): number {
-  const limits: Array<[number, number, number]> = [
-    [from.x, to.x, bounds.halfX],
-    [from.z, to.z, bounds.halfZ],
+  // Each axis: the start, the end, and the edge on the negative and positive side.
+  const limits: Array<[number, number, number, number]> = [
+    [from.x, to.x, bounds.halfX, bounds.maxX ?? bounds.halfX],
+    [from.z, to.z, bounds.halfZ, bounds.halfZ],
   ];
   let fraction = 1;
 
-  for (const [a, b, half] of limits) {
-    const limit = half - 0.02;
-
-    if (Math.abs(b) <= limit) {
+  for (const [a, b, low, high] of limits) {
+    if (b >= -low + 0.02 && b <= high - 0.02) {
       continue;
     }
 
     // The side it ends on: 1 or -1. Already past it at the start: stuck.
-    const side = Math.sign(b);
+    const side = b > 0 ? 1 : -1;
+    const limit = (side > 0 ? high : low) - 0.02;
     const start = a * side;
     const end = b * side;
     const t = start >= limit ? 0 : (limit - start) / (end - start);

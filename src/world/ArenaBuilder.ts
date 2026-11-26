@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import {
+  ARENA_MAX_X,
+  ARENA_MIN_X,
   OUTER_WALL_THICKNESS,
   PERIMETER_WALL_HEIGHT,
   ROOF_HIGH,
@@ -332,10 +334,9 @@ const ventBars = weather(
  */
 export function createArenaFloor(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
-  const halfX = layout.width / 2;
   const halfZ = layout.depth / 2;
   const holes = ventBlocks(layout.vents);
-  const xs = new Set<number>([-halfX, halfX]);
+  const xs = new Set<number>([ARENA_MIN_X, ARENA_MAX_X]);
   const zs = new Set<number>([-halfZ, halfZ]);
 
   for (const g of holes) {
@@ -539,15 +540,15 @@ export function createVents(layout: ArenaLayout): THREE.Group {
 /** A wall all round the edge of the map, up to the first floor's roofs (the frame above it is open). */
 export function createOuterWalls(layout: ArenaLayout): THREE.Group {
   const group = new THREE.Group();
-  const halfX = layout.width / 2;
   const halfZ = layout.depth / 2;
   const t = OUTER_WALL_THICKNESS;
+  const midX = (ARENA_MIN_X + ARENA_MAX_X) / 2;
 
   const walls: Array<[string, number, number, number, number]> = [
-    ["north", 0, -halfZ - t / 2, layout.width + t * 2, t],
-    ["south", 0, halfZ + t / 2, layout.width + t * 2, t],
-    ["west", -halfX - t / 2, 0, t, layout.depth],
-    ["east", halfX + t / 2, 0, t, layout.depth],
+    ["north", midX, -halfZ - t / 2, layout.width + t * 2, t],
+    ["south", midX, halfZ + t / 2, layout.width + t * 2, t],
+    ["west", ARENA_MIN_X - t / 2, 0, t, layout.depth],
+    ["east", ARENA_MAX_X + t / 2, 0, t, layout.depth],
   ];
 
   for (const [side, x, z, width, depth] of walls) {

@@ -1,5 +1,9 @@
 import { ArenaCollision, PLAYER_RADIUS } from "../../src/world/ArenaCollision";
-import { ARENA_HALF_X, ARENA_HALF_Z } from "../../src/world/ArenaLayout";
+import {
+  ARENA_HALF_Z,
+  ARENA_MAX_X,
+  ARENA_MIN_X,
+} from "../../src/world/ArenaLayout";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 
 /**
@@ -10,7 +14,7 @@ import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
  */
 
 export const CELL = 0.5;
-export const COLS = Math.round((ARENA_HALF_X * 2) / CELL);
+export const COLS = Math.round((ARENA_MAX_X - ARENA_MIN_X) / CELL);
 export const ROWS = Math.round((ARENA_HALF_Z * 2) / CELL);
 
 /** The highest the feet get during a jump: what a "hop" can clear. */
@@ -26,7 +30,7 @@ const groundCache = new Map<number, number>();
 const heightKey = (feet: number): number => Math.round(feet / 0.05) + 200;
 const cacheKey = (x: number, z: number, feet: number): number =>
   (Math.round((z + ARENA_HALF_Z) / CELL) * COLS +
-    Math.round((x + ARENA_HALF_X) / CELL)) *
+    Math.round((x - ARENA_MIN_X) / CELL)) *
     1000 +
   heightKey(feet);
 
@@ -62,10 +66,10 @@ export interface Node {
   h: number;
 }
 
-export const cellX = (i: number): number => -ARENA_HALF_X + (i + 0.5) * CELL;
+export const cellX = (i: number): number => ARENA_MIN_X + (i + 0.5) * CELL;
 export const cellZ = (j: number): number => -ARENA_HALF_Z + (j + 0.5) * CELL;
 export const cellI = (x: number): number =>
-  Math.min(COLS - 1, Math.max(0, Math.floor((x + ARENA_HALF_X) / CELL)));
+  Math.min(COLS - 1, Math.max(0, Math.floor((x - ARENA_MIN_X) / CELL)));
 export const cellJ = (z: number): number =>
   Math.min(ROWS - 1, Math.max(0, Math.floor((z + ARENA_HALF_Z) / CELL)));
 

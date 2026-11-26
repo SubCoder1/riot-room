@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ArenaCollision } from "../../src/world/ArenaCollision";
-import { ARENA_HALF_X, ARENA_HALF_Z } from "../../src/world/ArenaLayout";
+import { ARENA_MAX_X, ARENA_HALF_Z } from "../../src/world/ArenaLayout";
 import { MapBuilder } from "../../src/world/MapParts";
 import { ARENA_LAYOUT } from "../../src/world/UpperFloorMap";
 import { EAST, NORTH, SOUTH, WEST, spawnPlayer, yawFor } from "./playerHarness";
@@ -309,7 +309,7 @@ describe("Player on the map", () => {
 
       walk(p, 8, true);
 
-      expect(Math.abs(p.player.position.x)).toBeLessThanOrEqual(ARENA_HALF_X);
+      expect(p.player.position.x).toBeLessThanOrEqual(ARENA_MAX_X);
       expect(Math.abs(p.player.position.z)).toBeLessThanOrEqual(ARENA_HALF_Z);
     }
   });

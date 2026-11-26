@@ -7,6 +7,8 @@ import {
 } from "../../src/world/ArenaCollision";
 import {
   ARENA_HALF_X,
+  ARENA_MAX_X,
+  ARENA_MIN_X,
   ARENA_HALF_Z,
   UPPER_FLOOR_Y,
   allSolids,
@@ -19,8 +21,10 @@ const layout = ARENA_LAYOUT;
 const F = UPPER_FLOOR_Y;
 
 describe("Layout data", () => {
-  it("is a 64 x 48 m rectangle centred on the origin", () => {
-    expect(layout.width).toBe(64);
+  it("is a 70 x 48 m rectangle: x -32 to 38 (the Ruins' chamber extended it 6 m east), z centred", () => {
+    expect(layout.width).toBe(70);
+    expect(ARENA_MIN_X).toBe(-32);
+    expect(ARENA_MAX_X).toBe(38);
     expect(layout.depth).toBe(48);
     expect(ARENA_HALF_X).toBe(32);
     expect(ARENA_HALF_Z).toBe(24);
@@ -29,15 +33,18 @@ describe("Layout data", () => {
   it("every solid sits inside the walls", () => {
     for (const solid of allSolids(layout)) {
       if (solid.kind === "cylinder") {
-        expect(Math.abs(solid.x) + solid.radius, solid.id).toBeLessThanOrEqual(
-          ARENA_HALF_X + 1e-9,
+        expect(solid.x + solid.radius, solid.id).toBeLessThanOrEqual(
+          ARENA_MAX_X + 1e-9,
+        );
+        expect(solid.x - solid.radius, solid.id).toBeGreaterThanOrEqual(
+          ARENA_MIN_X - 1e-9,
         );
 
         continue;
       }
 
-      expect(solid.minX, solid.id).toBeGreaterThanOrEqual(-ARENA_HALF_X - 1e-9);
-      expect(solid.maxX, solid.id).toBeLessThanOrEqual(ARENA_HALF_X + 1e-9);
+      expect(solid.minX, solid.id).toBeGreaterThanOrEqual(ARENA_MIN_X - 1e-9);
+      expect(solid.maxX, solid.id).toBeLessThanOrEqual(ARENA_MAX_X + 1e-9);
       expect(solid.minZ, solid.id).toBeGreaterThanOrEqual(-ARENA_HALF_Z - 1e-9);
       expect(solid.maxZ, solid.id).toBeLessThanOrEqual(ARENA_HALF_Z + 1e-9);
     }
@@ -90,18 +97,18 @@ describe("Ground and walls", () => {
   });
 
   it("the outer walls stop the player from leaving the map", () => {
-    expect(world.isBlocked(ARENA_HALF_X - 0.2, 0, F, PLAYER_RADIUS)).toBe(true);
+    expect(world.isBlocked(ARENA_MAX_X - 0.2, 0, F, PLAYER_RADIUS)).toBe(true);
     expect(world.isBlocked(0, -ARENA_HALF_Z + 0.2, F, PLAYER_RADIUS)).toBe(
       true,
     );
-    expect(world.isBlocked(ARENA_HALF_X - 0.6, -3.75, F, PLAYER_RADIUS)).toBe(
+    expect(world.isBlocked(ARENA_MAX_X - 0.6, -3.75, F, PLAYER_RADIUS)).toBe(
       false,
     );
   });
 
   it("moving into the outer wall at an angle slides along it", () => {
     const move = world.moveHorizontal(
-      ARENA_HALF_X - PLAYER_RADIUS - 0.05,
+      ARENA_MAX_X - PLAYER_RADIUS - 0.05,
       -3.5,
       0.2,
       -0.2,
@@ -109,7 +116,7 @@ describe("Ground and walls", () => {
     );
 
     expect(move.z).toBeLessThan(-3.6);
-    expect(move.x).toBeLessThanOrEqual(ARENA_HALF_X - PLAYER_RADIUS + 1e-9);
+    expect(move.x).toBeLessThanOrEqual(ARENA_MAX_X - PLAYER_RADIUS + 1e-9);
   });
 
   it("a room wall blocks, and its doorway lets the player through", () => {

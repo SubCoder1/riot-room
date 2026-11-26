@@ -1,6 +1,7 @@
 import {
-  ARENA_HALF_X,
   ARENA_HALF_Z,
+  ARENA_MAX_X,
+  ARENA_MIN_X,
   allSolids,
   type ArenaLayout,
   type BoxSolid,
@@ -117,7 +118,8 @@ function rampHeightAt(ramp: RampSolid, x: number, z: number): number {
  * character is high enough (by jumping) to land on top of it.
  */
 export class ArenaCollision {
-  public readonly halfX = ARENA_HALF_X;
+  public readonly minX = ARENA_MIN_X;
+  public readonly maxX = ARENA_MAX_X;
   public readonly halfZ = ARENA_HALF_Z;
 
   private readonly solids: Solid[];
@@ -493,13 +495,19 @@ export class ArenaCollision {
 
       // A column built into a corner also holds up the square corner beyond
       // its circle, so standing on top never drops you through a gap by the walls.
+      const wallSideX =
+        solid.x + solid.radius >= ARENA_MAX_X - 0.1
+          ? 1
+          : solid.x - solid.radius <= ARENA_MIN_X + 0.1
+            ? -1
+            : 0;
       const touchesWalls =
-        Math.abs(solid.x) + solid.radius >= ARENA_HALF_X - 0.1 &&
+        wallSideX !== 0 &&
         Math.abs(solid.z) + solid.radius >= ARENA_HALF_Z - 0.1;
 
       if (
         touchesWalls &&
-        (x - solid.x) * Math.sign(solid.x) >= 0 &&
+        (x - solid.x) * wallSideX >= 0 &&
         (z - solid.z) * Math.sign(solid.z) >= 0
       ) {
         return solid.height;
@@ -749,7 +757,8 @@ export class ArenaCollision {
     headroom = HEADROOM,
   ): boolean {
     if (
-      Math.abs(x) > this.halfX - radius ||
+      x < this.minX + radius ||
+      x > this.maxX - radius ||
       Math.abs(z) > this.halfZ - radius
     ) {
       return true;
@@ -958,10 +967,9 @@ export class ArenaCollision {
       }
     }
 
-    const limitX = this.halfX - radius;
     const limitZ = this.halfZ - radius;
 
-    px = Math.min(Math.max(px, -limitX), limitX);
+    px = Math.min(Math.max(px, this.minX + radius), this.maxX - radius);
     pz = Math.min(Math.max(pz, -limitZ), limitZ);
 
     // Pushing away from a corner column can land in the sealed corner behind
@@ -1225,6 +1233,6 @@ export class ArenaCollision {
 
   /** Distance from (x, z) to the nearest outer wall. */
   public wallClearanceAt(x: number, z: number): number {
-    return Math.min(this.halfX - Math.abs(x), this.halfZ - Math.abs(z));
+    return Math.min(x - this.minX, this.maxX - x, this.halfZ - Math.abs(z));
   }
 }

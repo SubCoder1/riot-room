@@ -9,10 +9,10 @@ const own = (): string =>
     .querySelector(".tactical-map-marker > g")!
     .getAttribute("transform")!;
 
-/** The sheet's transform: 18 px a metre, the -32, -24 corner at (24, 24). */
+/** The sheet's transform: 16.8 px a metre, the -32, -24 corner at (24, 24). */
 const sheet = (x: number, z: number): [number, number] => [
-  24 + (x + 32) * 18,
-  24 + (z + 24) * 18,
+  24 + (x + 32) * 16.8,
+  24 + (z + 24) * 16.8,
 ];
 
 const mates = (): SVGGElement[] =>
@@ -90,10 +90,12 @@ describe("The M-key tactical map", () => {
 
     const [x, y] = sheet(0, 0);
 
-    expect(own()).toBe(`translate(${x}.0 ${y}.0) rotate(0.0)`);
+    expect(own()).toBe(
+      `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(0.0)`,
+    );
     tick(-10, 5);
     expect(own()).toContain(
-      `translate(${sheet(-10, 5)[0]}.0 ${sheet(-10, 5)[1]}.0)`,
+      `translate(${sheet(-10, 5)[0].toFixed(1)} ${sheet(-10, 5)[1].toFixed(1)})`,
     );
   });
 
